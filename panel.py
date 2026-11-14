@@ -4,21 +4,29 @@
 Uso:
   python3 panel.py --install   # instala los servicios de systemd (usuario) y arranca el panel
   python3 panel.py             # corre el panel en primer plano (puerto 8090)
+
+La interfaz vive en static/ y habla con este archivo por una API JSON en /api/*.
 """
+import collections
 import glob
-import html
 import json
+import mimetypes
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
+import threading
+import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HOME = Path.home()
+APP_DIR = Path(__file__).resolve().parent
+STATIC_DIR = APP_DIR / "static"
 CFG_DIR = Path(os.environ.get("LLAMA_PANEL_DIR", HOME / ".config" / "llama-panel"))
 SETTINGS_FILE = CFG_DIR / "settings.json"
 PRESET_FILE = CFG_DIR / "presets.ini"
@@ -40,6 +48,7 @@ MTP_RE = re.compile(r"(^|[-_.])MTP([-_.]|$)")
 REASONING_OPTS = [("", "por defecto"), ("auto", "auto"), ("on", "activado"), ("off", "apagado")]
 IMG_EXT = (".gguf", ".safetensors", ".ckpt")
 ARG_RE = re.compile(r"^[A-Za-z0-9_./:=+,-]+$")
+SETTINGS_LOCK = threading.Lock()
 
 
 # ---------- ajustes ----------
@@ -73,7 +82,19 @@ def load_settings():
 
 def save_settings(data):
     CFG_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    tmp = SETTINGS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    tmp.replace(SETTINGS_FILE)
+
+
+def _assign_ids(items):
+    used = {}
+    for m in items:
+        base = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(m["key"]).stem)
+        n = used.get(base, 0) + 1
+        used[base] = n
+        m["id"] = base if n == 1 else f"{base}_{n}"
+    return items
 
 
 # ---------- modelos de texto ----------
@@ -94,13 +115,7 @@ def scan_models():
             continue
         seen.add(real)
         found.append({"key": str(p.relative_to(MODELS_DIR)), "path": str(p), "size": size})
-    used = {}
-    for m in found:
-        base = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(m["key"]).stem)
-        n = used.get(base, 0) + 1
-        used[base] = n
-        m["id"] = base if n == 1 else f"{base}_{n}"
-    return found
+    return _assign_ids(found)
 
 
 def model_cfg(settings, m):
@@ -178,13 +193,7 @@ def scan_img_models():
                     seen[qr] = q
             comps = [(flag, str(q)) for flag, q in sorted(seen.items())]
         mains.append({"key": str(p.relative_to(IMG_DIR)), "path": str(p), "size": size, "comps": comps})
-    used = {}
-    for m in mains:
-        base = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(m["key"]).stem)
-        n = used.get(base, 0) + 1
-        used[base] = n
-        m["id"] = base if n == 1 else f"{base}_{n}"
-    return mains
+    return _assign_ids(mains)
 
 
 def pick_img(settings, models):
@@ -235,268 +244,441 @@ def svc_state(name=SERVICE):
     return run("systemctl", "--user", "is-active", name) or "unknown"
 
 
-def vram():
-    for d in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
+def svc_states():
+    out = run("systemctl", "--user", "is-active", SERVICE, IMG_SERVICE).splitlines()
+    out += ["unknown"] * (2 - len(out))
+    return {"text": out[0], "img": out[1]}
+
+
+def http_json(port, method, path, body=None, timeout=3):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data, method=method,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read()
+    return json.loads(raw) if raw else {}
+
+
+def router(method, path, body=None, timeout=3):
+    return http_json(CHAT_PORT, method, path, body, timeout)
+
+
+def router_error(e):
+    if isinstance(e, urllib.error.HTTPError):
         try:
-            used = int(Path(d, "mem_info_vram_used").read_text())
-            total = int(Path(d, "mem_info_vram_total").read_text())
-            return used / 2**30, total / 2**30
+            j = json.loads(e.read())
+            return (j.get("error") or {}).get("message") or str(j)
         except Exception:  # noqa: BLE001
-            continue
+            return f"HTTP {e.code}"
+    return str(getattr(e, "reason", e))
+
+
+def router_models():
+    """{id: {status, failed}} segun el router; {} si no responde."""
+    try:
+        data = router("GET", "/models", timeout=2).get("data", [])
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for m in data:
+        st = m.get("status") or {}
+        out[m["id"]] = {"status": st.get("value", "unloaded"), "failed": bool(st.get("failed")),
+                        "ctx_max": m.get("context_length")}
+    return out
+
+
+def wait_router(timeout=25):
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            router("GET", "/health", timeout=1)
+            return True
+        except Exception:  # noqa: BLE001
+            time.sleep(0.4)
+    return False
+
+
+# ---------- hardware ----------
+def _read(path, cast=int):
+    try:
+        return cast(Path(path).read_text().strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _gpu_dir():
+    for d in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
+        if os.path.exists(os.path.join(d, "mem_info_vram_total")):
+            return d
     return None
 
 
-def vram_text():
-    v = vram()
-    return f"{v[0]:.1f} / {v[1]:.1f} GiB" if v else "n/d"
+GPU_DIR = _gpu_dir()
+HWMON = next(iter(sorted(glob.glob(f"{GPU_DIR}/hwmon/hwmon*"))), None) if GPU_DIR else None
+GIB = 2 ** 30
+
+
+def hw_sample():
+    s = {"t": round(time.time(), 1)}
+    if GPU_DIR:
+        used, total = _read(f"{GPU_DIR}/mem_info_vram_used"), _read(f"{GPU_DIR}/mem_info_vram_total")
+        if used is not None and total:
+            s["vram_used"], s["vram_total"] = round(used / GIB, 2), round(total / GIB, 2)
+        gtt = _read(f"{GPU_DIR}/mem_info_gtt_used")
+        if gtt is not None:
+            s["gtt_used"] = round(gtt / GIB, 2)
+        s["gpu"] = _read(f"{GPU_DIR}/gpu_busy_percent")
+    if HWMON:
+        t = _read(f"{HWMON}/temp1_input")
+        crit = _read(f"{HWMON}/temp1_crit")
+        p = _read(f"{HWMON}/power1_input") or _read(f"{HWMON}/power1_average")
+        cap = _read(f"{HWMON}/power1_cap")
+        clk = _read(f"{HWMON}/freq1_input")
+        s.update({
+            "temp": t / 1000 if t is not None else None,
+            "temp_crit": crit / 1000 if crit else None,
+            "power": round(p / 1e6, 1) if p is not None else None,
+            "power_cap": round(cap / 1e6) if cap else None,
+            "fan": _read(f"{HWMON}/fan1_input"),
+            "sclk": round(clk / 1e6) if clk else None,
+        })
+    try:
+        mem = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            k, v = line.split(":", 1)
+            mem[k] = int(v.split()[0]) * 1024
+        s["ram_total"] = round(mem["MemTotal"] / GIB, 2)
+        s["ram_used"] = round((mem["MemTotal"] - mem["MemAvailable"]) / GIB, 2)
+    except Exception:  # noqa: BLE001
+        pass
+    s["load"] = round(os.getloadavg()[0], 2)
+    return s
+
+
+HIST = collections.deque(maxlen=330)  # ~11 minutos a 2 s
+
+
+def sampler():
+    while True:
+        try:
+            HIST.append(hw_sample())
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(2)
+
+
+# ---------- estadisticas y registros ----------
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+TIMING_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| +(prompt eval|eval) time = +([\d.]+) ms / +(\d+) tokens"
+                       r".*?([\d.]+) tokens per second")
+DRAFT_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| draft acceptance = ([\d.]+) \( *(\d+) accepted / *(\d+) generated")
+LOADM_RE = re.compile(r"^\[(\d+)\].*load_model: loading model '(.+)'")
+KIMG_START = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] Generating Image \((\d+) steps\)")
+KIMG_END = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] Generating Media Complete")
+PROGRESS_RE = re.compile(r"^([A-Za-z ]+): \d+/(\d+) steps")
+_stats_cache = {"t": 0, "data": None}
+
+
+def journal(name, n, fmt="cat"):
+    return run("journalctl", "--user", "-u", name, "-n", str(n), "--no-pager", "-o", fmt, timeout=10)
+
+
+def clean_log_line(line):
+    if "\x1b[K" in line:  # barras de progreso que se reescriben: queda el ultimo estado
+        parts = [p for p in line.split("\x1b[K") if p.strip()]
+        line = parts[-1] if parts else ""
+    return ANSI_RE.sub("", line).replace("\r", "")
+
+
+def _journal_lines(name, n):
+    """[(timestamp, mensaje)] usando el formato short-unix de journalctl."""
+    out = []
+    for line in journal(name, n, "short-unix").splitlines():
+        ts, _, rest = line.partition(" ")
+        _, _, msg = rest.partition(": ")
+        try:
+            out.append((float(ts), msg))
+        except ValueError:
+            continue
+    return out
+
+
+def text_stats():
+    paths = {}
+    for m in scan_models():
+        paths[m["path"]] = m["id"]
+        paths[os.path.realpath(m["path"])] = m["id"]
+    pid_model, reqs = {}, {}
+    for ts, msg in _journal_lines(SERVICE, 6000):
+        if (mm := LOADM_RE.match(msg)):
+            pid_model[mm[1]] = paths.get(mm[2]) or Path(mm[2]).stem
+        elif (mm := TIMING_RE.match(msg)):
+            key = (mm[1], mm[2])
+            r = reqs.setdefault(key, {"t": ts, "model": pid_model.get(mm[1], "?"), "p_tok": None, "p_tps": None,
+                                      "g_tok": None, "g_tps": None, "draft": None})
+            if mm[3] == "prompt eval":
+                r["p_tok"], r["p_tps"] = int(mm[5]), float(mm[6])
+            else:
+                r["g_tok"], r["g_tps"], r["t"] = int(mm[5]), float(mm[6]), ts
+        elif (mm := DRAFT_RE.match(msg)):
+            key = (mm[1], mm[2])
+            if key in reqs:
+                reqs[key]["draft"] = {"rate": float(mm[3]), "acc": int(mm[4]), "gen": int(mm[5])}
+    return [r for r in reqs.values() if r["g_tps"] is not None][-60:]
+
+
+def img_stats():
+    gens, start = [], None
+    for ts, msg in _journal_lines(IMG_SERVICE, 4000):
+        msg = clean_log_line(msg)
+        if (mm := KIMG_START.match(msg)):
+            start = (int(mm[1]) * 3600 + int(mm[2]) * 60 + int(mm[3]), int(mm[4]))
+        elif (mm := KIMG_END.match(msg)) and start:
+            end = int(mm[1]) * 3600 + int(mm[2]) * 60 + int(mm[3])
+            secs = (end - start[0]) % 86400
+            gens.append({"t": ts, "steps": start[1], "secs": secs})
+            start = None
+    return gens[-40:]
 
 
 def stats():
-    raw = run("journalctl", "--user", "-u", SERVICE, "-n", "400", "--no-pager", "-o", "cat")
-    lines = [l for l in raw.splitlines() if re.search(r"print_timing|draft acceptance|eval time", l)]
-    return "\n".join(lines[-8:]) or "Todavia no hay estadisticas (genera una respuesta primero)."
+    if time.time() - _stats_cache["t"] > 5:
+        _stats_cache["data"] = {"text": text_stats(), "img": img_stats()}
+        _stats_cache["t"] = time.time()
+    return _stats_cache["data"]
 
 
-def logs(name=SERVICE):
-    return run("journalctl", "--user", "-u", name, "-n", "30", "--no-pager", "-o", "cat")
+def logs(which, n=300):
+    name = {"text": SERVICE, "img": IMG_SERVICE, "panel": PANEL_SERVICE}.get(which, SERVICE)
+    out, prev = [], None
+    for raw in journal(name, n).splitlines():
+        line = clean_log_line(raw)
+        if not line.strip():
+            continue
+        # "Decoding: 3/27 steps" seguido de "Decoding: 4/27 steps": queda solo la ultima linea
+        mm = PROGRESS_RE.match(line)
+        key = (mm[1], mm[2]) if mm else None
+        if key and key == prev:
+            out[-1] = line
+        else:
+            out.append(line)
+        prev = key
+    return out
 
 
-# ---------- pagina ----------
-CSS = """
-body{font-family:system-ui,sans-serif;background:#111;color:#e6e6e6;margin:0;padding:24px;max-width:980px;margin:auto}
-h1{margin:0 0 16px}h2{margin:28px 0 8px;font-size:1.05rem;color:#bbb}
-.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px;background:#1b1b1b;border-radius:10px;margin-bottom:8px}
-.bar b{min-width:64px}
-.pill{padding:3px 10px;border-radius:99px;font-weight:600;background:#444}
-.pill.active{background:#1e7e34}.pill.failed{background:#a71d2a}.pill.activating{background:#9a6700}
-button{background:#2d6cdf;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:.95rem;cursor:pointer}
-button.red{background:#b3342f}button.grey{background:#444}
-a{color:#7db4ff}textarea{width:100%;box-sizing:border-box;background:#161616;color:#e6e6e6;border:1px solid #333;border-radius:8px;padding:8px;font-family:ui-monospace,monospace;font-size:.85rem}
-table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #2a2a2a;vertical-align:top;text-align:left}
-.small{color:#999;font-size:.8rem}.msg{margin:14px 0;padding:10px 12px;background:#26323f;border-radius:8px;white-space:pre-wrap}
-input,select{background:#161616;color:#e6e6e6;border:1px solid #333;border-radius:6px;padding:5px}
-input[type=text]{width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:.85rem}
-pre{background:#161616;padding:10px;border-radius:8px;overflow:auto;font-size:.78rem;max-height:340px}
-"""
-
-POLL_JS = """
-async function tick(){
-  try{
-    const r=await fetch('/status',{cache:'no-store'});const s=await r.json();
-    for(const k of ['text','img']){
-      const el=document.getElementById('pill_'+k);
-      if(el){el.textContent=s[k];el.className='pill '+s[k];}
-    }
-    const v=document.getElementById('vram');if(v){v.textContent=s.vram;}
-  }catch(e){}
-}
-setInterval(tick,3000);
-"""
-
-
-def page(msg=""):
-    e = html.escape
+# ---------- estado ----------
+def state():
+    st = svc_states()
     settings = load_settings()
-    models = scan_models()
-    img_models = scan_img_models()
-    sel = pick_img(settings, img_models)
-    st_text = svc_state(SERVICE)
-    st_img = svc_state(IMG_SERVICE)
-    parts = [
-        "<!doctype html><html lang='es'><head><meta charset='utf-8'>",
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-        "<title>Panel IA</title><style>", CSS, "</style></head><body>",
-        "<h1>Panel IA</h1>",
-        f"<div class='bar'><b>VRAM</b><span id='vram'>{e(vram_text())}</span>",
-        "<form method='post' action='/action' style='margin:0'>"
-        "<button name='do' value='stop_all' class='red'>Apagar todo</button></form></div>",
-        "<div class='bar'><b>Texto</b>",
-        f"<span id='pill_text' class='pill {e(st_text)}'>{e(st_text)}</span>",
-        "<form method='post' action='/action' style='display:flex;gap:8px;margin:0'>",
-        "<button name='do' value='start'>Encender</button>",
-        "<button name='do' value='restart' class='grey'>Reiniciar</button>",
-        "<button name='do' value='stop' class='red'>Apagar</button></form>",
-        "<a id='chat' href='#'>Abrir chat</a></div>",
-        "<div class='bar'><b>Imagenes</b>",
-        f"<span id='pill_img' class='pill {e(st_img)}'>{e(st_img)}</span>",
-        "<form method='post' action='/action' style='display:flex;gap:8px;margin:0'>",
-        "<button name='do' value='img_start'>Encender</button>",
-        "<button name='do' value='img_restart' class='grey'>Reiniciar</button>",
-        "<button name='do' value='img_stop' class='red'>Apagar</button></form>",
-        "<a id='sdui' href='#'>Abrir StableUI</a>",
-        f"<span class='small'>modelo: {e(sel['id']) if sel else 'ninguno'}</span></div>",
-        "<script>"
-        "document.getElementById('chat').href='http://'+location.hostname+':" + str(CHAT_PORT) + "';"
-        "document.getElementById('sdui').href='http://'+location.hostname+':" + str(IMG_PORT) + "/sdui';"
-        "</script>",
-        "<div class='small'>Texto e imagenes comparten la VRAM: al encender uno, el otro se apaga solo.</div>",
-    ]
-    if msg:
-        parts.append(f"<div class='msg'>{e(msg)}</div>")
-    parts += [
-        "<form method='post' action='/save'>",
-        "<h2>Ajustes globales de texto (valen para todos los modelos)</h2>",
-        "<textarea name='global' rows='5'>", e(settings["global"]), "</textarea>",
-        "<div class='small'>Una opcion por linea: <code>clave = valor</code>, con el nombre largo de la opcion de llama-server "
-        "sin los guiones (ej. <code>ctx-size = 8192</code>).</div>",
-        "<h2>Modelos de texto</h2>",
-    ]
-    if not models:
-        parts.append(f"<p class='small'>No hay archivos .gguf en {e(str(MODELS_DIR))}.</p>")
-    else:
-        parts.append("<table><tr><th>Modelo</th><th>MTP</th><th>Razonamiento</th><th>Contexto</th>"
-                     "<th>Opciones extra</th></tr>")
-        for i, m in enumerate(models):
-            cfg = model_cfg(settings, m)
-            chk = "checked" if cfg.get("mtp") else ""
-            opts = "".join(
-                f"<option value='{v}' {'selected' if v == cfg.get('reasoning') else ''}>{t}</option>"
-                for v, t in REASONING_OPTS)
-            parts += [
-                "<tr><td>", f"<b>{e(m['id'])}</b><br><span class='small'>{m['size'] / 1e9:.2f} GB</span>",
-                f"<input type='hidden' name='key_{i}' value='{e(m['key'], quote=True)}'></td>",
-                f"<td><input type='checkbox' name='mtp_{i}' {chk}> "
-                f"<input type='number' min='1' max='16' name='nmax_{i}' value='{e(str(cfg.get('nmax') or 2))}' "
-                "style='width:52px' title='borradores por paso'></td>",
-                f"<td><select name='rs_{i}'>{opts}</select></td>",
-                f"<td><input type='number' min='256' step='256' name='ctx_{i}' value='{e(str(cfg.get('ctx') or ''))}' "
-                "placeholder='global' style='width:84px'></td>",
-                f"<td><textarea name='extra_{i}' rows='2'>{e(cfg.get('extra', ''))}</textarea></td></tr>",
-            ]
-        parts.append("</table>")
-    parts += [
-        f"<input type='hidden' name='count' value='{len(models)}'>",
-        "<p><button name='mode' value='apply'>Guardar y aplicar (reinicia el servidor)</button> ",
-        "<button name='mode' value='save' class='grey'>Solo guardar</button></p></form>",
-        "<form method='post' action='/save_img'>",
-        "<h2>Modelos de imagen</h2>",
-    ]
-    if not img_models:
-        parts.append(f"<p class='small'>No hay modelos (.gguf / .safetensors de mas de 100 MB) en {e(str(IMG_DIR))}.</p>")
-    else:
-        parts.append("<table><tr><th>Usar</th><th>Modelo</th><th>Archivos que carga con el</th>"
-                     "<th>Opciones extra</th></tr>")
-        for i, m in enumerate(img_models):
-            cfg = settings["image"]["models"].get(m["key"]) or {}
-            checked = "checked" if sel and m["key"] == sel["key"] else ""
-            comps = "<br>".join(f"<span class='small'>{e(f)}: {e(Path(p).name)}</span>" for f, p in m["comps"]) \
-                or "<span class='small'>solo el modelo</span>"
-            parts += [
-                f"<tr><td><input type='radio' name='img_selected' value='{e(m['key'], quote=True)}' {checked}></td>",
-                f"<td><b>{e(m['id'])}</b><br><span class='small'>{m['size'] / 1e9:.2f} GB</span>",
-                f"<input type='hidden' name='imgkey_{i}' value='{e(m['key'], quote=True)}'></td>",
-                f"<td>{comps}</td>",
-                f"<td><input type='text' name='imgextra_{i}' value='{e(cfg.get('extra', ''), quote=True)}' "
-                "placeholder='ej: --sdoffloadcpu --sdtiledvae 768'></td></tr>",
-            ]
-        parts.append("</table>")
-        parts.append("<div class='small'>Las opciones extra son flags de KoboldCpp separados por espacios "
-                     "(ej. <code>--sdoffloadcpu</code>, <code>--sdlora /ruta/archivo.safetensors</code>).</div>")
-    parts += [
-        f"<input type='hidden' name='img_count' value='{len(img_models)}'>",
-        "<p><button name='mode' value='apply'>Guardar y aplicar (reinicia el generador si esta encendido)</button> ",
-        "<button name='mode' value='save' class='grey'>Solo guardar</button></p></form>",
-        "<h2>Estadisticas recientes (texto)</h2><pre>", e(stats()), "</pre>",
-        "<h2>Registro del servidor de texto</h2><pre>", e(logs(SERVICE)), "</pre>",
-        "<h2>Registro del generador de imagenes</h2><pre>", e(logs(IMG_SERVICE)), "</pre>",
-        "<p class='small'>Los modelos nuevos aparecen al recargar esta pagina; para que el servidor los use, "
-        "toca <b>Reiniciar</b> o <b>Guardar y aplicar</b>.</p>",
-        "<script>", POLL_JS, "</script></body></html>",
-    ]
-    return "".join(parts)
+    sel = pick_img(settings, scan_img_models())
+    img = {"selected": sel["id"] if sel else None, "selected_key": sel["key"] if sel else "", "progress": None, "perf": None}
+    if st["img"] == "active":
+        try:
+            p = http_json(IMG_PORT, "GET", "/sdapi/v1/progress", timeout=1.5)
+            s = p.get("state") or {}
+            img["progress"] = {"step": s.get("sampling_step", 0), "steps": s.get("sampling_steps", 0),
+                               "eta": p.get("eta_relative", 0)}
+            perf = http_json(IMG_PORT, "GET", "/api/extra/perf", timeout=1.5)
+            img["perf"] = {k: perf.get(k) for k in ("total_img_gens", "queue", "idle", "uptime")}
+        except Exception:  # noqa: BLE001
+            pass
+    return {
+        "svc": st,
+        "hw": HIST[-1] if HIST else hw_sample(),
+        "text": {"models": router_models() if st["text"] == "active" else {}},
+        "img": img,
+    }
+
+
+def config():
+    settings = load_settings()
+    imgs = scan_img_models()
+    sel = pick_img(settings, imgs)
+    h = HIST[-1] if HIST else hw_sample()
+    return {
+        "global": settings["global"],
+        "models_dir": str(MODELS_DIR),
+        "img_dir": str(IMG_DIR),
+        "vram_total": h.get("vram_total"),
+        "reasoning_opts": REASONING_OPTS,
+        "ports": {"chat": CHAT_PORT, "img": IMG_PORT},
+        "text_models": [{"key": m["key"], "id": m["id"], "size": m["size"], "cfg": model_cfg(settings, m)}
+                        for m in scan_models()],
+        "img_models": [{"key": m["key"], "id": m["id"], "size": m["size"],
+                        "comps": [(f, Path(p).name) for f, p in m["comps"]],
+                        "extra": (settings["image"]["models"].get(m["key"]) or {}).get("extra", "")}
+                       for m in imgs],
+        "img_selected": sel["key"] if sel else "",
+    }
 
 
 # ---------- acciones ----------
+def ok(msg, **kw):
+    return {"ok": True, "msg": msg, **kw}
+
+
+def fail(msg, **kw):
+    return {"ok": False, "msg": msg, **kw}
+
+
+def free_vram_for(which):
+    """Apaga el otro servicio si esta prendido. Devuelve una nota para el usuario."""
+    other, label = (IMG_SERVICE, "Generador de imagenes") if which == "text" else (SERVICE, "Servidor de texto")
+    if svc_state(other) in ("active", "activating"):
+        svc("stop", other)
+        return f" {label} apagado para liberar VRAM."
+    return ""
+
+
 def do_action(action):
     if action == "stop":
         svc("stop")
-        return "Servidor de texto apagado."
+        return ok("Servidor de texto apagado.")
     if action in ("start", "restart"):
-        note = ""
-        if svc_state(IMG_SERVICE) == "active":
-            svc("stop", IMG_SERVICE)
-            note = " Generador de imagenes apagado para liberar VRAM."
+        note = free_vram_for("text")
         n = len(write_preset())
         out = svc("restart" if action == "restart" else "start")
-        return (f"Configuracion regenerada ({n} modelos). "
-                f"{'Reiniciado' if action == 'restart' else 'Encendido'}.{note} {out}").strip()
+        verb = "Reiniciado" if action == "restart" else "Encendido"
+        return ok(f"Servidor de texto {verb.lower()} ({n} modelos).{note} {out}".strip())
     if action in ("img_start", "img_restart"):
         m = write_img_env()
         if not m:
-            return f"No hay modelos de imagen en {IMG_DIR}."
-        note = ""
-        if svc_state(SERVICE) == "active":
-            svc("stop")
-            note = " Servidor de texto apagado para liberar VRAM."
+            return fail(f"No hay modelos de imagen en {IMG_DIR}.")
+        note = free_vram_for("img")
         out = svc("restart" if action == "img_restart" else "start", IMG_SERVICE)
-        return f"Generador de imagenes {'reiniciado' if action == 'img_restart' else 'encendido'} con {m['id']}.{note} {out}".strip()
+        verb = "reiniciado" if action == "img_restart" else "encendido"
+        return ok(f"Generador de imagenes {verb} con {m['id']}.{note} {out}".strip())
     if action == "img_stop":
         svc("stop", IMG_SERVICE)
-        return "Generador de imagenes apagado."
+        return ok("Generador de imagenes apagado.")
     if action == "stop_all":
         svc("stop")
         svc("stop", IMG_SERVICE)
-        return "Todo apagado: la VRAM queda libre."
-    return "Accion desconocida."
+        return ok("Todo apagado: la VRAM queda libre.")
+    return fail("Accion desconocida.")
 
 
-def do_save(form):
-    settings = load_settings()
-    errors = []
-    gl = form.get("global", [""])[0]
-    _, bad = clean_lines(gl)
-    errors += [f"global: {b}" for b in bad]
-    models_cfg = {}
+def ensure_router():
+    """Prende el router si hace falta (apagando imagenes). Devuelve (ok, nota)."""
+    note = ""
+    if svc_state() != "active":
+        note = free_vram_for("text")
+        write_preset()
+        svc("start")
+        note = " Servidor de texto encendido." + note
+    if not wait_router():
+        return False, "El servidor de texto no responde. Mira la pestana Registros." + note
+    return True, note
+
+
+def text_load(body):
+    mid = str(body.get("id", ""))
+    if mid not in {m["id"] for m in scan_models()}:
+        return fail(f"No existe el modelo '{mid}'.")
+    good, note = ensure_router()
+    if not good:
+        return fail(note)
+    if mid not in router_models():  # modelo nuevo que el router todavia no conoce
+        write_preset()
+        try:
+            router("GET", "/models?reload=1", timeout=10)
+        except Exception:  # noqa: BLE001
+            pass
     try:
-        count = int(form.get("count", ["0"])[0])
-    except ValueError:
-        count = 0
+        router("POST", "/models/load", {"model": mid}, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        return fail(f"No se pudo cargar {mid}: {router_error(e)}")
+    return ok(f"Cargando {mid}… (si habia otro modelo cargado, se descarga).{note}")
+
+
+def text_unload(body):
+    mid = str(body.get("id", ""))
+    try:
+        router("POST", "/models/unload", {"model": mid}, timeout=15)
+    except Exception as e:  # noqa: BLE001
+        return fail(f"No se pudo descargar {mid}: {router_error(e)}")
+    return ok(f"{mid} descargado: la VRAM queda libre.")
+
+
+def apply_text():
+    """Aplica el preset nuevo sin reiniciar el router: recarga la lista y vuelve a cargar el modelo activo."""
+    if svc_state() != "active":
+        return "El servidor estaba apagado: se aplica cuando lo enciendas."
+    before = [k for k, v in router_models().items() if v["status"] in ("loaded", "loading", "sleeping")]
+    try:
+        router("GET", "/models?reload=1", timeout=15)
+    except Exception:  # noqa: BLE001
+        svc("restart")
+        return "Servidor reiniciado con la nueva configuracion."
+    time.sleep(0.5)
+    after = router_models()
+    reloaded = []
+    for k in before:
+        if k in after and after[k]["status"] == "unloaded":
+            try:
+                router("POST", "/models/load", {"model": k}, timeout=15)
+                reloaded.append(k)
+            except Exception:  # noqa: BLE001
+                pass
+    if reloaded:
+        return f"Aplicado: {', '.join(reloaded)} se esta recargando con los ajustes nuevos."
+    return "Aplicado: el servidor ya usa la nueva configuracion."
+
+
+def text_rescan(_body):
+    with SETTINGS_LOCK:
+        n = len(write_preset())
+    if svc_state() == "active":
+        try:
+            router("GET", "/models?reload=1", timeout=15)
+        except Exception as e:  # noqa: BLE001
+            return fail(f"{n} modelos encontrados, pero el servidor no pudo recargar la lista: {router_error(e)}")
+        return ok(f"{n} modelos encontrados. El servidor ya los conoce.")
+    return ok(f"{n} modelos encontrados.")
+
+
+def text_settings(body):
+    gl = str(body.get("global", ""))
+    models_in = body.get("models") or {}
+    if not isinstance(models_in, dict):
+        return fail("Formato invalido.")
+    errors = [f"global: {b}" for b in clean_lines(gl)[1]]
     valid_rs = {v for v, _ in REASONING_OPTS}
-    for i in range(count):
-        key = form.get(f"key_{i}", [""])[0]
-        extra = form.get(f"extra_{i}", [""])[0]
-        nmax = form.get(f"nmax_{i}", ["2"])[0].strip() or "2"
-        rs = form.get(f"rs_{i}", [""])[0]
-        ctx = form.get(f"ctx_{i}", [""])[0].strip()
-        _, bad = clean_lines(extra)
-        errors += [f"{key}: {b}" for b in bad]
+    models_cfg = {}
+    for key, c in models_in.items():
+        c = c if isinstance(c, dict) else {}
+        extra = str(c.get("extra", ""))
+        nmax = str(c.get("nmax", "2")).strip() or "2"
+        rs = str(c.get("reasoning", ""))
+        ctx = str(c.get("ctx", "")).strip()
+        errors += [f"{key}: {b}" for b in clean_lines(extra)[1]]
         if not (nmax.isdigit() and 1 <= int(nmax) <= 16):
             errors.append(f"{key}: borradores MTP debe ser un numero entre 1 y 16 (puso '{nmax}')")
         if ctx and not (ctx.isdigit() and int(ctx) >= 256):
             errors.append(f"{key}: contexto debe ser un numero de 256 o mas (puso '{ctx}')")
         if rs not in valid_rs:
             errors.append(f"{key}: razonamiento invalido '{rs}'")
-        models_cfg[key] = {"mtp": f"mtp_{i}" in form, "nmax": nmax, "reasoning": rs, "ctx": ctx, "extra": extra}
+        models_cfg[key] = {"mtp": bool(c.get("mtp")), "nmax": nmax, "reasoning": rs, "ctx": ctx, "extra": extra}
     if errors:
-        return "No se guardo. Revisa estos campos (las opciones van como clave = valor):\n" + "\n".join(errors)
-    settings["global"] = gl
-    settings["models"] = models_cfg
-    save_settings(settings)
-    n = len(write_preset())
-    if form.get("mode", ["save"])[0] == "apply":
-        if svc_state() == "active":
-            svc("restart")
-            return f"Guardado ({n} modelos) y servidor reiniciado."
-        return f"Guardado ({n} modelos). El servidor estaba apagado: tocalo en Encender cuando quieras."
-    return f"Guardado ({n} modelos). Se aplica en el proximo reinicio del servidor."
+        return fail("No se guardo. Revisa estos campos (las opciones van como clave = valor):\n" + "\n".join(errors))
+    with SETTINGS_LOCK:
+        settings = load_settings()
+        settings["global"] = gl
+        settings["models"].update(models_cfg)  # conserva ajustes de modelos que hoy no estan en disco
+        save_settings(settings)
+        n = len(write_preset())
+    if body.get("apply"):
+        return ok(f"Guardado ({n} modelos). {apply_text()}")
+    return ok(f"Guardado ({n} modelos). Se aplica en la proxima carga.")
 
 
-def do_save_img(form):
-    settings = load_settings()
-    models = scan_img_models()
-    valid_keys = {m["key"] for m in models}
-    errors = []
-    selected = form.get("img_selected", [""])[0]
-    if selected and selected not in valid_keys:
-        errors.append(f"modelo '{selected}' no existe en {IMG_DIR}")
-    try:
-        count = int(form.get("img_count", ["0"])[0])
-    except ValueError:
-        count = 0
-    cfgs = {}
-    for i in range(count):
-        key = form.get(f"imgkey_{i}", [""])[0]
-        extra = form.get(f"imgextra_{i}", [""])[0].strip()
+def _validate_img(models, cfg_in):
+    valid = {m["key"] for m in models}
+    errors, cfgs = [], {}
+    for key, c in (cfg_in or {}).items():
+        if key not in valid:
+            continue
+        extra = str((c or {}).get("extra", "")).strip()
         try:
             toks = shlex.split(extra)
         except ValueError as ex:
@@ -506,77 +688,142 @@ def do_save_img(form):
             if not ARG_RE.match(t):
                 errors.append(f"{key}: '{t}' tiene caracteres no permitidos (solo letras, numeros y . _ / : = + , -)")
         cfgs[key] = {"extra": extra}
+    return errors, cfgs
+
+
+def img_settings(body):
+    models = scan_img_models()
+    selected = str(body.get("selected", ""))
+    errors, cfgs = _validate_img(models, body.get("models"))
+    if selected and selected not in {m["key"] for m in models}:
+        errors.append(f"modelo '{selected}' no existe en {IMG_DIR}")
     if errors:
-        return "No se guardo.\n" + "\n".join(errors)
-    settings["image"]["selected"] = selected or (models[0]["key"] if models else "")
-    settings["image"]["models"] = cfgs
-    save_settings(settings)
-    m = write_img_env()
+        return fail("No se guardo.\n" + "\n".join(errors))
+    with SETTINGS_LOCK:
+        settings = load_settings()
+        settings["image"]["selected"] = selected or (models[0]["key"] if models else "")
+        settings["image"]["models"].update(cfgs)
+        save_settings(settings)
+        m = write_img_env()
     name = m["id"] if m else "ninguno"
-    if form.get("mode", ["save"])[0] == "apply":
+    if body.get("apply"):
         if svc_state(IMG_SERVICE) == "active":
             svc("restart", IMG_SERVICE)
-            return f"Guardado (modelo de imagen: {name}) y generador reiniciado."
-        return f"Guardado (modelo de imagen: {name}). El generador estaba apagado: tocalo en Encender cuando quieras."
-    return f"Guardado (modelo de imagen: {name}). Se aplica en el proximo arranque del generador."
+            return ok(f"Guardado (modelo de imagen: {name}) y generador reiniciado.")
+        return ok(f"Guardado (modelo de imagen: {name}). El generador esta apagado: se aplica al encenderlo.")
+    return ok(f"Guardado (modelo de imagen: {name}). Se aplica en el proximo arranque del generador.")
+
+
+def img_use(body):
+    key = str(body.get("key", ""))
+    models = scan_img_models()
+    if key not in {m["key"] for m in models}:
+        return fail(f"No existe el modelo '{key}'.")
+    errors, cfgs = _validate_img(models, body.get("models"))
+    if errors:
+        return fail("No se guardo.\n" + "\n".join(errors))
+    with SETTINGS_LOCK:
+        settings = load_settings()
+        settings["image"]["selected"] = key
+        settings["image"]["models"].update(cfgs)
+        save_settings(settings)
+        m = write_img_env()
+    note = free_vram_for("img")
+    was_on = svc_state(IMG_SERVICE) in ("active", "activating")
+    out = svc("restart" if was_on else "start", IMG_SERVICE)
+    return ok(f"Generador de imagenes {'reiniciado' if was_on else 'encendido'} con {m['id']}.{note} {out}".strip())
+
+
+# ---------- servidor HTTP ----------
+GET_ROUTES = {
+    "/api/state": lambda q: state(),
+    "/api/config": lambda q: config(),
+    "/api/history": lambda q: {"samples": list(HIST)},
+    "/api/stats": lambda q: stats(),
+    "/api/logs": lambda q: {"lines": logs(q.get("svc", ["text"])[0], min(2000, int(q.get("n", ["300"])[0] or 300)))},
+}
+POST_ROUTES = {
+    "/api/action": lambda b: do_action(str(b.get("do", ""))),
+    "/api/text/load": text_load,
+    "/api/text/unload": text_unload,
+    "/api/text/rescan": text_rescan,
+    "/api/text/settings": text_settings,
+    "/api/img/settings": img_settings,
+    "/api/img/use": img_use,
+}
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # silencio
         pass
 
-    def _send(self, code, body, headers=None, ctype="text/html; charset=utf-8"):
-        data = body.encode("utf-8")
+    def _send(self, code, data, ctype="application/json", headers=None):
+        if not isinstance(data, bytes):
+            data = (json.dumps(data, ensure_ascii=False) if ctype == "application/json" else str(data)).encode()
         self.send_response(code)
-        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith(("text/", "application/j")) else ""))
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         for k, v in (headers or {}).items():
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
 
+    def _static(self, rel):
+        path = (STATIC_DIR / rel).resolve()
+        if STATIC_DIR not in path.parents or not path.is_file():
+            return self._send(404, {"ok": False, "msg": "no encontrado"})
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        self._send(200, path.read_bytes(), ctype)
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
-        if u.path == "/status":
-            body = json.dumps({"text": svc_state(SERVICE), "img": svc_state(IMG_SERVICE), "vram": vram_text()})
-            return self._send(200, body, {"Cache-Control": "no-store"}, "application/json")
-        if u.path != "/":
-            return self._send(404, "no encontrado")
-        q = urllib.parse.parse_qs(u.query)
-        self._send(200, page(q.get("msg", [""])[0]))
+        if u.path == "/":
+            return self._static("index.html")
+        if u.path.startswith("/static/"):
+            return self._static(u.path[len("/static/"):])
+        route = GET_ROUTES.get(u.path)
+        if not route:
+            return self._send(404, {"ok": False, "msg": "no encontrado"})
+        try:
+            self._send(200, route(urllib.parse.parse_qs(u.query)))
+        except Exception as e:  # noqa: BLE001
+            self._send(500, {"ok": False, "msg": f"Error interno: {e}"})
 
     def do_POST(self):
+        route = POST_ROUTES.get(urllib.parse.urlparse(self.path).path)
+        if not route:
+            return self._send(404, {"ok": False, "msg": "no encontrado"})
+        # Exigir JSON impide que otra pagina web dispare acciones con un formulario (CSRF)
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            return self._send(415, {"ok": False, "msg": "Se espera JSON."})
         try:
             n = int(self.headers.get("Content-Length", 0))
         except ValueError:
             n = 0
         if n > 1_000_000:
-            return self._send(413, "demasiado grande")
-        form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", "replace"), keep_blank_values=True)
-        if self.path == "/action":
-            msg = do_action(form.get("do", [""])[0])
-        elif self.path == "/save":
-            msg = do_save(form)
-        elif self.path == "/save_img":
-            msg = do_save_img(form)
-        else:
-            return self._send(404, "no encontrado")
-        self._send(303, "", {"Location": "/?msg=" + urllib.parse.quote(msg)})
+            return self._send(413, {"ok": False, "msg": "demasiado grande"})
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError("se espera un objeto")
+        except ValueError as e:
+            return self._send(400, {"ok": False, "msg": f"JSON invalido: {e}"})
+        try:
+            self._send(200, route(body))
+        except Exception as e:  # noqa: BLE001
+            self._send(500, {"ok": False, "msg": f"Error interno: {e}"})
 
 
 # ---------- instalacion ----------
 def install():
-    dest_dir = HOME / "llama-panel"
-    dest_dir.mkdir(exist_ok=True)
-    dest = dest_dir / "panel.py"
-    if Path(__file__).resolve() != dest.resolve():
-        shutil.copy2(__file__, dest)
+    dest = APP_DIR / "panel.py"
     unit_dir = HOME / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
-    router = unit_dir / f"{SERVICE}.service"
-    if router.exists() and not (unit_dir / f"{SERVICE}.service.bak").exists():
-        shutil.copy2(router, unit_dir / f"{SERVICE}.service.bak")
-    router.write_text(
+    router_unit = unit_dir / f"{SERVICE}.service"
+    if router_unit.exists() and not (unit_dir / f"{SERVICE}.service.bak").exists():
+        router_unit.rename(unit_dir / f"{SERVICE}.service.bak")
+    router_unit.write_text(
         "[Unit]\nDescription=llama.cpp router server (Vulkan)\n"
         f"Conflicts={IMG_SERVICE}.service\n\n"
         "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n"
@@ -594,10 +841,10 @@ def install():
     )
     (unit_dir / f"{PANEL_SERVICE}.service").write_text(
         "[Unit]\nDescription=Panel de control llama-server\n\n"
-        f"[Service]\nExecStart=/usr/bin/python3 {dest}\nRestart=on-failure\nRestartSec=3\n\n"
+        f"[Service]\nWorkingDirectory={APP_DIR}\nExecStart=/usr/bin/python3 {dest}\nRestart=on-failure\nRestartSec=3\n\n"
         "[Install]\nWantedBy=default.target\n"
     )
-    # Reinicia el panel solo cada vez que se guarda panel.py
+    # Reinicia el panel solo cada vez que se guarda panel.py (los archivos de static/ se leen en cada pedido)
     (unit_dir / f"{PANEL_SERVICE}-reload.path").write_text(
         "[Unit]\nDescription=Vigila panel.py para reiniciar el panel\n\n"
         f"[Path]\nPathChanged={dest}\nUnit={PANEL_SERVICE}-reload.service\n\n"
@@ -623,12 +870,13 @@ def install():
     if svc_state() == "active":
         svc("restart")
         print("Servidor de modelos de texto reiniciado con la nueva configuracion.")
-    print(f"\nListo. Abri http://god.local:{PANEL_PORT} desde la laptop.")
+    print(f"\nListo. Abri http://{os.uname().nodename}.local:{PANEL_PORT} desde la laptop.")
 
 
 def main():
     if "--install" in sys.argv:
         return install()
+    threading.Thread(target=sampler, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PANEL_PORT), Handler).serve_forever()
 
 

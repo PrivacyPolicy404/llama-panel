@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel IA</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='2' width='12' height='12' rx='3' fill='%233987e5'/></svg>">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <span>Panel IA</span>
+    <span class="host" id="host"></span>
+  </div>
+  <div class="top-actions">
+    <span class="conn" id="conn" hidden>Sin conexión con el panel</span>
+    <button class="btn danger" data-action="stop_all" title="Apaga texto e imágenes y libera la VRAM">Apagar todo</button>
+  </div>
+</header>
+
+<main>
+  <!-- Hardware -->
+  <section class="tiles" aria-label="Hardware">
+    <article class="tile" id="tile-vram">
+      <div class="tile-head"><span class="tile-label">VRAM</span><span class="tile-sub" data-sub></span></div>
+      <div class="tile-value" data-value>–</div>
+      <div class="meter"><span data-meter></span></div>
+      <div class="spark" data-spark></div>
+    </article>
+    <article class="tile" id="tile-gpu">
+      <div class="tile-head"><span class="tile-label">Uso de GPU</span><span class="tile-sub" data-sub></span></div>
+      <div class="tile-value" data-value>–</div>
+      <div class="meter"><span data-meter></span></div>
+      <div class="spark" data-spark></div>
+    </article>
+    <article class="tile" id="tile-temp">
+      <div class="tile-head"><span class="tile-label">Temperatura</span><span class="tile-sub" data-sub></span></div>
+      <div class="tile-value" data-value>–</div>
+      <div class="meter"><span data-meter></span></div>
+      <div class="spark" data-spark></div>
+    </article>
+    <article class="tile" id="tile-ram">
+      <div class="tile-head"><span class="tile-label">RAM</span><span class="tile-sub" data-sub></span></div>
+      <div class="tile-value" data-value>–</div>
+      <div class="meter"><span data-meter></span></div>
+      <div class="spark" data-spark></div>
+    </article>
+  </section>
+
+  <!-- Motores -->
+  <section class="engines">
+    <article class="engine" id="eng-text">
+      <div class="engine-head">
+        <div>
+          <h2>Texto</h2>
+          <div class="engine-kind">llama-server · router</div>
+        </div>
+        <span class="status" data-status><i></i><b>–</b></span>
+      </div>
+      <dl class="facts">
+        <div><dt>Modelo cargado</dt><dd data-loaded>–</dd></div>
+        <div><dt>Última respuesta</dt><dd data-speed>–</dd></div>
+      </dl>
+      <div class="engine-actions">
+        <button class="btn" data-action="start">Encender</button>
+        <button class="btn ghost" data-action="restart">Reiniciar</button>
+        <button class="btn ghost danger-text" data-action="stop">Apagar</button>
+        <a class="btn link" id="lnk-chat" target="_blank" rel="noopener">Abrir chat ↗</a>
+      </div>
+    </article>
+
+    <article class="engine" id="eng-img">
+      <div class="engine-head">
+        <div>
+          <h2>Imágenes</h2>
+          <div class="engine-kind">KoboldCpp · StableUI</div>
+        </div>
+        <span class="status" data-status><i></i><b>–</b></span>
+      </div>
+      <dl class="facts">
+        <div><dt>Modelo</dt><dd data-model>–</dd></div>
+        <div><dt>Actividad</dt><dd data-activity>–</dd></div>
+      </dl>
+      <div class="progress" data-progress hidden><span></span></div>
+      <div class="engine-actions">
+        <button class="btn" data-action="img_start">Encender</button>
+        <button class="btn ghost" data-action="img_restart">Reiniciar</button>
+        <button class="btn ghost danger-text" data-action="img_stop">Apagar</button>
+        <a class="btn link" id="lnk-sdui" target="_blank" rel="noopener">Abrir StableUI ↗</a>
+      </div>
+    </article>
+  </section>
+  <p class="note">Texto e imágenes comparten la VRAM: al encender uno, el otro se apaga solo.</p>
+
+  <!-- Pestañas -->
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="text" aria-selected="true">Modelos de texto</button>
+    <button role="tab" data-tab="img">Modelos de imagen</button>
+    <button role="tab" data-tab="perf">Rendimiento</button>
+    <button role="tab" data-tab="logs">Registros</button>
+  </nav>
+
+  <section class="panel" data-panel="text">
+    <div class="panel-tools">
+      <span class="muted" id="text-dir"></span>
+      <button class="btn ghost small" id="rescan" title="Vuelve a leer la carpeta de modelos y se lo avisa al servidor">Buscar modelos nuevos</button>
+    </div>
+    <details class="card global">
+      <summary><b>Ajustes globales</b> <span class="muted">valen para todos los modelos</span></summary>
+      <textarea id="global" rows="5" spellcheck="false"></textarea>
+      <p class="hint">Una opción por línea: <code>clave = valor</code>, con el nombre largo de la opción de llama-server sin los guiones (ej. <code>ctx-size = 8192</code>).</p>
+    </details>
+    <div class="models" id="text-models"></div>
+  </section>
+
+  <section class="panel" data-panel="img" hidden>
+    <div class="panel-tools"><span class="muted" id="img-dir"></span></div>
+    <div class="img-grid" id="img-models"></div>
+    <p class="hint">Las opciones extra son flags de KoboldCpp separados por espacios (ej. <code>--sdoffloadcpu</code>, <code>--sdtiledvae 768</code>, <code>--sdlora /ruta/archivo.safetensors</code>).</p>
+  </section>
+
+  <section class="panel" data-panel="perf" hidden>
+    <h3>Texto: velocidad por respuesta</h3>
+    <div class="summary" id="perf-summary"></div>
+    <div class="card chart-card">
+      <div class="chart-title">Generación (tokens/s) · últimas respuestas <span class="muted" id="perf-legend"></span></div>
+      <div class="bars" id="perf-bars"></div>
+    </div>
+    <div class="table-wrap"><table class="tbl" id="perf-table"></table></div>
+    <h3>Imágenes: generaciones recientes</h3>
+    <div class="table-wrap"><table class="tbl" id="perf-img"></table></div>
+  </section>
+
+  <section class="panel" data-panel="logs" hidden>
+    <div class="panel-tools">
+      <div class="seg" id="log-svc">
+        <button data-svc="text" aria-pressed="true">Texto</button>
+        <button data-svc="img">Imágenes</button>
+        <button data-svc="panel">Panel</button>
+      </div>
+      <input type="search" id="log-filter" placeholder="Filtrar…">
+      <label class="check"><input type="checkbox" id="log-follow" checked> En vivo</label>
+    </div>
+    <pre class="logs" id="logs"></pre>
+  </section>
+</main>
+
+<div class="savebar" id="savebar" hidden>
+  <span>Cambios sin guardar</span>
+  <div>
+    <button class="btn ghost" id="discard">Descartar</button>
+    <button class="btn ghost" id="save">Guardar</button>
+    <button class="btn" id="save-apply">Guardar y aplicar</button>
+  </div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="tooltip" id="tooltip" hidden></div>
+</body>
+</html>
