@@ -594,8 +594,18 @@ def install():
     )
     (unit_dir / f"{PANEL_SERVICE}.service").write_text(
         "[Unit]\nDescription=Panel de control llama-server\n\n"
-        f"[Service]\nExecStart=/usr/bin/python3 {dest}\nRestart=on-failure\n\n"
+        f"[Service]\nExecStart=/usr/bin/python3 {dest}\nRestart=on-failure\nRestartSec=3\n\n"
         "[Install]\nWantedBy=default.target\n"
+    )
+    # Reinicia el panel solo cada vez que se guarda panel.py
+    (unit_dir / f"{PANEL_SERVICE}-reload.path").write_text(
+        "[Unit]\nDescription=Vigila panel.py para reiniciar el panel\n\n"
+        f"[Path]\nPathChanged={dest}\nUnit={PANEL_SERVICE}-reload.service\n\n"
+        "[Install]\nWantedBy=default.target\n"
+    )
+    (unit_dir / f"{PANEL_SERVICE}-reload.service").write_text(
+        "[Unit]\nDescription=Reinicia el panel tras un cambio en panel.py\nStartLimitIntervalSec=0\n\n"
+        f"[Service]\nType=oneshot\nExecStart=/usr/bin/systemctl --user restart {PANEL_SERVICE}.service\n"
     )
     n = len(write_preset())
     print(f"Configuracion de texto generada con {n} modelos: {PRESET_FILE}")
@@ -608,6 +618,7 @@ def install():
         print(f"AVISO: no existe {KOBOLD_BIN}")
     print(run("systemctl", "--user", "daemon-reload") or "daemon-reload ok")
     print(run("systemctl", "--user", "enable", PANEL_SERVICE) or "panel habilitado")
+    print(run("systemctl", "--user", "enable", "--now", f"{PANEL_SERVICE}-reload.path") or "auto-reinicio habilitado")
     print(run("systemctl", "--user", "restart", PANEL_SERVICE) or "panel (re)iniciado")
     if svc_state() == "active":
         svc("restart")
