@@ -15,6 +15,10 @@ PRESET_FILE = CFG_DIR / "presets.ini"
 IMG_ENV = CFG_DIR / "kobold.env"
 
 MODELS_DIR = Path(os.environ.get("LLAMA_MODELS_DIR", "/mnt/hdd1/gen/models"))
+# Carpetas extra separadas por ":" (por ejemplo, un NVMe para modelos que necesitan lectura rapida)
+EXTRA_MODELS_DIRS = [Path(p).expanduser() for p in
+                     os.environ.get("LLAMA_EXTRA_MODELS_DIRS", str(HOME / "models-nvme")).split(":") if p]
+MODELS_DIRS = [MODELS_DIR] + [d for d in EXTRA_MODELS_DIRS if d != MODELS_DIR]
 IMG_DIR = Path(os.environ.get("LLAMA_IMG_DIR", "/mnt/hdd1/gen/imgmodels"))
 LLAMA_SERVER = os.environ.get("LLAMA_SERVER_BIN", str(HOME / "llama.cpp/build/bin/llama-server"))
 KOBOLD_BIN = os.environ.get("KOBOLD_BIN", "/mnt/hdd1/gen/koboldcpp/koboldcpp")
@@ -29,6 +33,7 @@ IMG_PORT = 5001
 DEFAULT_GLOBAL = "n-gpu-layers = 99\nctx-size = 8192\nreasoning-format = deepseek"
 REASONING_OPTS = [("", "por defecto"), ("auto", "auto"), ("on", "activado"), ("off", "apagado")]
 LINE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\s*=\s*\S.*$")
+SPLIT_RE = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$")  # modelos partidos en varios archivos
 
 # Serializa lectura-modificacion-escritura de settings.json entre pedidos concurrentes
 SETTINGS_LOCK = threading.Lock()
@@ -73,7 +78,8 @@ def assign_ids(items):
     """Le da a cada modelo un id corto y unico a partir del nombre de archivo."""
     used = {}
     for m in items:
-        base = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(m["key"]).stem)
+        stem = re.sub(r"-\d{5}-of-\d{5}$", "", Path(m["key"]).stem)  # sin el sufijo de shard
+        base = re.sub(r"[^A-Za-z0-9._-]+", "_", stem)
         n = used.get(base, 0) + 1
         used[base] = n
         m["id"] = base if n == 1 else f"{base}_{n}"

@@ -38,8 +38,24 @@ class TextScan(unittest.TestCase):
             make(d, "mmproj-model.gguf", 60)
             make(d, "tiny.gguf", 1)
             os.symlink(Path(d, "a/model-Q4.gguf"), Path(d, "link.gguf"))
-            models = TM.scan_models(d)
+            models = TM.scan_models([d])
         self.assertEqual([m["id"] for m in models], ["model-Q4", "model-Q4_2"])
+
+    def test_split_models_count_once_with_total_size(self):
+        with tempfile.TemporaryDirectory() as d:
+            make(d, "big-Q2_0-00001-of-00002.gguf", 60)
+            make(d, "big-Q2_0-00002-of-00002.gguf", 40)
+            make(d, "mtp-big-Q8_0.gguf", 60)
+            make(d, "rota-00001-of-00002.gguf", 60)  # falta el shard 2: todavia se esta bajando
+            models = TM.scan_models([d])
+        self.assertEqual([(m["id"], m["size"]) for m in models], [("big-Q2_0", 100 * MB)])
+
+    def test_multiple_dirs_keys(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            make(a, "uno.gguf", 60)
+            make(b, "sub/dos.gguf", 60)
+            models = TM.scan_models([a, b])
+        self.assertEqual([m["key"] for m in models], ["uno.gguf", str(Path(b, "sub/dos.gguf"))])
 
 
 class Preset(unittest.TestCase):

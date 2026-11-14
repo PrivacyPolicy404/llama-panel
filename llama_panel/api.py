@@ -33,7 +33,7 @@ def config():
     sel = IM.pick_img(settings, imgs)
     return {
         "global": settings["global"],
-        "models_dir": str(C.MODELS_DIR),
+        "models_dir": "  ·  ".join(str(d) for d in C.MODELS_DIRS if d.is_dir()) or str(C.MODELS_DIR),
         "img_dir": str(C.IMG_DIR),
         "vram_total": hardware.latest().get("vram_total"),
         "reasoning_opts": C.REASONING_OPTS,

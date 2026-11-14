@@ -7,26 +7,42 @@ from . import config as C
 
 MTP_RE = re.compile(r"(^|[-_.])MTP([-_.]|$)")
 MIN_SIZE = 50 * 1024 * 1024
+AUX_PREFIXES = ("mmproj", "mtp-", "mtp_")  # proyectores de vision y borradores MTP sueltos: no son modelos
 
 
-def scan_models(models_dir=None):
-    models_dir = Path(models_dir or C.MODELS_DIR)
-    found = []
-    if not models_dir.is_dir():
-        return found
-    seen = set()
-    for p in sorted(models_dir.rglob("*.gguf")):
-        if p.name.lower().startswith("mmproj"):
+def _shard_size(p, total):
+    """Suma el tamano de todos los shards de un modelo partido (...-00001-of-0000N.gguf)."""
+    size = 0
+    for i in range(1, total + 1):
+        q = p.with_name(C.SPLIT_RE.sub(f"-{i:05d}-of-{total:05d}.gguf", p.name))
+        size += os.path.getsize(os.path.realpath(q))
+    return size
+
+
+def scan_models(models_dirs=None):
+    """Busca .gguf en todas las carpetas. La clave es la ruta relativa en la primera carpeta
+    (compatible con ajustes viejos) y la ruta absoluta en las demas."""
+    dirs = [Path(d) for d in (models_dirs or C.MODELS_DIRS)]
+    found, seen = [], set()
+    for idx, models_dir in enumerate(dirs):
+        if not models_dir.is_dir():
             continue
-        try:
-            real = os.path.realpath(p)
-            size = os.path.getsize(real)
-        except OSError:
-            continue
-        if real in seen or size < MIN_SIZE:
-            continue
-        seen.add(real)
-        found.append({"key": str(p.relative_to(models_dir)), "path": str(p), "size": size})
+        for p in sorted(models_dir.rglob("*.gguf")):
+            if p.name.lower().startswith(AUX_PREFIXES):
+                continue
+            split = C.SPLIT_RE.search(p.name)
+            if split and int(split[1]) > 1:  # solo el primer shard representa al modelo
+                continue
+            try:
+                real = os.path.realpath(p)
+                size = _shard_size(p, int(split[2])) if split else os.path.getsize(real)
+            except OSError:  # falta algun shard (por ejemplo, todavia se esta bajando)
+                continue
+            if real in seen or size < MIN_SIZE:
+                continue
+            seen.add(real)
+            key = str(p.relative_to(models_dir)) if idx == 0 else str(p)
+            found.append({"key": key, "path": str(p), "size": size})
     return C.assign_ids(found)
 
 
