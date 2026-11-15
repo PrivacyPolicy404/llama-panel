@@ -97,6 +97,9 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
   estaban activas; las ~430 sumas sin nombre por token eran la combinación de los 10 expertos (9 sumas por capa).
   La fusión `multi_add` estaba apagada en Polaris por exigir RTE fp16; habilitada: 2980 → 2591 operaciones por token,
   Flash-Next 13.4 → 13.8 tok/s sin MTP (15.0 → 15.7 por el router), Qwen3.6 27.8 → 28.7.
+- **Reloj de la memoria de la GPU:** con los MoE la GPU trabaja a ráfagas y amdgpu baja la VRAM a 1000 MHz en las pausas.
+  `scripts/install-gpu-mclk.sh` (una vez, con sudo) instala un ayudante root; los units del router y de KoboldCpp fijan
+  la memoria en 2000 MHz al arrancar y la devuelven a `auto` al parar. Flash-Next con MTP +2–3 %.
 - **Expertos en el CPU (parche 5):** el kernel Q2_0 viejo era el límite (3.8 GB/s por hilo, la RAM da 40). Con el nuevo
   Flash-Next pasa a 15.2 tok/s sin MTP y **17.6 por el router**. Detalle en `analisis-rendimiento.md` 5.8.
 - El lightning indexer crece con el contexto (0.27 ms/token a 136 tokens, 0.74 a 19K) pero sigue siendo <1 % del total;

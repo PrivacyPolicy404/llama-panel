@@ -56,10 +56,13 @@ Reglas que salieron de errores reales:
    Para medir se compila una copia aparte de `libggml-vulkan` cambiando ese assert por
    `if (!ctx->compute_ctx.expired()) ggml_backend_vk_synchronize(backend);` y se restaura el árbol. No está en el fork.
 7. `perf` necesita `sudo sysctl kernel.perf_event_paranoid=1` (vuelve a 4 al reiniciar).
-8. **El medidor de Vulkan serializa todo**: la suma por operación exagera el costo de las operaciones chicas
+8. **Una mejora de una operación no es una mejora del modelo**: dos veces una matmul bajó 25–60 % en `test-backend-ops`
+   y el total quedó igual. Siempre cerrar con un A/B de punta a punta, y con MTP si es el uso real.
+9. **Los techos de un microbenchmark sin afinar son pesimistas** (5.8: se predijo +3 % y dio +12.5 % con prefetch).
+10. **El medidor de Vulkan serializa todo**: la suma por operación exagera el costo de las operaciones chicas
    (decía 6–8 ms, eran ~1.7). Para saber cuánto vale de verdad sacar operaciones, despacharlas dos veces (5.7);
    saltearlas no sirve en un MoE (el router colapsa y el CPU trabaja menos).
-9. Trampas del entorno de trabajo: el scratchpad vive en `/tmp` y **se borra al reiniciar**; `pkill -f` con un patrón
+11. Trampas del entorno de trabajo: el scratchpad vive en `/tmp` y **se borra al reiniciar**; `pkill -f` con un patrón
    que aparece en el propio comando mata la shell; en una corrida en segundo plano, las líneas
    `VAR=valor comando` de un script se saltearon sin error (correr esas variantes en primer plano o con `export`).
 
@@ -250,6 +253,30 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 - Qwen3.6 no cambia (sus expertos son Q4_K).
 - Verificación: `test-backend-ops -o MUL_MAT_ID -b Vulkan0` (el CPU es la referencia) → todos los `q2_0` OK.
 
+### 5.9 La GPU con MTP, y el reloj de la memoria (2026-11-15, temp 0)
+
+1. **Costo real por tipo de peso** (despachar dos veces las `MUL_MAT` de un tipo, sin MTP): Q8_0 +9.8 ms/token
+   (1482 MiB, 158 GB/s), Q3_K +6.8 (457 MiB, **70 GB/s**), IQ4_XS +2.9 (282 MiB, 101 GB/s). Por peso, Q3_K cuesta lo
+   mismo que Q8_0: **recuantizar no ayuda** (lo que se gana en velocidad se pierde en bytes, y suma VRAM).
+2. En Polaris los shaders de menos de 4 bits están limitados por el cálculo (~330–430 Gpesos/s, cualquiera sea el
+   tamaño); Q3_K es el peor (252). MMVQ (producto punto entero) no se usa: llama.cpp lo exige acelerado y Polaris no lo tiene.
+3. **Con MTP** (cada verificación es n=3; acepta 83 %, 2.67 tokens por paso), por paso: GPU 63 ms, expertos en el CPU
+   43 ms (hasta 30 expertos distintos por capa, ~1.8 GB a ~43 GB/s: **en el techo de la RAM**), grabar comandos 6.4,
+   borradores + muestreo 17. Por token: 23.6 / 16 / 2.4 / 6.4.
+4. Probado y descartado (mejora clara en la operación, **nada de punta a punta**):
+   - IQ4_XS con n≥3: el shader dedicado se desploma (n=3 2.4×, n=8 7.7× más lento que el genérico); usar el genérico
+     desde 3 columnas lo arregla en el test (diff guardado), pero el modelo da 20.31 → 20.37.
+   - Q8_0 con 4 filas por grupo desde 2 columnas: n=3 2560×6144 122 → 93 µs; modelo 20.43 → 20.40 (y 20.96 → 20.95
+     con la memoria fija). El medidor muestra que esa matmul baja 0.6 ms y otras del mismo tramo suben lo mismo.
+   - `rm_kq = 2`: mejor con n=1, mucho peor con n=2–4. `--backend-sampling`: 20.65 → 20.72 (ruido).
+   - Cantidad de borradores (con el kernel nuevo): 1 → 19.4, **2 → 20.45**, 3 → 19.15, 4 → 18.8. Cada borrador extra
+     agranda la unión de expertos que el CPU tiene que leer, y eso ya está en el techo de la RAM.
+5. **Reloj de la memoria de la GPU**: muestreando cada 10 ms durante una generación con MTP, el núcleo está siempre en
+   1366 MHz pero **la memoria está en 1000 MHz (la mitad) el 16 % del tiempo**: amdgpu la baja en las pausas en que la
+   GPU espera al CPU. Fijada en 2000 MHz (`manual` + `pp_dpm_mclk = 2`): con MTP 20.4–20.65 → **20.80 / 21.06 / 21.02**
+   (+2–3 %), prompt 60 → 61; sin MTP igual (15.2). Se automatizó: `scripts/install-gpu-mclk.sh` (ayudante root +
+   sudoers) y los units del router y de KoboldCpp lo piden al arrancar y lo liberan al parar.
+
 ---
 
 ## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -331,6 +358,9 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Unir `hc_down` + `hc_inject` (`-hcq8m`) | +0.8 %: no paga el parche en el grafo (5.7) |
 | Fusionar / hornear las operaciones chicas | Techo medido +2.4 % (todas juntas cuestan ~1.7 ms/token, 5.7) |
 | Ablación salteando operaciones | Resultado falso: el router de expertos colapsa (5.7) |
+| Recuantizar Q3_K (a Q4_K, IQ3_S, Q8_0) | Por peso cuesta igual; suma VRAM o arriesga calidad (5.9) |
+| Afinar filas por grupo / shader genérico de IQ4_XS | Mejora la operación, nada de punta a punta (5.9) |
+| 3–4 borradores MTP, `--backend-sampling` | Peor / ruido (5.9) |
 
 ---
 
@@ -347,8 +377,8 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 
 1. ~~Más fusiones de operaciones chicas~~: medido en 5.7, techo +2.4 %. Descartado.
 2. ~~Expertos en el CPU~~: hecho (5.8, parche 5). Ahora están en el techo de la RAM (~40 GB/s).
-3. **La GPU** (~38 ms/token, el tramo más largo): las matmul `q3_K` corren a ~80 GB/s contra ~200 de las `q8_0`
-   (Q3_K rinde mal en GCN). Medirlas con el método de despachar dos veces antes de recuantizar o tocar el shader.
+3. ~~La GPU, operación por operación~~: medido en 5.9. Las mejoras de shaders sueltos no llegan al total; la
+   memoria fija sí (+2–3 %). Queda entender por qué el tramo de GPU no baja cuando baja una operación.
 4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms).
 5. Solapar CPU y GPU (hoy se turnan): cambio grande en el scheduler.
 6. Atención con contexto largo (lo que más crece con los 32K del modo IA).

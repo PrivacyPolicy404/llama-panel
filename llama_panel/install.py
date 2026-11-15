@@ -9,6 +9,12 @@ from .text_models import write_preset
 
 UNIT_DIR = C.HOME / ".config" / "systemd" / "user"
 
+# Memoria de la GPU al máximo mientras corre un servidor de modelos (scripts/install-gpu-mclk.sh).
+# El "-" hace que se ignore si el ayudante no está instalado.
+MCLK_HELPER = "/usr/local/sbin/llama-gpu-mclk"
+GPU_MCLK = (f"ExecStartPre=-/usr/bin/sudo -n {MCLK_HELPER} high\n"
+            f"ExecStopPost=-/usr/bin/sudo -n {MCLK_HELPER} auto\n")
+
 
 def units():
     """{nombre_de_archivo: contenido} de todos los units que maneja el panel."""
@@ -18,7 +24,7 @@ def units():
         f"{C.SERVICE}.service": (
             "[Unit]\nDescription=llama.cpp router server (Vulkan)\n"
             f"Conflicts={C.IMG_SERVICE}.service\n\n"
-            "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n"
+            "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n" + GPU_MCLK +
             f"ExecStart={C.LLAMA_SERVER} --models-preset {C.PRESET_FILE} --models-max 1 "
             f"--host 0.0.0.0 --port {C.CHAT_PORT}\n"
             "Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"
@@ -26,7 +32,7 @@ def units():
         f"{C.IMG_SERVICE}.service": (
             "[Unit]\nDescription=KoboldCpp generador de imagenes (Vulkan)\n"
             f"Conflicts={C.SERVICE}.service\n\n"
-            "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n"
+            "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n" + GPU_MCLK +
             f"EnvironmentFile={C.IMG_ENV}\n"
             f"ExecStart={C.KOBOLD_BIN} $KOBOLD_ARGS\n"
             "Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"
