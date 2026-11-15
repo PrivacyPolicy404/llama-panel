@@ -336,6 +336,21 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   MHz). **Conclusión final: este SMU no acepta cambios de nivel de memoria con la tabla modificada, con o sin
   pantallas de por medio, con o sin más voltaje. Placa de fábrica.**
 
+### 5.14 64K de contexto con la cache KV en Q8_0 (2026-11-15)
+
+- Flash-Next es híbrido: solo una de cada cuatro capas tiene atención completa (el resto es recurrente, estado fijo de
+  338 MiB), así que la cache KV es chica: **1.9 GiB a 64K en F16** (1536 + 384 del borrador MTP). En Q8_0: **1.0 GiB**.
+- Calidad (`llama-perplexity`, 6 tramos de 4096, F16 contra Q8_0): PPL 0.99987×, **KLD media 0.0035**, 99 % 0.041,
+  **mismo token 98.05 %**. Despreciable.
+- VRAM con escritorio, 64K: F16 **7.99 GiB** (se pasa, gen 15.9) / Q8_0 **7.26 GiB** (gen 21.5, temp 0). Con un
+  prompt de **29 527 tokens**: pico 7.71 GiB, prompt 105.9 tok/s, gen 16.5 con todo ese contexto (MTP acepta 90 %).
+  En modo IA la misma prueba dio prompt 63 tok/s y la lectura de VRAM 7.98: no se investigó, con escritorio rinde mejor.
+- Costo con prompt corto (temp 0, MTP, alternado ×2, prompt de 3287): 8K F16 20.64 / 20.45 gen, 134 prompt;
+  64K Q8_0 20.09 / 20.02 gen, 129 prompt → **−2.4 % gen, −3.5 % prompt**. Router: 17.4 / 131 (referencia 18.2 / 135).
+- **Queda como configuración normal** (`ctx-size = 65536` + `cache-type-k/v(-draft) = q8_0`): 8× el contexto por ~3 %.
+  El modo IA ya no hace falta para el contexto largo (se sacó el 32K de las opciones de modo IA).
+  Reproducir: `tools/bench/ctx_kv_test.sh`.
+
 ---
 
 ## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -431,7 +446,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Modelo | Router | Claves |
 |---|---|---|
 | Qwen3.6-35B-A3B | 28.8 gen, 228 prompt largo, VRAM 7.1 | `cpu-moe`, `load-mode = none`, cache 4608 + cpu 0.8 |
-| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16; modo IA: 32K de contexto |
+| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 (con 64K Q8_0: 17.4 / 131, VRAM 7.5) | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16, **64K de contexto con KV en Q8_0** (con escritorio, ~3 % más lento) |
 
 ---
 
@@ -443,7 +458,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
    memoria fija sí (+2–3 %). Queda entender por qué el tramo de GPU no baja cuando baja una operación.
 4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms).
 5. Solapar CPU y GPU (hoy se turnan): cambio grande en el scheduler.
-6. Atención con contexto largo (lo que más crece con los 32K del modo IA).
+6. Atención con contexto largo (lo que más crece con los 64K: gen 20 → 16.5 con 30K de contexto).
 7. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 
 ## 11. Reproducir las mediciones clave

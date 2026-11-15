@@ -203,6 +203,7 @@ ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
 - Velocidad: casi nada. Flash-Next igual; Qwen3.6 con cache 5600 MiB +2 % (no vale una configuración aparte);
   tandas de 4096 en Flash-Next van mucho peor (prompt 45 tok/s).
 - **Contexto: Flash-Next pasa de 8K a 32K** (VRAM 7.56 GB en reposo, 7.72 con un prompt de 16K; con escritorio no entra).
+  Superado: con la cache KV en Q8_0 entran **64K con escritorio** (pico 7.71 GB con 29.5K de prompt; ver bitácora 5.14).
   Prompt de 16 224 tokens a 124 tok/s, generación 16.9 tok/s. 64K deja la VRAM en 7.97: demasiado justo.
 - Para eso cada modelo tiene **«opciones extra en modo IA»** (`extra_ai` en settings.json): se suman y pisan a las normales
   solo con el modo IA activo. Al entrar o salir del modo IA el panel regenera el preset y recarga el modelo cargado.
