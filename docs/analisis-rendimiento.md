@@ -38,6 +38,7 @@ Herramientas (todas en `tools/bench/`, con instrucciones en su encabezado):
 | `cpu_profile.sh` | Perfil del CPU con `perf` |
 | `utilization.py` | % de GPU ocupada y núcleos de CPU durante una generación |
 | `gguf_sizes.py` | Tamaño de los expertos por capa (para calcular cuántas capas entran en el GTT) |
+| `gpu_mem_watch.sh` | VRAM y GTT del `llama-server` según el kernel (fdinfo): muestra lo que pidió como VRAM y terminó en GTT |
 
 Reglas que salieron de errores reales:
 
@@ -65,6 +66,10 @@ Reglas que salieron de errores reales:
 11. Trampas del entorno de trabajo: el scratchpad vive en `/tmp` y **se borra al reiniciar**; `pkill -f` con un patrón
    que aparece en el propio comando mata la shell; en una corrida en segundo plano, las líneas
    `VAR=valor comando` de un script se saltearon sin error (correr esas variantes en primer plano o con `export`).
+12. **«VRAM usada» no dice si entra** (5.15): cuando lo que pide llama.cpp no cabe, el kernel manda el sobrante a GTT
+   sin avisar y `mem_info_vram_used` queda por debajo de 8 GB como si sobrara. Ver lo del proceso con
+   `gpu_mem_watch.sh`: si su GTT supera lo fijado a propósito (29.4 GiB de expertos en Flash-Next), no entró.
+   Y lo contrario: VRAM al 100 % (7.97 de 8) tampoco sirve, el driver necesita margen y los prompts largos se frenan.
 
 ---
 
@@ -344,12 +349,53 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   **mismo token 98.05 %**. Despreciable.
 - VRAM con escritorio, 64K: F16 **7.99 GiB** (se pasa, gen 15.9) / Q8_0 **7.26 GiB** (gen 21.5, temp 0). Con un
   prompt de **29 527 tokens**: pico 7.71 GiB, prompt 105.9 tok/s, gen 16.5 con todo ese contexto (MTP acepta 90 %).
-  En modo IA la misma prueba dio prompt 63 tok/s y la lectura de VRAM 7.98: no se investigó, con escritorio rinde mejor.
+  En modo IA la misma prueba dio prompt 63 tok/s y VRAM 7.98. **Esa lectura de 7.71 engañaba: ver 5.15.**
 - Costo con prompt corto (temp 0, MTP, alternado ×2, prompt de 3287): 8K F16 20.64 / 20.45 gen, 134 prompt;
   64K Q8_0 20.09 / 20.02 gen, 129 prompt → **−2.4 % gen, −3.5 % prompt**. Router: 17.4 / 131 (referencia 18.2 / 135).
-- **Queda como configuración normal** (`ctx-size = 65536` + `cache-type-k/v(-draft) = q8_0`): 8× el contexto por ~3 %.
-  El modo IA ya no hace falta para el contexto largo (se sacó el 32K de las opciones de modo IA).
-  Reproducir: `tools/bench/ctx_kv_test.sh`.
+- Primero quedó como configuración normal; a pedido del usuario pasó a las **opciones de modo IA** (sin modo IA,
+  8K en F16, que es ~3 % más rápido). Reproducir: `tools/bench/ctx_kv_test.sh`.
+
+### 5.15 Lo que pide de verdad el contexto largo, y el borrador en tandas de 512 (2026-11-15)
+
+- La pista: en modo IA (más VRAM libre) el mismo 64K Q8_0 andaba **peor** que con escritorio: prompt de 29.5K a
+  64 tok/s contra 106, y la VRAM clavada en 7.98 desde la carga (con escritorio arranca en 7.30 y sube despacio).
+- Medido por proceso (fdinfo de DRM, `tools/bench/gpu_mem_watch.sh`), prompt de 6567, temp 0:
+
+| 64K Q8_0 | llama en VRAM | llama en GTT | prompt |
+|---|---|---|---|
+| con escritorio | 7.23 | 30.37 | 126 |
+| modo IA | **7.97** | 29.6 | 119 |
+
+  Lo pedido es igual (~37.6 GiB en total), pero **llama.cpp pide ~8 GiB de VRAM**. Con escritorio el kernel deja
+  ~0.75 GiB en GTT desde la carga (las 44 capas fijas son 29.4 GiB; el resto es lo que no entró), y la lectura total
+  (7.71) parecía tener margen. En modo IA entra todo justo y la placa queda llena.
+- Quién lo usa: los buffers de cálculo, **902 MiB del modelo y 867 MiB del borrador MTP**, los dos dimensionados para
+  tandas de 2048. El borrador tiene su propia opción: `--spec-draft-n-ubatch`.
+
+| 64K Q8_0, con escritorio | llama en VRAM | GTT | gen | prompt |
+|---|---|---|---|---|
+| borrador en tandas de 2048 | 7.23 | 30.37 (0.9 de más) | 19.15 | 127.4 |
+| 1024 | 7.60 | 29.45 | 19.38 | 132.2 |
+| **512** | **7.41** | **29.41** (nada de más) | 19.21 | **132.0** |
+
+- Con 8K F16 (alternado ×2, prompt de 3287): 2048 → 20.65 / 20.57 gen, 134.1 / 134.0 prompt, VRAM 7.09 / 7.23;
+  512 → 20.43 / 20.76, 133.5 / 133.6, VRAM **6.67 / 6.81**. Misma velocidad, **0.42 GiB menos**.
+- Pero con el prompt de 29.5K y escritorio, 64K con tandas de 512 bajó a **68 tok/s** (todo en VRAM: llama 7.53,
+  total 7.93). La causa no es el borrador sino **la placa casi llena**:
+
+| Prompt de 29 527 tokens, KV Q8_0 | VRAM total | prompt | gen |
+|---|---|---|---|
+| 64K, borrador 2048, escritorio (0.9 GiB en GTT) | 7.71 | 106 | 16.5 |
+| 64K, borrador 2048, modo IA | 7.98 | 64 | 16.9 |
+| 64K, borrador 512, escritorio | 7.93 | 68 | 16.6 |
+| 48K, borrador 512, escritorio | 7.57 | **109** | 14.9 |
+| **64K, borrador 512, modo IA** | **7.56** | **108.8** | 16.3 |
+
+- **Regla: con la VRAM total en ~7.9 GB o más, los prompts largos pierden ~40 %** (con 6.5K todavía no se nota).
+  Dejar ~0.3–0.4 GB libres. Con prompts cortos el umbral no aparece, así que hay que medir siempre con uno largo.
+- **Queda**: `spec-draft-n-ubatch = 512` en la configuración normal (8K F16: misma velocidad, 0.42 GiB menos) y, en las
+  opciones de modo IA, 64K con KV Q8_0 (7.56 GB, prompt largo 109, gen 16.3 con 30K de contexto). Sin modo IA, el
+  máximo con margen es ~48K. No se subió el modo IA a 80K: quedaría en ~7.8, al borde del umbral.
 
 ---
 
@@ -446,7 +492,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Modelo | Router | Claves |
 |---|---|---|
 | Qwen3.6-35B-A3B | 28.8 gen, 228 prompt largo, VRAM 7.1 | `cpu-moe`, `load-mode = none`, cache 4608 + cpu 0.8 |
-| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 (con 64K Q8_0: 17.4 / 131, VRAM 7.5) | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16, **64K de contexto con KV en Q8_0** (con escritorio, ~3 % más lento) |
+| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 (con 64K Q8_0: 17.4 / 131, VRAM 7.5) | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16, borrador MTP en tandas de 512; modo IA: **64K de contexto con KV en Q8_0** (~3 % más lento) |
 
 ---
 
@@ -459,6 +505,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms).
 5. Solapar CPU y GPU (hoy se turnan): cambio grande en el scheduler.
 6. Atención con contexto largo (lo que más crece con los 64K: gen 20 → 16.5 con 30K de contexto).
+8. ~0.4 GiB libres sin modo IA desde 5.15 (borrador en tandas de 512), sin uso todavía.
 7. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 
 ## 11. Reproducir las mediciones clave

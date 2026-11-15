@@ -7,7 +7,7 @@ Por cada configuracion arranca un llama-server en el puerto 18081 (aparte del ro
 hace 1 corrida de calentamiento + 2 medidas y imprime una linea JSON con prompt_tps, gen_tps y VRAM.
 Escribe un log bench-<etiqueta>.log en la carpeta actual: correrlo desde una carpeta temporal.
 
-Variables de entorno:
+Variables de entorno (REPS: cuántos pedidos, el primero de calentamiento; por defecto 3):
   PROMPT_MULT=8     largo del prompt (8 ~ 335 tokens, 64 ~ 2600 tokens)
   N_PREDICT=256     tokens a generar por corrida
   PROMPT_FILE=...   usar el texto de un archivo como prompt (crudo, igual en las 3 corridas)
@@ -65,13 +65,13 @@ for spec in sys.argv[2:]:
                 time.sleep(1)
         load_s = time.time() - t0
         runs = []
-        for i in range(3):
+        for i in range(max(2, int(os.environ.get("REPS", "3")))):  # la primera es de calentamiento
             r = req("/completion", {"prompt": PROMPT if os.environ.get("PROMPT_FILE") else PROMPT + f" (variante {i})", "n_predict": N_PREDICT, "temperature": float(os.environ.get("TEMP", "0.7")),
                                     "ignore_eos": True, "cache_prompt": False})
             t = r["timings"]
             runs.append((t["prompt_per_second"], t["predicted_per_second"], t["prompt_n"]))
-        pp = sum(r[0] for r in runs[1:]) / 2
-        tg = sum(r[1] for r in runs[1:]) / 2
+        pp = sum(r[0] for r in runs[1:]) / len(runs[1:])
+        tg = sum(r[1] for r in runs[1:]) / len(runs[1:])
         res = {"config": label, "args": extra, "carga_s": round(load_s), "prompt_tps": round(pp, 1),
                "gen_tps": round(tg, 2), "gen_primera": round(runs[0][1], 2), "vram_gib": round(vram(), 2),
                "prompt_tokens": runs[1][2]}
