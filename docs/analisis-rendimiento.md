@@ -297,6 +297,16 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 - **Router con todo lo de 5.9–5.11** (memoria fija, envíos cada 16 nodos, borradores probabilísticos), 3 corridas del
   test de humo: generación **18.3 / 17.9 / 18.4** (antes 17.6), prompt largo 135.3 (antes 132.6). Nueva referencia.
 
+### 5.12 Cuánto cuestan los borradores, y recortarles el vocabulario (2026-11-15)
+
+- Lib temporal con tiempos por grafo: por paso, verificación ~114 ms, **3 grafos de borrador de 3.3 ms** (~10 ms, 8 %),
+  fuera de todo grafo ~3.3 ms. La mitad de cada borrador es su salida (248320 × 2560 Q4_0, 341 MiB).
+- Borrador sobre los primeros K ids (resto en -inf; el modelo sigue verificando con el vocabulario entero):
+  temp 0, K=65536: misma aceptación, +3 %. **Temp 0.8: aceptación 75 → 63 % (K=65536) / 68 % (K=98304), -5 a -7 %.**
+  Con muestreo importa toda la distribución, y en español mucha probabilidad cae en ids altos. Descartado
+  (diff en `patches/experimentos/`).
+- La espera por la GPU ya está bien resuelta en llama.cpp: duerme hasta el 80 % del tramo y después espera activa.
+
 ---
 
 ## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -382,6 +392,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Afinar filas por grupo / shader genérico de IQ4_XS | Mejora la operación, nada de punta a punta (5.9) |
 | 3–4 borradores MTP, `--backend-sampling` | Peor / ruido (5.9) |
 | Enviar a la GPU cada 4–8 nodos | Peor que 16 (el costo de cada envío empieza a pesar, 5.10) |
+| Vocabulario recortado para el borrador MTP | +3 % a temp 0, -6 % a temp 0.8 (5.12) |
 
 ---
 

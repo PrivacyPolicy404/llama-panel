@@ -1,0 +1,25 @@
+diff --git a/src/models/qwen4exp.cpp b/src/models/qwen4exp.cpp
+index 181e4dc..ddc64a0 100644
+--- a/src/models/qwen4exp.cpp
++++ b/src/models/qwen4exp.cpp
+@@ -660,7 +660,19 @@ llama_model_qwen4exp::graph_mtp::graph_mtp(const llm_graph_params & params) :
+     cb(cur, "result_norm", -1);
+     res->t_embd = cur;
+ 
+-    cur = build_lora_mm(model.output, cur, model.output_s);
++    // LLAMA_MTP_VOCAB_K=K: draft only over the first K token ids (the BPE merges, so the most frequent ones) and set
++    // the other logits to -inf. The output matmul reads K rows instead of all of them; the target still verifies
++    // against the full vocabulary, so the text does not change, only the draft acceptance can.
++    static const int64_t mtp_vocab_k = [] { const char * e = getenv("LLAMA_MTP_VOCAB_K"); return e ? atoll(e) : 0LL; }();
++    const int64_t n_vocab_out = model.output->ne[1];
++    if (mtp_vocab_k > 0 && mtp_vocab_k < n_vocab_out && !model.output_s) {
++        ggml_tensor * w_k  = ggml_view_2d(ctx0, model.output, model.output->ne[0], mtp_vocab_k, model.output->nb[1], 0);
++        ggml_tensor * head = build_lora_mm(w_k, cur);
++        ggml_tensor * tail = ggml_fill(ctx0, ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_vocab_out - mtp_vocab_k, head->ne[1]), -INFINITY);
++        cur = ggml_concat(ctx0, head, tail, 0);
++    } else {
++        cur = build_lora_mm(model.output, cur, model.output_s);
++    }
+     cb(cur, "result_output", -1);
+     res->t_logits = cur;
+ }
