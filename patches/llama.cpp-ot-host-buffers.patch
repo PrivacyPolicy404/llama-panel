@@ -1,3 +1,25 @@
+From fc10f5de91922b729229be908320fc9112130ff2 Mon Sep 17 00:00:00 2001
+From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 21:44:27 -0300
+Subject: [PATCH] common, llama-bench : allow pinned host buffer types in
+ --override-tensor
+
+Lets -ot target the host buffer type of each device (e.g. Vulkan_Host, CUDA_Host),
+so only part of the tensors kept in host memory are pinned. Useful when pinned
+memory is capped (amdgpu GTT defaults to half of RAM) and the MoE experts do not fit.
+
+The loader now warns when an explicit host buffer override is ignored because mmap
+is enabled.
+
+Local patch used by llama-panel; not submitted upstream.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ common/arg.cpp                    | 5 +++++
+ src/llama-model-loader.cpp        | 9 +++++++++
+ tools/llama-bench/llama-bench.cpp | 4 ++++
+ 3 files changed, 18 insertions(+)
+
 diff --git a/common/arg.cpp b/common/arg.cpp
 index 6bf9355..65e3180 100644
 --- a/common/arg.cpp
@@ -63,3 +85,6 @@ index 5cbdda1..b4ed0df 100644
                      }
                  }
                  auto override_group_span_len = std::strcspn(value, ",");
+-- 
+2.43.0
+

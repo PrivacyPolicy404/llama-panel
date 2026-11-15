@@ -48,6 +48,11 @@ python3 panel.py --install
 Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-img`) y arranca el panel.
 La configuración del usuario vive en `~/.config/llama-panel/` (fuera del repo).
 
+## llama.cpp
+
+Se usa el fork `PrivacyPolicy404/llama.cpp` (rama `ot-host-buffers`) con un parche local; ver [patches/README.md](patches/README.md).
+Para actualizarlo: `scripts/update-llama.sh` (con `--check` solo informa).
+
 ## Desarrollo
 
 El servicio corre el código directamente desde esta carpeta y `llama-panel-reload.path` reinicia el panel cada vez
