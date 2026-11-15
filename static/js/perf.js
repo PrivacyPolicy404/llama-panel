@@ -12,10 +12,11 @@ export function renderPerf() {
   const stat = (k, v, u) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}${u ? ` <small>${u}</small>` : ''}</div></div>`;
   $('#perf-summary').innerHTML =
     stat('Generación (mediana)', fix(median(recent.map(r => r.g_tps))), 'tok/s') +
-    stat('Prompt (mediana)', fix(median(recent.map(r => r.p_tps)), 0), 'tok/s') +
+    stat('Prompt largo (mediana)', (() => { const l = reqs.filter(r => r.p_tok >= 512); return l.length ? fix(median(l.map(r => r.p_tps)), 0) : '–'; })(), 'tok/s') +
     stat('Aceptación MTP', acc == null ? '–' : fix(acc * 100, 0), acc == null ? '' : '%') +
     stat('Respuestas registradas', st.text.length, '');
   drawBars(reqs);
+  renderModelTable(st.text);
 
   const t = $('#perf-table');
   if (!reqs.length) {
@@ -33,6 +34,34 @@ export function renderPerf() {
     ti.innerHTML = '<tr><th>Hora</th><th class="r">Pasos</th><th class="r">Duración</th><th class="r">Segundos por paso</th></tr>' +
       [...st.img].reverse().slice(0, 20).map(g => `<tr><td>${clock(g.t)}</td><td class="r">${g.steps}</td><td class="r">${dur(g.secs)}</td><td class="r">${fix(g.secs / g.steps, 2)}</td></tr>`).join('');
   }
+}
+
+// resumen por modelo de todas las respuestas registradas (el log del router guarda las ultimas)
+function renderModelTable(all) {
+  const t = $('#perf-models');
+  const by = new Map();
+  for (const r of all) {
+    if (r.g_tps == null) continue;
+    if (!by.has(r.model)) by.set(r.model, []);
+    by.get(r.model).push(r);
+  }
+  if (!by.size) { t.innerHTML = '<tr><td class="empty">Sin datos todavía.</td></tr>'; return; }
+  const rows = [...by.entries()].map(([model, rs]) => {
+    const longP = rs.filter(r => r.p_tok >= 512);
+    const dr = rs.filter(r => r.draft);
+    const acc = dr.length ? dr.reduce((a, r) => a + r.draft.acc, 0) / Math.max(1, dr.reduce((a, r) => a + r.draft.gen, 0)) : null;
+    return { model, n: rs.length, g: median(rs.map(r => r.g_tps)), best: Math.max(...rs.map(r => r.g_tps)),
+      p: longP.length ? median(longP.map(r => r.p_tps)) : null, acc,
+      toks: rs.reduce((a, r) => a + (r.g_tok || 0), 0), last: Math.max(...rs.map(r => r.t)) };
+  }).sort((a, b) => b.last - a.last);
+  t.innerHTML = '<tr><th>Modelo</th><th class="r">Respuestas</th><th class="r">Generación (mediana)</th><th class="r">Mejor</th>' +
+    '<th class="r" title="Mediana con prompts de 512 tokens o más: con prompts cortos la velocidad no dice nada">Prompt largo</th>' +
+    '<th class="r">Aciertos MTP</th><th class="r">Tokens generados</th><th>Última</th></tr>' +
+    rows.map(r => `<tr><td class="name" title="${esc(r.model)}">${esc(r.model)}</td><td class="r">${r.n}</td>
+      <td class="r"><b>${fix(r.g)}</b> tok/s</td><td class="r">${fix(r.best)}</td>
+      <td class="r">${r.p != null ? fix(r.p, 0) + ' tok/s' : '–'}</td>
+      <td class="r">${r.acc != null ? fix(r.acc * 100, 0) + ' %' : '–'}</td>
+      <td class="r">${r.toks.toLocaleString('es-AR')}</td><td>${clock(r.last)}</td></tr>`).join('');
 }
 
 function niceMax(v) {
