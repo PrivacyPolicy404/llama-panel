@@ -19,6 +19,42 @@ SVC = {"active": ("●", "Encendido"), "activating": ("◌", "Arrancando"), "dea
        "failed": ("✖", "Error"), "inactive": ("○", "Apagado")}
 WATCH_PROCS = ("llama-server", "koboldcpp", "python3")
 
+# Colores dentro del texto: caracteres de control que no se imprimen. curses los traduce a colores (la consola de
+# Linux tiene 16) y las funciones de abajo cuentan solo los caracteres visibles. Sin costo de VRAM.
+RESET, GREEN, YELLOW, RED, CYAN, DIM, BLUE, MAGENTA = (chr(c) for c in range(0x11, 0x19))
+MARKS = (RESET, GREEN, YELLOW, RED, CYAN, DIM, BLUE, MAGENTA)
+ANSI = {RESET: "\x1b[0m", GREEN: "\x1b[32m", YELLOW: "\x1b[33m", RED: "\x1b[31m", CYAN: "\x1b[36;1m",
+        DIM: "\x1b[2m", BLUE: "\x1b[34;1m", MAGENTA: "\x1b[35m"}
+
+
+def vlen(text):
+    return len(text) - sum(text.count(m) for m in MARKS)
+
+
+def vcut(text, width):
+    """Corta a `width` caracteres visibles (las marcas no cuentan)."""
+    out, n = [], 0
+    for ch in text:
+        if ch in MARKS:
+            out.append(ch)
+        elif n < width:
+            out.append(ch)
+            n += 1
+    return "".join(out)
+
+
+def vpad(text, width):
+    t = vcut(text, width)
+    return t + " " * (width - vlen(t)) + RESET
+
+
+def strip_marks(text):
+    return "".join(ch for ch in text if ch not in MARKS)
+
+
+def level_color(frac, warn=0.6, bad=0.85):
+    return GREEN if frac < warn else YELLOW if frac < bad else RED
+
 
 # ---------- datos ----------
 def fetch(path, timeout=3):
@@ -91,14 +127,17 @@ class CpuSampler:
 
 
 # ---------- dibujo ----------
-def bar(value, total, width):
+def bar(value, total, width, warn=0.6, bad=0.85, color=True):
     frac = 0 if not total else max(0.0, min(1.0, (value or 0) / total))
     full = round(frac * width)
-    return "█" * full + "░" * (width - full)
+    if not color:
+        return "█" * full + "░" * (width - full)
+    return level_color(frac, warn, bad) + "█" * full + DIM + "░" * (width - full) + RESET
 
 
-def graph(values, width, height, lo=None, hi=None):
-    """Grafico de varias filas con bloques de octavos; devuelve las filas de arriba hacia abajo."""
+def graph(values, width, height, lo=None, hi=None, color=None):
+    """Grafico de varias filas con bloques de octavos; devuelve las filas de arriba hacia abajo.
+    color: None = sin color; "level" = cada columna verde/amarilla/roja segun su valor; o una marca fija (CYAN...)."""
     vals = [v for v in values if v is not None][-width:]
     vals = [None] * (width - len(vals)) + vals  # alineado a la derecha: lo mas nuevo al final
     real = [v for v in vals if v is not None]
@@ -110,38 +149,49 @@ def graph(values, width, height, lo=None, hi=None):
     levels = [None if v is None else (min(max(v, lo), hi) - lo) / span * height * 8 for v in vals]
     rows = []
     for r in range(height - 1, -1, -1):  # r = fila desde abajo
-        line = []
+        line, cur = [], None
         for lv in levels:
             if lv is None:
-                line.append(" ")
+                ch, col = " ", None
             else:
                 fill = max(0, min(8, round(lv - r * 8)))
-                line.append(EIGHTHS[fill] if (fill or r == 0) else " ")
+                ch = EIGHTHS[fill] if (fill or r == 0) else " "
                 if r == 0 and fill == 0:
-                    line[-1] = "▁"
-        rows.append("".join(line))
+                    ch = "▁"
+                col = None
+                if color == "level":
+                    col = level_color(lv / (height * 8))
+                elif color:
+                    col = color
+                if r == 0 and fill == 0:
+                    col = DIM  # piso: linea tenue
+            if color and col != cur and ch != " ":
+                line.append(col or RESET)
+                cur = col
+            line.append(ch)
+        rows.append("".join(line) + (RESET if color else ""))
     return rows
 
 
 def box(title, lines, width, right=""):
-    """Caja con borde redondeado y titulo, como btop."""
+    """Caja con borde redondeado y titulo (en color), como btop."""
     inner = width - 2
-    head = f"─ {title} "
+    head = f"─ {CYAN}{title}{RESET} "
     if right:
-        head = head + "─" * max(1, inner - len(head) - len(right) - 2) + f" {right} "
-    top = "╭" + (head + "─" * inner)[:inner] + "╮"
-    body = ["│" + (l + " " * inner)[:inner] + "│" for l in lines]
+        head = head + "─" * max(1, inner - vlen(head) - vlen(right) - 2) + f" {right} "
+    top = "╭" + vcut(head + "─" * inner, inner) + RESET + "╮"
+    body = ["│" + vpad(l, inner) + "│" for l in lines]
     return [top] + body + ["╰" + "─" * inner + "╯"]
 
 
 def side_by_side(a, b, gap=1):
     """Pone dos bloques de lineas uno al lado del otro."""
-    wa = max((len(x) for x in a), default=0)
-    wb = max((len(x) for x in b), default=0)
+    wa = max((vlen(x) for x in a), default=0)
+    wb = max((vlen(x) for x in b), default=0)
     h = max(len(a), len(b))
     a = a + [" " * wa] * (h - len(a))
     b = b + [" " * wb] * (h - len(b))
-    return [x.ljust(wa) + " " * gap + y for x, y in zip(a, b)]
+    return [x + " " * (wa - vlen(x)) + " " * gap + y for x, y in zip(a, b)]
 
 
 def ago(t, now):
@@ -154,21 +204,22 @@ def gpu_box(hw, samples, width):
     gw = w - 15  # " LABEL " (6) + grafico + " " + valor (8)
     bw = w - 30
     vt = hw.get("vram_total") or 8
-    lines = [f" VRAM {bar(hw.get('vram_used'), vt, bw)} {hw.get('vram_used') or 0:4.1f}/{vt:.0f}G",
-             f" GTT  {bar(hw.get('gtt_used'), 31, bw)} {hw.get('gtt_used') or 0:4.1f}/31G"]
+    # con Flash-Next la VRAM y la memoria fija (GTT) van casi llenas a proposito: rojo solo al borde
+    lines = [f" VRAM {bar(hw.get('vram_used'), vt, bw, 0.92, 0.98)} {hw.get('vram_used') or 0:4.1f}/{vt:.0f}G",
+             f" GTT  {bar(hw.get('gtt_used'), 31, bw, 0.97, 0.995)} {hw.get('gtt_used') or 0:4.1f}/31G"]
     gpu = [s.get("gpu") for s in samples]
-    rows = graph(gpu, gw, 4, 0, 100)
+    rows = graph(gpu, gw, 4, 0, 100, color="level")
     peak = hw.get("gpu_max")
     lines += [f" {'GPU' if i == 0 else ('pico' if i == 1 and peak is not None else ''):<5}{r} "
               + (f"{hw.get('gpu') or 0:d} %".rjust(7) if i == 0 else (f"{peak} %".rjust(7) if i == 1 and peak is not None else ""))
               for i, r in enumerate(rows)]
     power = [s.get("power") for s in samples]
     cap = hw.get("power_cap") or 155
-    rows = graph(power, gw, 2, 0, cap)
+    rows = graph(power, gw, 2, 0, cap, color=MAGENTA)
     lines += [f" {'WATT' if i == 0 else '':<5}{r} " + (f"{hw.get('power') or 0:.0f} W".rjust(7) if i == 0 else f"/{cap} W".rjust(7))
               for i, r in enumerate(rows)]
     temps = [s.get("temp") for s in samples]
-    lines.append(f" TEMP {''.join(graph(temps, gw, 1))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
+    lines.append(f" TEMP {''.join(graph(temps, gw, 1, 30, 90, color='level'))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
     lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)} · ventilador {hw.get('fan') or 0} rpm")
     return box("gpu · RX 580", lines, width)
 
@@ -190,7 +241,7 @@ def cpu_box(cpu, hw, width):
     lines = []
     cores = cpu.get("cores") or []
     hist = cpu.get("total_hist") or []
-    rows = graph(hist, w - 14, 3, 0, 100)
+    rows = graph(hist, w - 14, 3, 0, 100, color="level")
     total = hist[-1] if hist else 0
     lines += [f" {'total' if i == 0 else '':<5}{r} " + (f"{total:5.0f} %" if i == 0 else "") for i, r in enumerate(rows)]
     half = (len(cores) + 1) // 2
@@ -236,7 +287,7 @@ def models_box(state, stats, width, now):
         lines.append(f" última: {last['g_tps']:.1f} tok/s · prompt {last['p_tps']:.0f} · {ago(last['t'], now)}")
         tps = [r["g_tps"] for r in resp]
         top = max(tps)
-        rows = graph(tps, w - 10, 3, 0, top)
+        rows = graph(tps, w - 10, 3, 0, top, color=BLUE)
         lines += [f" {(f'{top:.0f}' if i == 0 else ''):>4} {r}" for i, r in enumerate(rows)]
         lines.append(f" {'':>4} tok/s de las últimas {min(len(tps), w - 10)} respuestas")
     return box("modelos", lines, width)
@@ -259,7 +310,7 @@ def live_box(live, stats, tps_hist, width):
     w = width - 2
     live = live or {}
     lines = [" " + live_status(live)]
-    rows = graph(list(tps_hist or []), w - 10, 3, 0)
+    rows = graph(list(tps_hist or []), w - 10, 3, 0, color=GREEN)
     top = max([v for v in (tps_hist or []) if v] or [0])
     lines += [f" {(f'{top:.0f}' if i == 0 and top else ''):>4} {r}" for i, r in enumerate(rows)]
     lines.append(f" {'':>4} tok/s en vivo")
@@ -276,7 +327,7 @@ def live_box(live, stats, tps_hist, width):
         lines.append(f" MTP      acierta {live['draft_rate'] * 100:.0f} %{extra}")
         rates = [r["draft"]["rate"] * 100 for r in resp if r.get("draft")][-(w - 10):]
         if len(rates) > 1:
-            lines.append(f" {'':>4} {graph(rates, w - 10, 1, 0, 100)[0]}")
+            lines.append(f" {'':>4} {graph(rates, w - 10, 1, 0, 100, color='level')[0]}")
             lines.append(f" {'':>4} aciertos del MTP por respuesta (0-100 %)")
     if resp:
         toks = sum(r.get("g_tok") or 0 for r in resp)
@@ -411,8 +462,13 @@ def run_curses():
         curses.init_pair(2, curses.COLOR_GREEN, -1)
         curses.init_pair(3, curses.COLOR_YELLOW, -1)
         curses.init_pair(4, curses.COLOR_RED, -1)
+        curses.init_pair(5, curses.COLOR_BLUE, -1)
+        curses.init_pair(6, curses.COLOR_MAGENTA, -1)
         styles = {"": curses.A_NORMAL, "title": curses.color_pair(1) | curses.A_BOLD, "dim": curses.A_DIM,
                   "good": curses.color_pair(2), "warn": curses.color_pair(3), "bad": curses.color_pair(4) | curses.A_BOLD}
+        marks = {GREEN: curses.color_pair(2), YELLOW: curses.color_pair(3) | curses.A_BOLD,
+                 RED: curses.color_pair(4) | curses.A_BOLD, CYAN: curses.color_pair(1) | curses.A_BOLD,
+                 DIM: curses.A_DIM, BLUE: curses.color_pair(5) | curses.A_BOLD, MAGENTA: curses.color_pair(6) | curses.A_BOLD}
         scr.timeout(2000)
         sampler = CpuSampler()
         sampler.sample()
@@ -431,8 +487,18 @@ def run_curses():
             h, w = scr.getmaxyx()
             scr.erase()
             for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist)):
+                base = styles.get(style, curses.A_NORMAL)
+                attr, x, seg = base, 0, []
                 try:
-                    scr.addstr(y, 0, text, styles.get(style, curses.A_NORMAL))
+                    for ch in text + RESET:
+                        if ch in MARKS:
+                            if seg:
+                                scr.addstr(y, x, "".join(seg), attr)
+                                x += len(seg)
+                                seg = []
+                            attr = base if ch == RESET else marks.get(ch, base)
+                        else:
+                            seg.append(ch)
                 except curses.error:
                     pass
             scr.refresh()
@@ -481,9 +547,10 @@ if __name__ == "__main__":
         sampler.sample()
         time.sleep(1)
         live = fetch_live()
+        tty = sys.stdout.isatty()
         for text, _ in render(*snapshot(), sampler.sample(), width=w, height=h, live=live,
                               tps_hist=[live["tps"]] if live and live.get("state") == "gen" else []):
-            print(text)
+            print("".join(ANSI.get(c, c) for c in text) + ANSI[RESET] if tty else strip_marks(text))
     else:
         import signal
         # al salir del modo IA systemd cuelga la terminal (SIGHUP) o pide terminar (SIGTERM): salir limpio, no como error
