@@ -1,0 +1,42 @@
+ mucho antes de la invención de los ordenadores. Desde la Antigüedad, el ser humano ha buscado herramientas que le ayuden a calcular, organizar y automatizar tareas. El ábaco, las tablas de multiplicar, las máquinas de Pascal y Babbage, los primeros programas de Ada Lovelace y las tarjetas perforadas de Jacquard son algunos de los hitos que marcaron el camino hacia la era digital.
+
+En este artículo te contamos cómo se desarrolló la computación desde sus orígenes hasta la inteligencia artificial actual, explicando cada etapa de forma clara y accesible.
+
+## ¿Qué es la computación?
+
+La computación es el conjunto de procesos que permiten manipular información mediante máquinas. En términos simples, es la ciencia que estudia cómo resolver problemas usando algoritmos y dispositivos electrónicos.
+
+Hoy en día, la computación abarca desde el funcionamiento de un smartphone hasta los complejos sistemas que gestionan redes globales de datos. Pero para entender su presente, es necesario conocer su pasado.
+
+## Los orígenes de la computación: antes de los ordenadores
+
+### El ábaco: la primera herramienta de cálculo
+
+El ábaco, inventado hace más de 2.0
+=====
+
+    if len(arr) <= 1:
+        return arr
+    
+    pivot = arr[len(arr) // 2]
+    left = [x for x in arr if x < pivot]
+    middle = [x for x in arr if x == pivot]
+    right = [x for x in arr if x > pivot]
+    
+    return quicksort(left) + middle + quicksort(right)
+
+# Example usage
+arr = [3, 6, 8, 10, 1, 2, 1]
+print(quicksort(arr))  # Output: [1, 1, 2, 3, 6, 8, 10]
+=====
+ that the speed of light is constant in all inertial frames of reference.
+
+<think>
+The user has stated a fact about the theory of relativity - specifically about the constancy of the speed of light in all inertial frames of reference. This is a well-known postulate of special relativity. They haven't asked a question, so they might be looking for confirmation, elaboration, or a discussion about this principle. Let me provide a thoughtful response that acknowledges the statement and adds some context and depth.
+
+This is one of the two postulates of Einstein's special relativity (1905). The other postulate is that the laws of physics are the same in all inertial frames. The constancy of the speed of light (c ≈ 299,792,458 m/s) is indeed a fundamental principle, but it's worth noting some nuances:
+
+- It's specifically about inertial frames (non-accelerating frames)
+- In general relativity, the speed of light is locally constant but can appear to vary in curved spacetime when measured over large distances
+- This postulate leads to time dilation, length contraction, and the relativity of simultaneity
+- It was motivated by the Mich
