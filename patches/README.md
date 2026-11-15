@@ -1,7 +1,7 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más los parches de abajo y una nota en el README del fork. En `~/llama.cpp`:
+el `master` oficial más los 4 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
@@ -41,6 +41,15 @@ resto tal cual (antes `COPY` ignoraba `--tensor-type`). Se usó para generar Fla
 llama-quantize --keep-split --tensor-type 'hc_(attn|ffn)_(up|down)=q8_0' \
     ORIGINAL-00001-of-00002.gguf SALIDA-hcq8.gguf COPY 8
 ```
+
+## 4. `llama.cpp-vulkan-multi-add-amd.patch`
+
+La fusión `multi_add` de Vulkan (cadenas de sumas f32 del mismo tamaño en un solo shader) estaba atada a
+`shaderRoundingModeRTEFloat16`, que la RX 580 no tiene. Ese chequeo deja afuera los drivers donde falla (Intel ANV,
+ver PR #15252), pero también a Polaris. El shader es solo f32: el parche la habilita en los drivers de AMD.
+Sirve para las 9 sumas que combinan los 10 expertos de cada capa: 2980 -> 2591 operaciones por token.
+`test-backend-ops -o ADD`: 116/116 OK. Flash-Next +2.5 %, Qwen3.6 +3 % (por el router).
+Para apagarla: `GGML_VK_DISABLE_MULTI_ADD=1`.
 
 ## Si se propone upstream
 

@@ -1,0 +1,39 @@
+From 148523bf1ea74bc88031b3bc80e4b02ac2e15c98 Mon Sep 17 00:00:00 2001
+From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 02:56:57 -0300
+Subject: [PATCH] vulkan : enable multi_add fusion on AMD drivers without RTE
+ fp16
+
+multi_add (fused chains of same-shape f32 adds, common in MoE expert combines) was
+gated on shaderRoundingModeRTEFloat16, which keeps out the drivers where it misbehaves
+but also GCN/Polaris on RADV. The shader is f32 only; enable it on AMD drivers too.
+
+RX 580 (RADV): test-backend-ops -o ADD 116/116 OK. Qwen3.8-Flash-Next decode, temp 0,
+no speculative decoding: 13.4-13.5 -> 13.7-13.8 t/s, 2980 -> 2591 dispatches per token.
+
+Written with AI assistance (Claude).
+---
+ ggml/src/ggml-vulkan/ggml-vulkan.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+index 24a5eb6..b7f3b78 100644
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -4797,7 +4797,12 @@ vk_device ggml_vk_get_device(size_t idx) {
+ 
+         device->pipeline_robustness = pl_robustness_features.pipelineRobustness;
+ 
+-        device->multi_add = vk12_props.shaderRoundingModeRTEFloat16 &&
++        // the multi_add shader is f32 only: the RTE fp16 check keeps out the drivers where it misbehaves,
++        // AMD drivers are fine without it (e.g. GCN/Polaris has no RTE fp16)
++        const bool amd_driver = device->driver_id == vk::DriverId::eMesaRadv ||
++                                device->driver_id == vk::DriverId::eAmdOpenSource ||
++                                device->driver_id == vk::DriverId::eAmdProprietary;
++        device->multi_add = (vk12_props.shaderRoundingModeRTEFloat16 || amd_driver) &&
+                             device->properties.limits.maxPushConstantsSize >= sizeof(vk_op_multi_add_push_constants) &&
+                             getenv("GGML_VK_DISABLE_MULTI_ADD") == nullptr;
+ 
+-- 
+2.43.0
+

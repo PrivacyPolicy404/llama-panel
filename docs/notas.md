@@ -91,6 +91,13 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
   Esa espera activa es lo mejor: `OMP_WAIT_POLICY=PASSIVE` 12.2, `GOMP_SPINCOUNT=10000` 12.4, `--prio 2` 12.4,
   contra 13.2 tok/s por defecto.
 - Margen que queda: fusionar operaciones chicas en Vulkan (hasta ~8 ms), solapar CPU y GPU (cambio grande en el scheduler).
+- **Operaciones chicas, primer paso hecho (parche 4):** las fusiones de las hyper-connections (`DSV4_HC_PRE/POST`) ya
+  estaban activas; las ~430 sumas sin nombre por token eran la combinación de los 10 expertos (9 sumas por capa).
+  La fusión `multi_add` estaba apagada en Polaris por exigir RTE fp16; habilitada: 2980 → 2591 operaciones por token,
+  Flash-Next 13.4 → 13.8 tok/s sin MTP (15.0 → 15.7 por el router), Qwen3.6 27.8 → 28.7.
+  Quedan por token, en la GPU: SCALE 448, MUL 372, RMS_NORM 256, SIGMOID 230, CPY 150, GET_ROWS 148, SILU 134.
+- El lightning indexer crece con el contexto (0.27 ms/token a 136 tokens, 0.74 a 19K) pero sigue siendo <1 % del total;
+  la atención completa explica la mayor parte del costo extra de los contextos largos (+4.6 ms/token de 136 a 19K).
 
 ### Lo que no funcionó (para no repetirlo)
 
@@ -130,7 +137,7 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 
 ## llama.cpp: fork y parches
 
-- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 3 parches + notas en el README.
+- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 4 parches + notas en el README.
 - Clon superficial en `~/llama.cpp`; `origin` = fork, `upstream` = oficial (push deshabilitado).
 - Parches (ver `patches/README.md`): `-ot` con `Vulkan_Host`; lightning indexer fp32 en Vulkan; `llama-quantize COPY --tensor-type`.
 - Actualizar: skill `llama-cpp-update` / `scripts/update-llama.sh` (con `--check` solo informa). La versión queda fija hasta correrlo.
