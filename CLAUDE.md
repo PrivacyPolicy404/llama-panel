@@ -8,6 +8,8 @@ Responder en castellano rioplatense. El usuario trabaja por SSH en la máquina.
 ## Leer primero
 
 - `docs/notas.md`: hardware y sus límites (GTT 31 GiB, HDD vs NVMe), mediciones, por qué cada configuración de modelo, trampas conocidas.
+- `docs/analisis-rendimiento.md`: bitácora de cada experimento (hipótesis, método, números, conclusión) y cómo medir sin
+  engañarse. Leerlo antes de proponer una optimización: puede que ya se haya probado.
 - `patches/README.md`: el fork de llama.cpp y sus 4 parches locales.
 - `README.md`: estructura del código.
 

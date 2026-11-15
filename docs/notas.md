@@ -1,6 +1,7 @@
 # Notas: hardware, modelos y lo que aprendimos
 
 Contexto acumulado para no tener que redescubrirlo. Primera versión: 2026-11-14.
+La bitácora detallada de cada experimento (método y números) está en `analisis-rendimiento.md`.
 
 ## La máquina
 
