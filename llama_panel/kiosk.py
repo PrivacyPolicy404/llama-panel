@@ -152,26 +152,37 @@ def ago(t, now):
 def gpu_box(hw, samples, width):
     w = width - 2
     gw = w - 15  # " LABEL " (6) + grafico + " " + valor (8)
-    lines = []
+    bw = w - 30
     vt = hw.get("vram_total") or 8
-    vram = [s.get("vram_used") for s in samples]
+    lines = [f" VRAM {bar(hw.get('vram_used'), vt, bw)} {hw.get('vram_used') or 0:4.1f}/{vt:.0f}G",
+             f" GTT  {bar(hw.get('gtt_used'), 31, bw)} {hw.get('gtt_used') or 0:4.1f}/31G"]
     gpu = [s.get("gpu") for s in samples]
-    rows = graph(vram, gw, 4, 0, vt)
-    lines += [f" {'VRAM' if i == 0 else '':<5}{r} " + (f"{hw.get('vram_used', 0):4.1f}/{vt:.0f}G".rjust(7) if i == 0 else "") for i, r in enumerate(rows)]
     rows = graph(gpu, gw, 4, 0, 100)
-    lines += [f" {'GPU' if i == 0 else '':<5}{r} " + (f"{hw.get('gpu') or 0:d} %".rjust(7) if i == 0 else "") for i, r in enumerate(rows)]
+    peak = hw.get("gpu_max")
+    lines += [f" {'GPU' if i == 0 else ('pico' if i == 1 and peak is not None else ''):<5}{r} "
+              + (f"{hw.get('gpu') or 0:d} %".rjust(7) if i == 0 else (f"{peak} %".rjust(7) if i == 1 and peak is not None else ""))
+              for i, r in enumerate(rows)]
+    power = [s.get("power") for s in samples]
+    cap = hw.get("power_cap") or 155
+    rows = graph(power, gw, 2, 0, cap)
+    lines += [f" {'WATT' if i == 0 else '':<5}{r} " + (f"{hw.get('power') or 0:.0f} W".rjust(7) if i == 0 else f"/{cap} W".rjust(7))
+              for i, r in enumerate(rows)]
     temps = [s.get("temp") for s in samples]
     lines.append(f" TEMP {''.join(graph(temps, gw, 1))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
-    lines.append(f" {hw.get('power') or 0:.0f} W / {hw.get('power_cap') or 0} W · ventilador {hw.get('fan') or 0} rpm")
-    lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)}")
+    lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)} · ventilador {hw.get('fan') or 0} rpm")
     return box("gpu · RX 580", lines, width)
+
+
+STOCK_MCLK = 2000  # RX 580 de fabrica
 
 
 def mclk_text(hw):
     if not hw.get("mclk"):
         return "memoria ?"
-    mode = "fija" if hw.get("mclk_mode") == "manual" else "auto"
-    return f"memoria {hw['mclk']} MHz ({mode})"
+    tags = ["fija" if hw.get("mclk_mode") == "manual" else "auto"]
+    if (hw.get("mclk_max") or 0) > STOCK_MCLK:
+        tags.append(f"OC {hw['mclk_max']}")
+    return f"memoria {hw['mclk']} MHz ({', '.join(tags)})"
 
 
 def cpu_box(cpu, hw, width):
@@ -198,11 +209,12 @@ def mem_box(hw, width):
     w = width - 2
     bw = w - 24
     lines = [
-        f" RAM  {bar(hw.get('ram_used'), hw.get('ram_total'), bw)} {hw.get('ram_used', 0):5.1f}/{hw.get('ram_total', 0):.0f}G",
-        f" GTT  {bar(hw.get('gtt_used'), 31, bw)} {hw.get('gtt_used', 0):5.1f}/31G",
-        f" VRAM {bar(hw.get('vram_used'), hw.get('vram_total'), bw)} {hw.get('vram_used', 0):5.1f}/{hw.get('vram_total', 0):.0f}G",
+        f" RAM   {bar(hw.get('ram_used'), hw.get('ram_total'), bw)} {hw.get('ram_used', 0):5.1f}/{hw.get('ram_total', 0):.0f}G",
+        f" caché {bar(hw.get('ram_cache'), hw.get('ram_total'), bw)} {hw.get('ram_cache', 0):5.1f}G",
     ]
-    return box("memoria", lines, width)
+    if hw.get("swap_total"):
+        lines.append(f" swap  {bar(hw.get('swap_used'), hw.get('swap_total'), bw)} {hw.get('swap_used', 0):5.1f}/{hw.get('swap_total', 0):.0f}G")
+    return box("memoria · RAM", lines, width)
 
 
 def models_box(state, stats, width, now):
@@ -251,15 +263,21 @@ def live_box(live, stats, tps_hist, width):
     top = max([v for v in (tps_hist or []) if v] or [0])
     lines += [f" {(f'{top:.0f}' if i == 0 and top else ''):>4} {r}" for i, r in enumerate(rows)]
     lines.append(f" {'':>4} tok/s en vivo")
+    if live.get("state") == "prompt" and live.get("prompt_progress") is not None:
+        lines.append(f" prompt   {bar(live['prompt_progress'] * 100, 100, w - 28)} {live['prompt_progress'] * 100:5.0f} %")
     if live.get("ctx_size"):
         used = live.get("ctx_used") or 0
         if live.get("state") in ("prompt", "gen") and live.get("prompt_tokens"):
             used = live["prompt_tokens"] + (live.get("n_gen") or 0 if live["state"] == "gen" else 0)
         lines.append(f" contexto {bar(used, live['ctx_size'], w - 28)} {used:>6}/{live['ctx_size']}")
+    resp = (stats or {}).get("text") or []
     if live.get("draft_rate") is not None:
         extra = f" · {live['draft_len']:.1f} tokens por paso" if live.get("draft_len") else ""
         lines.append(f" MTP      acierta {live['draft_rate'] * 100:.0f} %{extra}")
-    resp = (stats or {}).get("text") or []
+        rates = [r["draft"]["rate"] * 100 for r in resp if r.get("draft")][-(w - 10):]
+        if len(rates) > 1:
+            lines.append(f" {'':>4} {graph(rates, w - 10, 1, 0, 100)[0]}")
+            lines.append(f" {'':>4} aciertos del MTP por respuesta (0-100 %)")
     if resp:
         toks = sum(r.get("g_tok") or 0 for r in resp)
         avg = sum(r["g_tps"] for r in resp) / len(resp)

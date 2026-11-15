@@ -320,7 +320,11 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   El ayudante `llama-gpu-mclk` volvió a solo elegir niveles de fábrica (`high`/`auto`).
 - **Segundo intento: aplicarlo una sola vez al arrancar**, antes del escritorio (`install-gpu-mclk.sh --oc 2250`:
   `llama-gpu-oc.service`, `Before=display-manager.service`). Nadie usa la placa en ese momento y después solo cambia
-  de nivel el driver, como siempre. Pendiente de medir de punta a punta.
+  de nivel el driver, como siempre. Arrancó bien (2250 MHz, 950 mV, sin errores del kernel), texto idéntico.
+  Contra 2000 MHz (RAM a 3200 en los dos): sin MTP 15.24 → 15.40 (+1 %), MTP a temp 0.8 20.15 → 20.64 (+2 %),
+  prompt largo igual (~135). **La placa llega al tope de potencia (153–156 W de 155) y baja el núcleo a ~1210–1240
+  MHz**: por eso la ganancia es chica y el prompt (más núcleo) no mejora. Siguiente: tope de potencia a 200 W
+  (`--power 200`, máximo del driver 201), también solo al arrancar.
 
 ---
 

@@ -3,6 +3,7 @@
 #
 #   sudo ~/llama-panel/scripts/install-gpu-mclk.sh             # instalar (sin overclock)
 #   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --oc 2250   # instalar + overclock de VRAM al arrancar
+#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --oc 2250 --power 200   # + tope de potencia en W (al arrancar)
 #   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --uninstall # desinstalar todo
 #
 # Por qué: con los MoE la GPU trabaja a ráfagas (espera al CPU en cada capa) y amdgpu baja el reloj de la VRAM
@@ -35,17 +36,30 @@ OC_SCRIPT=/usr/local/sbin/llama-gpu-oc
 if [ "${1:-}" = "--uninstall" ]; then
     [ -x "$HELPER" ] && "$HELPER" auto || true
     systemctl disable llama-gpu-oc.service 2>/dev/null || true
-    rm -f "$HELPER" "$SUDOERS" "$OC_UNIT" "$OC_SCRIPT" /etc/llama-gpu-oc.mhz
+    rm -f "$HELPER" "$SUDOERS" "$OC_UNIT" "$OC_SCRIPT" /etc/llama-gpu-oc.mhz /etc/llama-gpu-oc.power
     systemctl daemon-reload
     echo "Desinstalado: memoria de la GPU en automático; el overclock deja de aplicarse desde el próximo arranque."
     exit 0
 fi
 
 OC_MHZ=""
-if [ "${1:-}" = "--oc" ]; then
-    OC_MHZ="${2:-}"
+POWER_W=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --oc) OC_MHZ="${2:-}"; shift 2 ;;
+        --power) POWER_W="${2:-}"; shift 2 ;;
+        *) echo "opción desconocida: $1"; exit 2 ;;
+    esac
+done
+if [ -n "$OC_MHZ" ]; then
     case "$OC_MHZ" in 2050|2100|2150|2200|2250) ;; *) echo "uso: --oc 2050|2100|2150|2200|2250"; exit 2 ;; esac
     grep -q "amdgpu.ppfeaturemask" /proc/cmdline || { echo "Falta amdgpu.ppfeaturemask (bit 0x4000) en la línea del kernel"; exit 1; }
+fi
+if [ -n "$POWER_W" ]; then
+    [ -n "$OC_MHZ" ] || { echo "--power va junto con --oc (los dos se aplican al arrancar)"; exit 2; }
+    case "$POWER_W" in ''|*[!0-9]*) echo "--power: watts enteros"; exit 2 ;; esac
+    MAXW=$(( $(cat /sys/class/drm/card*/device/hwmon/hwmon*/power1_cap_max 2>/dev/null | head -1) / 1000000 ))
+    [ "$POWER_W" -ge 100 ] && [ "$POWER_W" -le "$MAXW" ] || { echo "--power entre 100 y $MAXW W"; exit 2; }
 fi
 
 cat > "$HELPER" <<'EOF'
@@ -102,10 +116,18 @@ MV=$(awk '/^OD_MCLK:/{f=1;next} /^OD_/{f=0} f{v=$3} END{sub("mV","",v); print v}
 echo "m $LVL $MHZ $MV" > "$OD"
 echo c > "$OD"
 echo "VRAM: nivel $LVL a $MHZ MHz ($MV mV)"
+# tope de potencia (opcional): sin él la placa llega a 155 W con la VRAM subida y baja el reloj del núcleo
+if [ -f /etc/llama-gpu-oc.power ]; then
+    W=$(cat /etc/llama-gpu-oc.power)
+    for h in "$DEV"/hwmon/hwmon*; do
+        [ -w "$h/power1_cap" ] && echo $((W * 1000000)) > "$h/power1_cap" && echo "tope de potencia: $W W"
+    done
+fi
 OCEOF
     chown root:root "$OC_SCRIPT"
     chmod 755 "$OC_SCRIPT"
     echo "$OC_MHZ" > /etc/llama-gpu-oc.mhz
+    if [ -n "$POWER_W" ]; then echo "$POWER_W" > /etc/llama-gpu-oc.power; else rm -f /etc/llama-gpu-oc.power; fi
     cat > "$OC_UNIT" <<OCEOF
 [Unit]
 Description=llama-panel: overclock de la VRAM de la GPU, una vez al arrancar
@@ -121,7 +143,7 @@ WantedBy=multi-user.target
 OCEOF
     systemctl daemon-reload
     systemctl enable llama-gpu-oc.service
-    echo "Overclock de VRAM a $OC_MHZ MHz: se aplica desde el PRÓXIMO arranque (la tabla no se toca ahora, en caliente)."
+    echo "Overclock de VRAM a $OC_MHZ MHz${POWER_W:+ y tope de $POWER_W W}: se aplica desde el PRÓXIMO arranque (nada se toca ahora, en caliente)."
 fi
 
 TMP=$(mktemp)

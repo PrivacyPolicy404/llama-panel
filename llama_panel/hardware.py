@@ -28,6 +28,40 @@ def _gpu_dir():
 GPU_DIR = _gpu_dir()
 HWMON = next(iter(sorted(glob.glob(f"{GPU_DIR}/hwmon/hwmon*"))), None) if GPU_DIR else None
 
+# gpu_busy_percent es instantaneo y la GPU trabaja a rafagas (los MoE la alternan con el CPU en cada capa):
+# una lectura cada INTERVAL es casi ruido. Este hilo lo lee cada FAST_INTERVAL y sample() usa el promedio.
+FAST_INTERVAL = 0.1
+_fast = {"busy_sum": 0, "busy_max": 0, "n": 0, "power_sum": 0.0, "power_n": 0}
+_fast_lock = threading.Lock()
+
+
+def _fast_loop():
+    while True:
+        b = _read(f"{GPU_DIR}/gpu_busy_percent") if GPU_DIR else None
+        p = (_read(f"{HWMON}/power1_input") or _read(f"{HWMON}/power1_average")) if HWMON else None
+        with _fast_lock:
+            if b is not None:
+                _fast["busy_sum"] += b
+                _fast["busy_max"] = max(_fast["busy_max"], b)
+                _fast["n"] += 1
+            if p is not None:
+                _fast["power_sum"] += p / 1e6
+                _fast["power_n"] += 1
+        time.sleep(FAST_INTERVAL)
+
+
+def _take_fast():
+    """Promedios desde la ultima muestra (None si el hilo rapido no corrio)."""
+    with _fast_lock:
+        out = {}
+        if _fast["n"]:
+            out["gpu"] = round(_fast["busy_sum"] / _fast["n"])
+            out["gpu_max"] = _fast["busy_max"]
+        if _fast["power_n"]:
+            out["power"] = round(_fast["power_sum"] / _fast["power_n"], 1)
+        _fast.update(busy_sum=0, busy_max=0, n=0, power_sum=0.0, power_n=0)
+    return out
+
 
 def _mclk():
     """Reloj de la memoria de la GPU: actual, maximo y si esta fijo (manual) o en automatico."""
@@ -73,9 +107,13 @@ def sample():
             mem[k] = int(v.split()[0]) * 1024
         s["ram_total"] = round(mem["MemTotal"] / GIB, 2)
         s["ram_used"] = round((mem["MemTotal"] - mem["MemAvailable"]) / GIB, 2)
+        s["ram_cache"] = round((mem.get("Cached", 0) + mem.get("Buffers", 0)) / GIB, 2)
+        s["swap_used"] = round((mem.get("SwapTotal", 0) - mem.get("SwapFree", 0)) / GIB, 2)
+        s["swap_total"] = round(mem.get("SwapTotal", 0) / GIB, 2)
     except Exception:  # noqa: BLE001
         pass
     s["load"] = round(os.getloadavg()[0], 2)
+    s.update(_take_fast())  # actividad y potencia promediadas (pisan la lectura instantanea)
     return s
 
 
@@ -93,4 +131,5 @@ def _loop():
 
 
 def start_sampler():
+    threading.Thread(target=_fast_loop, name="hw-fast", daemon=True).start()
     threading.Thread(target=_loop, name="hw-sampler", daemon=True).start()
