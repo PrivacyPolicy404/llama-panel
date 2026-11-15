@@ -110,7 +110,7 @@ cuantización) no corre en la RX 580 (CUDA RTX 20+ / ROCm RDNA2+).
 
 ---
 
-## 5. Flash-Next: de 12.8 a 15.7 tok/s
+## 5. Flash-Next: de 12.8 a 17.6 tok/s
 
 ### 5.1 Punto de partida y lo que no funcionó (directo, temp 0.7)
 
@@ -220,9 +220,39 @@ La espera activa es lo mejor: los hilos arrancan apenas la GPU les pasa el turno
 Conclusión: de los ~73 ms por token, la GPU real son ~35–40 y las operaciones chicas casi no pesan.
 Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 
+### 5.8 Dónde se van los ~35 ms del CPU, y el kernel Q2_0 nuevo (2026-11-15, temp 0, sin MTP)
+
+1. **Reparto por token** (lib temporal de `libggml-base` con marcas de tiempo por tramo en
+   `ggml_backend_sched_compute_splits`, `GGML_SCHED_TIMING=1`): de ~72.5 ms, el CPU **espera a la GPU 37.9**, **calcula
+   expertos 24**, graba/envía comandos de Vulkan 5.7, copia entradas a la GPU 0.9, y 3.9 se van fuera del scheduler
+   (armar el grafo, muestreo, lecturas lazy). GPU y CPU se turnan: nunca trabajan a la vez.
+2. **Hilos** (tiempo de expertos): 4 → 35 ms, 8 → 24, 12 → 23.4, 16 → 23 (y empeora lo de Vulkan). Sin memoria fija
+   los expertos tardan ~1.5 ms menos (22.6 contra 24), pero la memoria fija es lo que hace rápido el prompt.
+3. **Por operación** (lib temporal de `libggml-cpu`, `GGML_CPU_TIMING=1`): 144 `MUL_MAT_ID` por token (gate, up, down)
+   son el 98 %; los hilos trabajan 21.1 de 21.6 ms (casi nada de barreras ni desbalance). Cada hilo procesa
+   **3.8 GB/s**, cuando un hilo solo puede leer 23.6 GB/s de la RAM (medidor propio en C: 40.8 GB/s con 4 hilos).
+   **El límite era el cálculo del kernel `ggml_vec_dot_q2_0_q8_0`, no la RAM.**
+4. **Kernel nuevo** (parche 5): las activaciones Q8_0 se reacomodan una vez por columna para coincidir con el empaquetado
+   de Q2_0 (el byte b tiene los pesos 4b..4b+3; `(qs >> 2k) & 3` da el plano k). Desempaquetar 32 pesos pasa de 6
+   instrucciones a 2; `sum(y)` y las escalas se calculan una vez por columna. Microbenchmark (`q2bench.c`, exacto contra la
+   referencia escalar): 1 hilo 5.1 → 11.2 GB/s; 8 hilos desde la RAM 33 → 34 (techo del patrón de acceso).
+5. **Prefetch por software**: el prefetcher del hardware no se adelanta lo suficiente con filas cortas (720 / 180 bytes) y
+   expertos en lugares distintos. Prefetch 1 KiB adelante: 8 hilos 34 → **40 GB/s**. Páginas grandes (`MADV_HUGEPAGE`): nada.
+
+| A/B (alternado) | gen sin MTP | prompt 2631 tok |
+|---|---|---|
+| kernel viejo | 13.75 / 13.54 / 13.68 / 13.09 | 132.4 |
+| nuevo | 14.38 / 14.63 / 14.28 / 14.27 | 132.9 |
+| nuevo + prefetch 512 / **1024** / 2048 | 15.12 / **15.21** / 15.15 | 63 (prompt corto) |
+| **router con MTP** | 15.7 → **17.6** | 132.7 |
+
+- El prompt no cambia: con tandas grandes los expertos de la memoria fija se suben y se calculan en la GPU.
+- Qwen3.6 no cambia (sus expertos son Q4_K).
+- Verificación: `test-backend-ops -o MUL_MAT_ID -b Vulkan0` (el CPU es la referencia) → todos los `q2_0` OK.
+
 ---
 
-## 6. Los cuatro parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
+## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
 ### Parche 1 — `-ot` con buffers de memoria fija (`Vulkan_Host`)
 Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un override a host buffer se ignora; el parche avisa.
@@ -252,6 +282,12 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 - Parche: habilitarla también en drivers AMD. `test-backend-ops -o ADD`: 116/116 OK.
 - Resultado: 2980 → **2591 operaciones por token**; A/B controlado 13.49/13.37 → **13.83/13.71** (+2.5 %);
   router: Flash-Next 15.0 → **15.7**, Qwen3.6 27.8 → **28.7**.
+
+
+### Parche 5 — kernel Q2_0 × Q8_0 para AVX2 en el CPU
+- Hallazgo y método en 5.8: los expertos tardaban 22–24 ms/token limitados por el cálculo (3.8 GB/s por hilo).
+- Parche: activaciones reacomodadas una vez por columna + prefetch 1 KiB. Solo cambia `MUL_MAT_ID` con pesos Q2_0 en x86 AVX2.
+- Resultado: sin MTP 13.5 → **15.2** (+12.5 %); router 15.7 → **17.6**. Prompt igual.
 
 ---
 
@@ -302,18 +338,21 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 
 | Modelo | Router | Claves |
 |---|---|---|
-| Qwen3.6-35B-A3B | 28.7 gen, 228 prompt largo, VRAM 7.1 | `cpu-moe`, `load-mode = none`, cache 4608 + cpu 0.8 |
-| Flash-Next `-hcq8` | 15.7 gen, 133 prompt largo, VRAM 7.3 | parche 1 (44 capas fijas), `lazy-mode`, MTP 2, `parallel = 1`, tandas 2048; modo IA: 32K de contexto |
+| Qwen3.6-35B-A3B | 28.8 gen, 228 prompt largo, VRAM 7.1 | `cpu-moe`, `load-mode = none`, cache 4608 + cpu 0.8 |
+| Flash-Next `-hcq8` | 17.6 gen, 133 prompt largo, VRAM 7.3 | parche 1 (44 capas fijas), `lazy-mode`, MTP 2, `parallel = 1`, tandas 2048; modo IA: 32K de contexto |
 
 ---
 
 ## 10. Próximos pasos posibles (con lo que se espera ganar)
 
 1. ~~Más fusiones de operaciones chicas~~: medido en 5.7, techo +2.4 %. Descartado.
-2. **El CPU + los cambios de turno (~35 ms/token, casi la mitad)**: es lo único grande que queda. Solapar CPU y GPU
-   (hoy se turnan) es un cambio grande en el scheduler; antes, medir cuánto es cálculo de expertos y cuánto espera/sincronización.
-3. Atención con contexto largo (lo que más crece con los 32K del modo IA).
-4. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
+2. ~~Expertos en el CPU~~: hecho (5.8, parche 5). Ahora están en el techo de la RAM (~40 GB/s).
+3. **La GPU** (~38 ms/token, el tramo más largo): las matmul `q3_K` corren a ~80 GB/s contra ~200 de las `q8_0`
+   (Q3_K rinde mal en GCN). Medirlas con el método de despachar dos veces antes de recuantizar o tocar el shader.
+4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms).
+5. Solapar CPU y GPU (hoy se turnan): cambio grande en el scheduler.
+6. Atención con contexto largo (lo que más crece con los 32K del modo IA).
+7. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 
 ## 11. Reproducir las mediciones clave
 

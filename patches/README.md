@@ -1,7 +1,7 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más los 4 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
+el `master` oficial más los 5 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
@@ -50,6 +50,16 @@ ver PR #15252), pero también a Polaris. El shader es solo f32: el parche la hab
 Sirve para las 9 sumas que combinan los 10 expertos de cada capa: 2980 -> 2591 operaciones por token.
 `test-backend-ops -o ADD`: 116/116 OK. Flash-Next +2.5 %, Qwen3.6 +3 % (por el router).
 Para apagarla: `GGML_VK_DISABLE_MULTI_ADD=1`.
+
+## 5. `llama.cpp-cpu-q2_0-avx2-prep.patch`
+
+Kernel AVX2 nuevo para los expertos Q2_0 de Flash-Next en el CPU (`MUL_MAT_ID`, generación). El viejo procesaba 3.8 GB/s
+por hilo: el límite era el cálculo, no la RAM. El nuevo reacomoda una vez por columna las activaciones Q8_0 para que
+coincidan con cómo vienen empaquetados los pesos de 2 bits (desempaquetar 32 pesos: un desplazamiento y un AND, en vez
+de 6 instrucciones), calcula `sum(y)` y las escalas una sola vez, y hace prefetch de los pesos 1 KiB adelante.
+Microbenchmark: 5.1 -> 11.2 GB/s por hilo; 8 hilos desde la RAM 33 -> 40 GB/s (el techo de esta máquina).
+Flash-Next sin MTP 13.5 -> 15.2 tok/s; **por el router 15.7 -> 17.6**. El prompt no cambia (con tandas grandes los
+expertos se calculan en la GPU). `test-backend-ops -o MUL_MAT_ID -b Vulkan0`: todos los casos `q2_0` OK.
 
 ## Si se propone upstream
 
