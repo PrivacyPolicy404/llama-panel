@@ -95,6 +95,27 @@ def write_preset(ai_mode=None):
     return models
 
 
+_server_opts = {"mtime": None, "opts": []}
+OPT_RE = re.compile(r"(?:^|[\s,])--([a-z0-9][a-z0-9-]*)")
+
+
+def server_options():
+    """Opciones largas que entiende llama-server (de su --help; se recalcula si cambia el binario).
+    Sirve para que la interfaz marque las claves mal escritas en las opciones extra."""
+    try:
+        mtime = os.path.getmtime(C.LLAMA_SERVER)
+    except OSError:
+        return []
+    if _server_opts["mtime"] != mtime:
+        import subprocess
+        try:
+            out = subprocess.run([C.LLAMA_SERVER, "--help"], capture_output=True, text=True, timeout=20).stdout
+        except Exception:  # noqa: BLE001
+            out = ""
+        _server_opts.update(mtime=mtime, opts=sorted(set(OPT_RE.findall(out))))
+    return _server_opts["opts"]
+
+
 def validate_settings(global_text, models_in):
     """Valida lo que manda la interfaz. Devuelve (errores, {key: cfg_normalizada})."""
     errors = [f"global: {b}" for b in C.clean_lines(global_text)[1]]

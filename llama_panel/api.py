@@ -46,6 +46,7 @@ def config():
                         "extra": (settings["image"]["models"].get(m["key"]) or {}).get("extra", "")}
                        for m in imgs],
         "img_selected": sel["key"] if sel else "",
+        "server_opts": TM.server_options(),
     }
 
 

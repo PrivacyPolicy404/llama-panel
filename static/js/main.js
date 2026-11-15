@@ -3,7 +3,7 @@ import { $, $$, getJSON, now, post, report, withBusy } from './util.js';
 import { S, clearDirty, hooks, setDirty } from './state.js';
 import { HIST_WINDOW, renderTiles } from './tiles.js';
 import { renderEngines } from './engines.js';
-import { renderTextModels, updateTextStates } from './text-models.js';
+import { renderTextModels, updateTextStates, updateTextPerf } from './text-models.js';
 import { renderImgModels, updateImgStates } from './img-models.js';
 import { save } from './save.js';
 import { renderPerf } from './perf.js';
@@ -48,6 +48,7 @@ async function loadStats() {
   try { S.stats = await getJSON('/api/stats'); } catch { return; }
   if (S.tab === 'perf') renderPerf();
   renderEngines();
+  updateTextPerf();
 }
 
 function showTab(tab) {
