@@ -29,6 +29,18 @@ GPU_DIR = _gpu_dir()
 HWMON = next(iter(sorted(glob.glob(f"{GPU_DIR}/hwmon/hwmon*"))), None) if GPU_DIR else None
 
 
+def _mclk():
+    """Reloj de la memoria de la GPU: actual, maximo y si esta fijo (manual) o en automatico."""
+    try:
+        levels = Path(f"{GPU_DIR}/pp_dpm_mclk").read_text().splitlines()
+        mhz = [int(l.split(":")[1].strip().split("Mhz")[0]) for l in levels]
+        cur = next(m for l, m in zip(levels, mhz) if "*" in l)
+        mode = Path(f"{GPU_DIR}/power_dpm_force_performance_level").read_text().strip()
+        return {"mclk": cur, "mclk_max": max(mhz), "mclk_mode": mode}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def sample():
     s = {"t": round(time.time(), 1)}
     if GPU_DIR:
@@ -39,6 +51,7 @@ def sample():
         if gtt is not None:
             s["gtt_used"] = round(gtt / GIB, 2)
         s["gpu"] = _read(f"{GPU_DIR}/gpu_busy_percent")
+        s.update(_mclk())
     if HWMON:
         t = _read(f"{HWMON}/temp1_input")
         crit = _read(f"{HWMON}/temp1_crit")

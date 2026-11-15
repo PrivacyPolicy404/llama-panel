@@ -22,6 +22,15 @@ KIMG_START = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] Generating Image \((\d+) ste
 KIMG_END = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] Generating Media Complete")
 PROGRESS_RE = re.compile(r"^([A-Za-z ]+): \d+/(\d+) steps")
 CACHE_SECONDS = 5
+# progreso en vivo de llama-server (cada ~3 s) y fin de cada respuesta
+NGEN_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| n_gen = +(\d+), tg = +([\d.]+) t/s, tg_3s = +([\d.]+) t/s")
+PROMPT_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| prompt processing, n_tokens = +(\d+), progress = ([\d.]+),"
+                       r" t = +([\d.]+) s / +([\d.]+) tokens per second")
+RELEASE_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| stop processing: n_tokens = (\d+)")
+NCTX_RE = re.compile(r"^\[(\d+)\].*n_ctx_slot = (\d+)")
+DRAFT_LEN_RE = re.compile(r"mean len = +([\d.]+)")
+LIVE_FRESH = 8  # segundos sin novedades -> ya no esta trabajando
+LIVE_CACHE = 1.5
 
 
 # ---------- parseo (puro) ----------
@@ -63,6 +72,39 @@ def parse_text_stats(entries, path_to_id=None, limit=60):
             if (key := (mm[1], mm[2])) in reqs:
                 reqs[key]["draft"] = {"rate": float(mm[3]), "acc": int(mm[4]), "gen": int(mm[5])}
     return [r for r in reqs.values() if r["g_tps"] is not None][-limit:]
+
+
+def parse_live(entries, now=None):
+    """[(ts, msg)] recientes del router -> que esta haciendo ahora (para el dashboard).
+
+    state: "idle" | "prompt" (procesando el prompt) | "gen" (generando). Ademas: progreso, tok/s de los ultimos 3 s,
+    contexto usado/tamano y la aceptacion del MTP de la ultima respuesta que lo uso."""
+    now = now or time.time()
+    out = {"state": "idle", "n_gen": None, "tps": None, "prompt_progress": None, "prompt_tps": None,
+           "prompt_tokens": None, "ctx_used": None, "ctx_size": None, "draft_rate": None, "draft_len": None, "t": None}
+    task, last_ts, released = None, None, set()
+    for ts, msg in entries:
+        if (m := NCTX_RE.match(msg)):
+            out["ctx_size"] = int(m[2])
+        elif (m := PROMPT_RE.match(msg)):
+            task, last_ts = (m[1], m[2]), ts  # el numero de tarea se reinicia en cada proceso: va con el pid
+            out.update(state="prompt", prompt_tokens=int(m[3]), prompt_progress=float(m[4]), prompt_tps=float(m[6]),
+                       n_gen=None, tps=None)
+        elif (m := NGEN_RE.match(msg)):
+            task, last_ts = (m[1], m[2]), ts
+            out.update(state="gen", n_gen=int(m[3]), tps=float(m[5]))
+        elif (m := DRAFT_RE.match(msg)):
+            out["draft_rate"] = float(m[3])
+            dl = DRAFT_LEN_RE.search(msg)
+            out["draft_len"] = float(dl[1]) if dl else None
+        elif (m := RELEASE_RE.match(msg)):
+            released.add((m[1], m[2]))
+            out["ctx_used"] = int(m[3])
+            last_ts = ts
+    out["t"] = last_ts
+    if task is None or task in released or last_ts is None or now - last_ts > LIVE_FRESH:
+        out["state"] = "idle"
+    return out
 
 
 def parse_img_stats(entries, limit=40):
@@ -121,6 +163,16 @@ def stats():
         _cache["data"] = {"text": text_stats(), "img": img_stats()}
         _cache["t"] = time.time()
     return _cache["data"]
+
+
+_live = {"t": 0, "data": None}
+
+
+def live():
+    if time.time() - _live["t"] > LIVE_CACHE:
+        _live["data"] = parse_live(parse_journal_unix(journal(C.SERVICE, 150, "short-unix")))
+        _live["t"] = time.time()
+    return _live["data"]
 
 
 def logs(which, n=300):

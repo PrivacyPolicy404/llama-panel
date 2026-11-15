@@ -162,8 +162,16 @@ def gpu_box(hw, samples, width):
     lines += [f" {'GPU' if i == 0 else '':<5}{r} " + (f"{hw.get('gpu') or 0:d} %".rjust(7) if i == 0 else "") for i, r in enumerate(rows)]
     temps = [s.get("temp") for s in samples]
     lines.append(f" TEMP {''.join(graph(temps, gw, 1))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
-    lines.append(f" {hw.get('power') or 0:.0f} W / {hw.get('power_cap') or 0} W · ventilador {hw.get('fan') or 0} rpm · {hw.get('sclk') or 0} MHz")
+    lines.append(f" {hw.get('power') or 0:.0f} W / {hw.get('power_cap') or 0} W · ventilador {hw.get('fan') or 0} rpm")
+    lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)}")
     return box("gpu · RX 580", lines, width)
+
+
+def mclk_text(hw):
+    if not hw.get("mclk"):
+        return "memoria ?"
+    mode = "fija" if hw.get("mclk_mode") == "manual" else "auto"
+    return f"memoria {hw['mclk']} MHz ({mode})"
 
 
 def cpu_box(cpu, hw, width):
@@ -222,6 +230,43 @@ def models_box(state, stats, width, now):
     return box("modelos", lines, width)
 
 
+LIVE_ICON = {"gen": ("●", "generando"), "prompt": ("◐", "procesando el prompt"), "idle": ("○", "esperando")}
+
+
+def live_status(live):
+    icon, label = LIVE_ICON.get((live or {}).get("state"), LIVE_ICON["idle"])
+    if live and live.get("state") == "gen":
+        return f"{icon} {label} · {live['tps']:.1f} tok/s · {live['n_gen']} tokens"
+    if live and live.get("state") == "prompt":
+        return f"{icon} {label} {live['prompt_progress'] * 100:.0f} % · {live['prompt_tps']:.0f} tok/s"
+    return f"{icon} {label}"
+
+
+def live_box(live, stats, tps_hist, width):
+    """Lo que esta haciendo el modelo de texto ahora: estado, tok/s en vivo, contexto, MTP y la sesion."""
+    w = width - 2
+    live = live or {}
+    lines = [" " + live_status(live)]
+    rows = graph(list(tps_hist or []), w - 10, 3, 0)
+    top = max([v for v in (tps_hist or []) if v] or [0])
+    lines += [f" {(f'{top:.0f}' if i == 0 and top else ''):>4} {r}" for i, r in enumerate(rows)]
+    lines.append(f" {'':>4} tok/s en vivo")
+    if live.get("ctx_size"):
+        used = live.get("ctx_used") or 0
+        if live.get("state") in ("prompt", "gen") and live.get("prompt_tokens"):
+            used = live["prompt_tokens"] + (live.get("n_gen") or 0 if live["state"] == "gen" else 0)
+        lines.append(f" contexto {bar(used, live['ctx_size'], w - 28)} {used:>6}/{live['ctx_size']}")
+    if live.get("draft_rate") is not None:
+        extra = f" · {live['draft_len']:.1f} tokens por paso" if live.get("draft_len") else ""
+        lines.append(f" MTP      acierta {live['draft_rate'] * 100:.0f} %{extra}")
+    resp = (stats or {}).get("text") or []
+    if resp:
+        toks = sum(r.get("g_tok") or 0 for r in resp)
+        avg = sum(r["g_tps"] for r in resp) / len(resp)
+        lines.append(f" últimas  {len(resp)} respuestas · {toks} tokens · {avg:.1f} tok/s promedio")
+    return box("en vivo", lines, width)
+
+
 def procs_box(cpu, width):
     w = width - 2
     lines = [f" {'proceso':<14}{'pid':>8}{'cpu':>8}{'hilos':>7}{'ram':>9}"]
@@ -232,7 +277,7 @@ def procs_box(cpu, width):
     return box("procesos", lines, width)
 
 
-def compact_boxes(state, stats, hw, samples, cpu, width, gh, now):
+def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     """Layout de una columna para pantallas chicas (por ejemplo 80x30): mismas cajas, graficos mas bajos."""
     w = width - 2
     bw = max(8, w - 24)
@@ -241,7 +286,7 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now):
     gpu = [f" VRAM {bar(vu, vt, bw)} {vu:4.1f}/{vt:.0f}G",
            f" GPU  {bar(g, 100, bw)} {g:4d} %"]
     gpu += [" " + r for r in graph([s.get("gpu") for s in samples], w - 2, gh, 0, 100)]
-    gpu.append(f" {hw.get('temp') or 0:.0f} °C · {hw.get('power') or 0:.0f} W · {hw.get('fan') or 0} rpm · {hw.get('sclk') or 0} MHz")
+    gpu.append(f" {hw.get('temp') or 0:.0f} °C · {hw.get('power') or 0:.0f} W · {hw.get('sclk') or 0} MHz · {mclk_text(hw)}")
 
     cores = cpu.get("cores") or []
     hist = cpu.get("total_hist") or []
@@ -256,6 +301,11 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now):
     loaded = [k for k, v in (state["text"].get("models") or {}).items() if v.get("status") in ("loaded", "loading")]
     icon, label = SVC.get(svc["text"], ("?", svc["text"]))
     mod = [f" texto {icon} {label}  {(loaded[0] if loaded else '')[:w - 22]}"]
+    if svc["text"] == "active":
+        st = live_status(live)
+        if (live or {}).get("draft_rate") is not None:
+            st += f" · MTP {live['draft_rate'] * 100:.0f} %"
+        mod.append("   " + st[:w - 4])
     img = state.get("img") or {}
     icon, label = SVC.get(svc["img"], ("?", svc["img"]))
     pr = img.get("progress") or {}
@@ -272,7 +322,7 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now):
     return [box("gpu", gpu, width), box("cpu · memoria", cpu_l, width), box("modelos", mod, width), box("procesos", procs, width)]
 
 
-def render(state, stats, hist, cpu, width=120, height=40, now=None):
+def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, tps_hist=None):
     """Devuelve las lineas del dashboard como [(texto, estilo)]; estilo en {"", "title", "dim", "good", "warn", "bad"}.
     Con 120x36 o mas usa dos columnas; si no, una columna compacta que se achica hasta entrar en la altura."""
     now = now or time.time()
@@ -289,7 +339,7 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None):
     cpu = cpu or {}
     if width < 120 or height < 36:
         for gh in (3, 2, 1):
-            boxes = compact_boxes(state, stats, hw, samples, cpu, width, gh, now)
+            boxes = compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live)
             while boxes and 1 + sum(len(b) for b in boxes) > height:
                 if gh > 1:
                     break
@@ -302,7 +352,8 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None):
     left_w = width // 2
     right_w = width - left_w - 1
     top = side_by_side(gpu_box(hw, samples, left_w), cpu_box(cpu, hw, right_w))
-    bottom = side_by_side(mem_box(hw, left_w) + models_box(state, stats, left_w, now), procs_box(cpu, right_w))
+    bottom = side_by_side(mem_box(hw, left_w) + models_box(state, stats, left_w, now),
+                          live_box(live, stats, tps_hist, right_w) + procs_box(cpu, right_w))
     for l in top + bottom:
         out.append((l, ""))
     out.append((" Escritorio apagado para dejarle la GPU a los modelos · para volver: «Salir del modo IA» en el panel", "dim"))
@@ -325,6 +376,13 @@ def snapshot():
     return state, stats, hist
 
 
+def fetch_live():
+    try:
+        return fetch("/api/live")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def run_curses():
     import curses
 
@@ -341,6 +399,7 @@ def run_curses():
         sampler = CpuSampler()
         sampler.sample()
         cached, last_fetch, started = (None, None, None), 0, time.time()
+        live, tps_hist = None, collections.deque(maxlen=240)
         while True:
             if source_changed(started):  # codigo nuevo: reiniciar el proceso con la version actual
                 curses.endwin()
@@ -348,10 +407,12 @@ def run_curses():
             if time.time() - last_fetch > 1.8:
                 state, stats, hist = snapshot()
                 cached, last_fetch = (state, stats if stats is not None else cached[1], hist), time.time()
+                live = fetch_live()
+                tps_hist.append(live["tps"] if live and live.get("state") == "gen" else 0)
             cpu = sampler.sample()
             h, w = scr.getmaxyx()
             scr.erase()
-            for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1)):
+            for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist)):
                 try:
                     scr.addstr(y, 0, text, styles.get(style, curses.A_NORMAL))
                 except curses.error:
@@ -401,7 +462,9 @@ if __name__ == "__main__":
         sampler = CpuSampler()
         sampler.sample()
         time.sleep(1)
-        for text, _ in render(*snapshot(), sampler.sample(), width=w, height=h):
+        live = fetch_live()
+        for text, _ in render(*snapshot(), sampler.sample(), width=w, height=h, live=live,
+                              tps_hist=[live["tps"]] if live and live.get("state") == "gen" else []):
             print(text)
     else:
         import signal

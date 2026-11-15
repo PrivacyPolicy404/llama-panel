@@ -24,7 +24,10 @@ def units():
         f"{C.SERVICE}.service": (
             "[Unit]\nDescription=llama.cpp router server (Vulkan)\n"
             f"Conflicts={C.IMG_SERVICE}.service\n\n"
-            "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n" + GPU_MCLK +
+            "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n"
+            # mandar trabajo a la GPU cada 16 nodos (no 100): con los MoE cada tramo de GPU tiene ~53 nodos y la GPU
+            # esperaba a que se grabara el 80 % antes de arrancar. Flash-Next con MTP +1.4 % (bitácora 5.10)
+            "Environment=GGML_VK_MAX_NODES_PER_SUBMIT=16\n" + GPU_MCLK +
             f"ExecStart={C.LLAMA_SERVER} --models-preset {C.PRESET_FILE} --models-max 1 "
             f"--host 0.0.0.0 --port {C.CHAT_PORT}\n"
             "Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"

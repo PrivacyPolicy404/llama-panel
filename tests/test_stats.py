@@ -68,6 +68,38 @@ class Logs(unittest.TestCase):
         self.assertEqual(stats.collapse_progress(lines),
                          ["inicio", "Decoding: 2/27 steps, 3 s/it", "Decoding: 1/21 steps, 2 it/s", "fin"])
 
+class LiveTest(unittest.TestCase):
+    LINES = [
+        (100.0, "[7] srv load_model: initializing, n_slots = 1, n_ctx_slot = 32768, kv_unified = 'false'"),
+        (101.0, "[7] 0.53.8 I slot print_timing: id  0 | task 177 | prompt processing, n_tokens =   1216, progress = 0.37, t =   9.26 s / 131.25 tokens per second"),
+        (110.0, "[7] 1.10.6 I slot print_timing: id  0 | task 177 | n_gen =    101, tg =  16.96 t/s, tg_3s =  17.13 t/s"),
+    ]
+    END = [
+        (112.0, "[7] 1.10.6 I slot print_timing: id  0 | task 177 | draft acceptance = 0.69444 (   25 accepted /    36 generated), mean len =  2.39"),
+        (112.1, "[7] 1.10.6 I slot      release: id  0 | task 177 | stop processing: n_tokens = 3307, truncated = 0"),
+    ]
+
+    def test_generating(self):
+        live = stats.parse_live(self.LINES, now=112.0)
+        self.assertEqual(live["state"], "gen")
+        self.assertEqual((live["n_gen"], live["tps"], live["ctx_size"]), (101, 17.13, 32768))
+
+    def test_prompt_progress(self):
+        live = stats.parse_live(self.LINES[:2], now=102.0)
+        self.assertEqual(live["state"], "prompt")
+        self.assertAlmostEqual(live["prompt_progress"], 0.37)
+        self.assertEqual(live["prompt_tokens"], 1216)
+
+    def test_finished_and_stale(self):
+        live = stats.parse_live(self.LINES + self.END, now=113.0)
+        self.assertEqual(live["state"], "idle")
+        self.assertEqual((live["ctx_used"], live["draft_rate"], live["draft_len"]), (3307, 0.69444, 2.39))
+        self.assertEqual(stats.parse_live(self.LINES, now=200.0)["state"], "idle")  # sin novedades hace rato
+
+    def test_task_numbers_restart_in_a_new_process(self):
+        new_proc = [(120.0, "[9] 0.28.3 I slot print_timing: id  0 | task 177 | n_gen =    40, tg =  15.0 t/s, tg_3s =  15.5 t/s")]
+        self.assertEqual(stats.parse_live(self.LINES + self.END + new_proc, now=121.0)["state"], "gen")
+
 
 if __name__ == "__main__":
     unittest.main()

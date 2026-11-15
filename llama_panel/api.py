@@ -62,6 +62,7 @@ GET_ROUTES = {
     "/api/config": lambda q: config(),
     "/api/history": lambda q: {"samples": list(hardware.HIST)},
     "/api/stats": lambda q: stats.stats(),
+    "/api/live": lambda q: stats.live(),
     "/api/logs": _logs,
 }
 
