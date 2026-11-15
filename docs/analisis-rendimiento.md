@@ -277,6 +277,17 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
    (+2–3 %), prompt 60 → 61; sin MTP igual (15.2). Se automatizó: `scripts/install-gpu-mclk.sh` (ayudante root +
    sudoers) y los units del router y de KoboldCpp lo piden al arrancar y lo liberan al parar.
 
+### 5.10 Cada cuánto se le manda trabajo a la GPU (2026-11-15, MTP, temp 0, memoria fija)
+
+- Cada tramo de GPU tiene ~53 nodos y poco cálculo, así que la regla por FLOPs de Vulkan no corre
+  (`flops_per_submit = 0`): se envía cada 100 nodos o al llegar al 80 % del tramo (`almost_ready`). La GPU no arranca
+  hasta que el CPU grabó ~43 de los 53 comandos (grabar cuesta ~6.4 ms por paso).
+- `GGML_VK_MAX_NODES_PER_SUBMIT` (variable de entorno, sin parche): 100 → 20.90, 32 → 21.08, **16 → 21.21**, 8 → 21.07,
+  4 → 20.93. Confirmación 16 contra 100 en 5 rondas: **21.15 contra 20.86 (+1.4 %)**, gana 4 de 5; prompt largo igual.
+  Va en el unit del router (`llama_panel/install.py`).
+- Uso real por el router en modo IA (32K de contexto, muestreo por defecto): el MTP acierta 59–69 % (83 % a temp 0);
+  una respuesta de 900 tokens dio 15.6 tok/s y el test de humo 16.8. Con muestreo hay ±5 % de ruido entre corridas.
+
 ---
 
 ## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -361,6 +372,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Recuantizar Q3_K (a Q4_K, IQ3_S, Q8_0) | Por peso cuesta igual; suma VRAM o arriesga calidad (5.9) |
 | Afinar filas por grupo / shader genérico de IQ4_XS | Mejora la operación, nada de punta a punta (5.9) |
 | 3–4 borradores MTP, `--backend-sampling` | Peor / ruido (5.9) |
+| Enviar a la GPU cada 4–8 nodos | Peor que 16 (el costo de cada envío empieza a pesar, 5.10) |
 
 ---
 

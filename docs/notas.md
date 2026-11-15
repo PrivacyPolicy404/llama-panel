@@ -99,7 +99,8 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
   Flash-Next 13.4 → 13.8 tok/s sin MTP (15.0 → 15.7 por el router), Qwen3.6 27.8 → 28.7.
 - **Reloj de la memoria de la GPU:** con los MoE la GPU trabaja a ráfagas y amdgpu baja la VRAM a 1000 MHz en las pausas.
   `scripts/install-gpu-mclk.sh` (una vez, con sudo) instala un ayudante root; los units del router y de KoboldCpp fijan
-  la memoria en 2000 MHz al arrancar y la devuelven a `auto` al parar. Flash-Next con MTP +2–3 %.
+  la memoria en 2000 MHz al arrancar y la devuelven a `auto` al parar. Flash-Next con MTP +2–3 %. (Instalado el 2026-11-15.)
+- **`GGML_VK_MAX_NODES_PER_SUBMIT=16`** en el unit del router: la GPU arranca antes en cada tramo. +1.4 % con MTP.
 - **Expertos en el CPU (parche 5):** el kernel Q2_0 viejo era el límite (3.8 GB/s por hilo, la RAM da 40). Con el nuevo
   Flash-Next pasa a 15.2 tok/s sin MTP y **17.6 por el router**. Detalle en `analisis-rendimiento.md` 5.8.
 - El lightning indexer crece con el contexto (0.27 ms/token a 136 tokens, 0.74 a 19K) pero sigue siendo <1 % del total;
