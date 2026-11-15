@@ -17,7 +17,21 @@ PANEL = "http://127.0.0.1:8090"
 EIGHTHS = " ▁▂▃▄▅▆▇█"
 SVC = {"active": ("●", "Encendido"), "activating": ("◌", "Arrancando"), "deactivating": ("◌", "Apagando"),
        "failed": ("✖", "Error"), "inactive": ("○", "Apagado")}
-WATCH_PROCS = ("llama-server", "koboldcpp", "python3")
+WATCH_PROCS = ("llama-server", "llama-perplexit", "llama-bench", "koboldcpp", "python3")  # comm: 15 caracteres
+PANEL_UNITS = ("llama-router.service", "koboldcpp.service")
+
+
+def model_from_cmd(argv):
+    """Nombre corto del modelo a partir de los argumentos (-m RUTA): sin carpeta, extension ni sufijo de shard."""
+    for flag in ("-m", "--model"):
+        if flag in argv and argv.index(flag) + 1 < len(argv):
+            name = os.path.basename(argv[argv.index(flag) + 1])
+            for suf in (".gguf",):
+                name = name[:-len(suf)] if name.endswith(suf) else name
+            if "-0000" in name and "-of-" in name:
+                name = name[:name.index("-0000")]
+            return name
+    return None
 
 # Colores dentro del texto: caracteres de control que no se imprimen. curses los traduce a colores (la consola de
 # Linux tiene 16) y las funciones de abajo cuentan solo los caracteres visibles. Sin costo de VRAM.
@@ -93,16 +107,23 @@ class CpuSampler:
                 comm = raw[raw.index("(") + 1:raw.rindex(")")]
                 if comm not in WATCH_PROCS:
                     continue
+                extra = {}
                 if comm == "python3":
                     cmd = open(f"/proc/{pid}/cmdline").read().replace("\0", " ")
                     if "panel.py" not in cmd:
                         continue
                     comm = "panel"
+                elif comm.startswith("llama-"):
+                    # los del panel corren en sus servicios; cualquier otro es una prueba lanzada a mano
+                    argv = open(f"/proc/{pid}/cmdline").read().split("\0")
+                    cgroup = open(f"/proc/{pid}/cgroup").read()
+                    extra = {"model": model_from_cmd(argv), "external": not any(u in cgroup for u in PANEL_UNITS),
+                             "router": "--models-preset" in argv}
                 fields = raw[raw.rindex(")") + 2:].split()
                 ticks = int(fields[11]) + int(fields[12])
                 threads = int(fields[17])
                 rss = int(open(f"/proc/{pid}/statm").read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
-                out[int(pid)] = (comm, ticks, threads, rss)
+                out[int(pid)] = (comm, ticks, threads, rss, extra)
             except (OSError, ValueError, IndexError):
                 continue
         return out
@@ -117,10 +138,10 @@ class CpuSampler:
                 usage[i] = 0.0 if dt <= 0 else max(0.0, min(100.0, (1 - (idle - pidle) / dt) * 100))
             self.total_hist.append(sum(usage) / len(usage))
             hz, dt = os.sysconf("SC_CLK_TCK"), now - self.prev_t
-            for pid, (comm, ticks, threads, rss) in procs.items():
+            for pid, (comm, ticks, threads, rss, extra) in procs.items():
                 prev = self.prev_procs.get(pid)
                 cpu = (ticks - prev[1]) / hz / dt * 100 if prev and dt > 0 else 0.0
-                plist.append({"pid": pid, "name": comm, "cpu": cpu, "threads": threads, "rss": rss})
+                plist.append({"pid": pid, "name": comm, "cpu": cpu, "threads": threads, "rss": rss, **extra})
         self.prev, self.prev_procs, self.prev_t = cores, procs, now
         plist.sort(key=lambda p: -p["cpu"])
         return {"cores": usage, "total_hist": list(self.total_hist), "procs": plist}
@@ -268,7 +289,27 @@ def mem_box(hw, width):
     return box("memoria · RAM", lines, width)
 
 
-def models_box(state, stats, width, now):
+def external_runs(cpu):
+    """Procesos de llama.cpp que no son del panel (pruebas lanzadas a mano), sin repetir el mismo modelo."""
+    seen, out = set(), []
+    for p in (cpu or {}).get("procs") or []:
+        if p.get("external") and not p.get("router"):
+            key = (p["name"], p.get("model"))
+            if key not in seen:
+                seen.add(key)
+                out.append(p)
+    return out
+
+
+def external_lines(cpu, w):
+    out = []
+    for p in external_runs(cpu):
+        out.append(f" {YELLOW}◆ prueba fuera del panel{RESET} · {p['name']} · {p['cpu']:.0f}% cpu")
+        out.append(f"   {(p.get('model') or '?')[:w - 4]}")
+    return out
+
+
+def models_box(state, stats, width, now, cpu=None):
     w = width - 2
     svc = state["svc"]
     loaded = [k for k, v in (state["text"].get("models") or {}).items() if v.get("status") in ("loaded", "loading")]
@@ -280,6 +321,7 @@ def models_box(state, stats, width, now):
     gen = f" · paso {pr['step']}/{pr['steps']}" if svc["img"] == "active" and pr.get("steps") else ""
     lines.append(f" imágenes  {icon} {label}{gen}")
     lines.append(f"   {(img.get('selected') or '-')[:w - 4]}")
+    lines += external_lines(cpu, w)
     resp = (stats or {}).get("text") or []
     if resp:
         last = resp[-1]
@@ -380,6 +422,7 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     pr = img.get("progress") or {}
     gen = f" paso {pr['step']}/{pr['steps']}" if svc["img"] == "active" and pr.get("steps") else ""
     mod.append(f" imágenes {icon} {label}{gen}")
+    mod += external_lines(cpu, w)
     resp = (stats or {}).get("text") or []
     if resp:
         r = resp[-1]
@@ -421,7 +464,7 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
     left_w = width // 2
     right_w = width - left_w - 1
     top = side_by_side(gpu_box(hw, samples, left_w), cpu_box(cpu, hw, right_w))
-    bottom = side_by_side(mem_box(hw, left_w) + models_box(state, stats, left_w, now),
+    bottom = side_by_side(mem_box(hw, left_w) + models_box(state, stats, left_w, now, cpu),
                           live_box(live, stats, tps_hist, right_w) + procs_box(cpu, right_w))
     for l in top + bottom:
         out.append((l, ""))
