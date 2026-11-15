@@ -12,6 +12,10 @@
 # Instala:
 #   /usr/local/sbin/llama-gpu-mclk        ayudante root: high|auto|status sobre la placa amdgpu (no recibe rutas)
 #   /etc/sudoers.d/llama-gpu-mclk         permite a tu usuario correr SOLO ese ayudante sin contraseña
+#
+# Sin overclock: se probó subir la VRAM (pp_od_clk_voltage) y la placa calculaba bien hasta 2250 MHz, pero reescribir
+# la tabla de relojes en caliente (2250 -> 2000) colgó el SMU y la máquina entera (bitácora 5.13). Solo se elige
+# entre niveles de fábrica, lo mismo que hace el driver en automático.
 set -euo pipefail
 
 [ "$(id -u)" = 0 ] || { echo "Correr con sudo"; exit 1; }
@@ -57,6 +61,7 @@ esac
 EOF
 chown root:root "$HELPER"
 chmod 755 "$HELPER"
+rm -f /etc/llama-gpu-mclk.conf  # de la versión con overclock (descartada)
 
 TMP=$(mktemp)
 cat > "$TMP" <<EOF

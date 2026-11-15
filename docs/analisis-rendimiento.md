@@ -307,6 +307,19 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   (diff en `patches/experimentos/`).
 - La espera por la GPU ya está bien resuelta en llama.cpp: duerme hasta el 80 % del tramo y después espera activa.
 
+### 5.13 Hardware: RAM a 3200 y overclock de VRAM (2026-11-15)
+
+- **RAM, XMP perfil 1 (DDR4-3200, antes perfil 2 a 3000)**: `membw` 40.8 → 43.5 GB/s. Texto a temp 0 idéntico a la
+  referencia (`tools/bench/gen_ref.py`). Sin MTP 15.15 → 15.24 (+0.6 %: con 1 token el tramo de expertos es tan corto
+  que no llega al techo); con MTP a temp 0.8 ~19.75 → 20.15 (+2 %). **Queda.**
+- **VRAM**: `amdgpu.ppfeaturemask=0xfff7ffff` (bit de overdrive) habilita `pp_od_clk_voltage` (MCLK hasta 2250 MHz).
+  Escalera 2000 → 2250 con verificación en cada paso: `test-backend-ops` 633/633, texto idéntico, sin errores del
+  kernel; Q8_0 4096×14336 285 → 255 µs. **Pero al volver de 2250 a 2000 en caliente (escritorio activo) el SMU dejó de
+  responder ("last message was failed"), se colgó el anillo gfx (kscreenlocker) y el reset de la GPU no terminó:
+  la máquina quedó colgada.** Descartado: reescribir la tabla de relojes con displays activos no es seguro en Polaris.
+  El ayudante `llama-gpu-mclk` volvió a solo elegir niveles de fábrica (`high`/`auto`). El parámetro del kernel queda
+  (sin escribir la tabla no cambia nada).
+
 ---
 
 ## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -393,6 +406,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | 3–4 borradores MTP, `--backend-sampling` | Peor / ruido (5.9) |
 | Enviar a la GPU cada 4–8 nodos | Peor que 16 (el costo de cada envío empieza a pesar, 5.10) |
 | Vocabulario recortado para el borrador MTP | +3 % a temp 0, -6 % a temp 0.8 (5.12) |
+| Overclock de VRAM (pp_od_clk_voltage) | Calcula bien a 2250, pero cambiar la tabla en caliente colgó la máquina (5.13) |
 
 ---
 
