@@ -1,0 +1,65 @@
+diff --git a/common/arg.cpp b/common/arg.cpp
+index 6bf9355..65e3180 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -236,6 +236,11 @@ static void parse_tensor_buffer_overrides(const std::string & value, std::vector
+         if (buft) {
+             buft_list[ggml_backend_buft_name(buft)] = buft;
+         }
++        // pinned host buffers (e.g. CUDA_Host, Vulkan_Host), to pin only some of the tensors kept in host memory
++        auto * host_buft = ggml_backend_dev_host_buffer_type(dev);
++        if (host_buft) {
++            buft_list[ggml_backend_buft_name(host_buft)] = host_buft;
++        }
+     }
+ 
+     for (const auto & override : string_split<std::string>(value, ',')) {
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 2cbee61..cff5c5b 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1325,6 +1325,7 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+         }
+ 
+         ggml_backend_buffer_type_t buft = nullptr;
++        bool buft_overridden = false;
+ 
+         // check overrides
+         if (tensor_buft_overrides) {
+@@ -1343,6 +1344,7 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+                         }
+                     } else {
+                         buft = overrides->buft;
++                        buft_overridden = true;
+                     }
+ 
+                     LLAMA_LOG_DEBUG("tensor %s (%zu MiB %s) buffer type overridden to %s\n",
+@@ -1364,6 +1366,13 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+         // avoid using a host buffer when using mmap
+         auto * buft_dev = ggml_backend_buft_get_device(buft);
+         if (use_mmap && buft_dev && buft == ggml_backend_dev_host_buffer_type(buft_dev)) {
++            if (buft_overridden) {
++                static std::once_flag once;
++                std::call_once(once, [buft] {
++                    LLAMA_LOG_WARN("llama_model_loader: tensor overrides to %s are ignored with mmap enabled - use --load-mode none to pin them\n",
++                            ggml_backend_buft_name(buft));
++                });
++            }
+             auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+             if (!cpu_dev) {
+                 throw std::runtime_error("no CPU backend found");
+diff --git a/tools/llama-bench/llama-bench.cpp b/tools/llama-bench/llama-bench.cpp
+index 5cbdda1..b4ed0df 100644
+--- a/tools/llama-bench/llama-bench.cpp
++++ b/tools/llama-bench/llama-bench.cpp
+@@ -956,6 +956,10 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
+                         if (buft) {
+                             buft_list[ggml_backend_buft_name(buft)] = buft;
+                         }
++                        auto * host_buft = ggml_backend_dev_host_buffer_type(dev);
++                        if (host_buft) {
++                            buft_list[ggml_backend_buft_name(host_buft)] = host_buft;
++                        }
+                     }
+                 }
+                 auto override_group_span_len = std::strcspn(value, ",");
