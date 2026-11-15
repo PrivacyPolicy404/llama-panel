@@ -67,7 +67,7 @@ class Preset(unittest.TestCase):
         out = TM.build_preset(settings(), self.models)
         self.assertIn("[x-MTP-Q4]\nmodel = /m/x-MTP-Q4.gguf\nspec-type = draft-mtp\nspec-draft-n-max = 2\n", out)
         self.assertIn("[y]\nmodel = /m/y.gguf\n", out)
-        self.assertTrue(out.split("\n")[2:4] == ["[*]", "n-gpu-layers = 99"])
+        self.assertIn("\n[*]\nn-gpu-layers = 99\n", out)
 
     def test_extra_overrides_fields(self):
         s = settings(models={"y.gguf": {"ctx": "4096", "reasoning": "on", "extra": "ctx-size = 2048\nparallel = 1"}})
@@ -75,12 +75,20 @@ class Preset(unittest.TestCase):
         self.assertIn("[y]\nmodel = /m/y.gguf\nreasoning = on\nctx-size = 2048\nparallel = 1\n", out)
         self.assertNotIn("ctx-size = 4096", out)
 
+    def test_ai_mode_extra_only_in_ai_mode_and_wins(self):
+        s = settings(models={"y.gguf": {"extra": "ctx-size = 8192\nparallel = 1", "extra_ai": "ctx-size = 32768"}})
+        normal = TM.build_preset(s, self.models)
+        ai = TM.build_preset(s, self.models, ai_mode=True)
+        self.assertIn("[y]\nmodel = /m/y.gguf\nctx-size = 8192\nparallel = 1\n", normal)
+        self.assertIn("[y]\nmodel = /m/y.gguf\nparallel = 1\nctx-size = 32768\n", ai)
+        self.assertNotIn("ctx-size = 8192", ai)
+
 
 class TextValidation(unittest.TestCase):
     def test_ok(self):
         errors, cfgs = TM.validate_settings("ctx-size = 8192", {"a": {"mtp": 1, "nmax": "3", "ctx": "4096"}})
         self.assertEqual(errors, [])
-        self.assertEqual(cfgs["a"], {"mtp": True, "nmax": "3", "reasoning": "", "ctx": "4096", "extra": ""})
+        self.assertEqual(cfgs["a"], {"mtp": True, "nmax": "3", "reasoning": "", "ctx": "4096", "extra": "", "extra_ai": ""})
 
     def test_errors(self):
         errors, _ = TM.validate_settings("mal", {"a": {"nmax": "99", "ctx": "10", "reasoning": "x", "extra": "?"}})

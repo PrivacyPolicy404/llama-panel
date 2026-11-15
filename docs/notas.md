@@ -179,6 +179,18 @@ Lecciones de la primera prueba (2026-11-15):
   Arreglo de fondo: `video=HDMI-A-1:d` en la línea del kernel (GRUB), si eso que está en HDMI-A-1 no hace falta sin escritorio.
 - El dashboard se recarga solo cuando cambia `kiosk.py`.
 
+Después del reinicio con los grupos y `video=HDMI-A-1:1920x1080@60e` (el dummy de Sunshine sin EDID quedaba en 640×480;
+`vdisplay` le agrega el 1440p por xrandr, así que darle un modo en el kernel no la afecta): consola en 160×45, la GPU se
+ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
+
+**Qué ganan los modelos con el modo IA** (medido 2026-11-15):
+- Velocidad: casi nada. Flash-Next igual; Qwen3.6 con cache 5600 MiB +2 % (no vale una configuración aparte);
+  tandas de 4096 en Flash-Next van mucho peor (prompt 45 tok/s).
+- **Contexto: Flash-Next pasa de 8K a 32K** (VRAM 7.56 GB en reposo, 7.72 con un prompt de 16K; con escritorio no entra).
+  Prompt de 16 224 tokens a 124 tok/s, generación 16.9 tok/s. 64K deja la VRAM en 7.97: demasiado justo.
+- Para eso cada modelo tiene **«opciones extra en modo IA»** (`extra_ai` en settings.json): se suman y pisan a las normales
+  solo con el modo IA activo. Al entrar o salir del modo IA el panel regenera el preset y recarga el modelo cargado.
+
 ## Pendientes / ideas
 
 - Con el modo IA activo, medir cuánta VRAM queda y si entran tandas o cache más grandes.

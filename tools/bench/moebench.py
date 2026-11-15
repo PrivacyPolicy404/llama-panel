@@ -12,6 +12,7 @@ Variables de entorno:
   N_PREDICT=256     tokens a generar por corrida
   PROMPT_FILE=...   usar el texto de un archivo como prompt (crudo, igual en las 3 corridas)
   TEMP=0.7          temperatura de muestreo (0 = determinista, para comparar sin ruido)
+  CTX=8192          tamano de contexto del server
   LD_LIBRARY_PATH=  carpeta con otra libggml-vulkan.so.1 para comparar versiones sin recompilar
   WRAP="systemd-run --user --scope --quiet -p MemoryMax=56G -p MemorySwapMax=0"
                     envuelve el server en un limite de memoria (recomendado al probar -lm none:
@@ -47,7 +48,7 @@ def vram():
 results = []
 for spec in sys.argv[2:]:
     label, _, extra = spec.partition("|")
-    cmd = [SERVER, "-m", model, "--host", "127.0.0.1", "--port", str(PORT), "-c", "8192", "-np", "1",
+    cmd = [SERVER, "-m", model, "--host", "127.0.0.1", "--port", str(PORT), "-c", os.environ.get("CTX", "8192"), "-np", "1",
            "--no-webui"] + ([] if " -t " in f" {extra} " else ["-t", "8"]) + shlex.split(extra)
     cmd = shlex.split(os.environ.get("WRAP", "")) + cmd  # ej: systemd-run --user --scope -p MemoryMax=54G
     log = open(f"bench-{re.sub(r'[^A-Za-z0-9]+', '_', label)}.log", "w")

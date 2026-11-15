@@ -46,8 +46,12 @@ def do_action(action):
         good, out = services.ai_mode(on)
         if not good:
             return fail(f"No se pudo {'activar' if on else 'desactivar'} el modo IA. {out}".strip())
-        return ok("Modo IA activado: escritorio apagado, dashboard en la pantalla." if on
-                  else "Modo IA desactivado: el escritorio vuelve en unos segundos.")
+        # las "opciones extra en modo IA" de cada modelo entran o salen del preset
+        with C.SETTINGS_LOCK:
+            TM.write_preset(ai_mode=on)
+        note = f" {apply_text()}" if svc_state() == "active" else ""
+        return ok(("Modo IA activado: escritorio apagado, dashboard en la pantalla." if on
+                   else "Modo IA desactivado: el escritorio vuelve en unos segundos.") + note)
     if action == "stop_all":
         svc("stop")
         svc("stop", C.IMG_SERVICE)

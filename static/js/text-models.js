@@ -11,6 +11,8 @@ function textBadges(m, cfg) {
   b.push(`<span class="badge">${cfg.ctx ? 'ctx ' + esc(cfg.ctx) : 'ctx global'}</span>`);
   const nExtra = cfg.extra.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
   if (nExtra) b.push(`<span class="badge">+${nExtra} ${nExtra > 1 ? 'opciones' : 'opción'}</span>`);
+  const nAi = (cfg.extra_ai || '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+  if (nAi) b.push(`<span class="badge accent" title="Se aplican solo con el modo IA activo">+${nAi} en modo IA</span>`);
   if (vramBytes && m.size > vramBytes * 0.95) b.push(`<span class="badge warn" title="No entra completo en la VRAM: parte va a la RAM y será más lento">más grande que la VRAM</span>`);
   return b.join('');
 }
@@ -22,6 +24,7 @@ export function readTextCfg(row) {
     reasoning: $('[data-f=reasoning]', row).value,
     ctx: $('[data-f=ctx]', row).value.trim(),
     extra: $('[data-f=extra]', row).value,
+    extra_ai: $('[data-f=extra_ai]', row).value,
   };
 }
 
@@ -60,6 +63,8 @@ export function renderTextModels() {
           <span></span>
           <label class="field wide"><span>Opciones extra (clave = valor, una por línea)</span>
             <textarea rows="2" data-f="extra" spellcheck="false">${esc(cfg.extra)}</textarea></label>
+          <label class="field wide"><span>Opciones extra en modo IA (se suman y pisan a las de arriba solo con el escritorio apagado, que libera ~0.4 GB de VRAM)</span>
+            <textarea rows="1" data-f="extra_ai" spellcheck="false" placeholder="ej: ctx-size = 32768">${esc(cfg.extra_ai || '')}</textarea></label>
         </div>
       </div>`);
     $('[data-toggle]', row).onclick = e => {

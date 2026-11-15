@@ -47,18 +47,32 @@ def scan_models(models_dirs=None):
 
 
 def model_cfg(settings, m):
-    default = {"mtp": bool(MTP_RE.search(Path(m["key"]).stem)), "nmax": "2", "reasoning": "", "ctx": "", "extra": ""}
+    default = {"mtp": bool(MTP_RE.search(Path(m["key"]).stem)), "nmax": "2", "reasoning": "", "ctx": "", "extra": "",
+               "extra_ai": ""}
     saved = settings["models"].get(m["key"]) or {}
     return {**default, **saved}
 
 
-def build_preset(settings, models):
+def ai_mode_active():
+    """Modo IA (escritorio apagado): el dashboard de la consola esta corriendo."""
+    from .services import run
+    return run("systemctl", "is-active", "llama-kiosk.service") == "active"
+
+
+def build_preset(settings, models, ai_mode=False):
+    """Arma el presets.ini. Con ai_mode, las "opciones extra en modo IA" de cada modelo se suman y pisan al resto
+    (la VRAM que libera el escritorio permite, por ejemplo, mas contexto)."""
     glob_lines, _ = C.clean_lines(settings["global"])
-    out = ["# Generado por llama-panel. No editar a mano: se reescribe al guardar.", "", "[*]"]
+    out = ["# Generado por llama-panel. No editar a mano: se reescribe al guardar.",
+           f"# Modo IA: {'activo (incluye las opciones extra de modo IA)' if ai_mode else 'inactivo'}", "", "[*]"]
     out += glob_lines + [""]
     for m in models:
         cfg = model_cfg(settings, m)
         extra, _ = C.clean_lines(cfg.get("extra", ""))
+        if ai_mode:
+            extra_ai, _ = C.clean_lines(cfg.get("extra_ai", ""))
+            ai_keys = {l.split("=", 1)[0].strip() for l in extra_ai}
+            extra = [l for l in extra if l.split("=", 1)[0].strip() not in ai_keys] + extra_ai  # lo de modo IA manda
         keys = {l.split("=", 1)[0].strip() for l in extra}
         fields = []
         if cfg.get("mtp"):
@@ -72,11 +86,12 @@ def build_preset(settings, models):
     return "\n".join(out)
 
 
-def write_preset():
+def write_preset(ai_mode=None):
+    """Escribe presets.ini; si no se dice, detecta si el modo IA esta activo."""
     settings = C.load_settings()
     models = scan_models()
     C.CFG_DIR.mkdir(parents=True, exist_ok=True)
-    C.PRESET_FILE.write_text(build_preset(settings, models))
+    C.PRESET_FILE.write_text(build_preset(settings, models, ai_mode_active() if ai_mode is None else ai_mode))
     return models
 
 
@@ -88,15 +103,18 @@ def validate_settings(global_text, models_in):
     for key, c in models_in.items():
         c = c if isinstance(c, dict) else {}
         extra = str(c.get("extra", ""))
+        extra_ai = str(c.get("extra_ai", ""))
         nmax = str(c.get("nmax", "2")).strip() or "2"
         rs = str(c.get("reasoning", ""))
         ctx = str(c.get("ctx", "")).strip()
         errors += [f"{key}: {b}" for b in C.clean_lines(extra)[1]]
+        errors += [f"{key} (modo IA): {b}" for b in C.clean_lines(extra_ai)[1]]
         if not (nmax.isdigit() and 1 <= int(nmax) <= 16):
             errors.append(f"{key}: borradores MTP debe ser un numero entre 1 y 16 (puso '{nmax}')")
         if ctx and not (ctx.isdigit() and int(ctx) >= 256):
             errors.append(f"{key}: contexto debe ser un numero de 256 o mas (puso '{ctx}')")
         if rs not in valid_rs:
             errors.append(f"{key}: razonamiento invalido '{rs}'")
-        cfgs[key] = {"mtp": bool(c.get("mtp")), "nmax": nmax, "reasoning": rs, "ctx": ctx, "extra": extra}
+        cfgs[key] = {"mtp": bool(c.get("mtp")), "nmax": nmax, "reasoning": rs, "ctx": ctx, "extra": extra,
+                     "extra_ai": extra_ai}
     return errors, cfgs
