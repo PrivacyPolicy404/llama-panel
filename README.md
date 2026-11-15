@@ -48,10 +48,24 @@ python3 panel.py --install
 Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-img`) y arranca el panel.
 La configuración del usuario vive en `~/.config/llama-panel/` (fuera del repo).
 
-## llama.cpp
+## llama.cpp: por qué un fork
 
-Se usa el fork `PrivacyPolicy404/llama.cpp` (rama `ot-host-buffers`) con un parche local; ver [patches/README.md](patches/README.md).
-Para actualizarlo: `scripts/update-llama.sh` (con `--check` solo informa).
+El servidor de texto usa el fork [PrivacyPolicy404/llama.cpp](https://github.com/PrivacyPolicy404/llama.cpp)
+(rama `ot-host-buffers`): el llama.cpp oficial más un parche chico.
+
+El parche existe por los modelos MoE grandes que no entran en la VRAM, como Qwen3.8-Flash-Next (125B):
+
+- Sus expertos viven en la RAM. Si están en memoria *fija* (pinned), la GPU los copia más rápido y el prompt se procesa ~20 % más rápido.
+- En amdgpu la memoria fija tiene un tope (GTT) de la mitad de la RAM: 31 GiB en esta máquina. Los expertos de Flash-Next ocupan 31.6 GiB:
+  fijarlos todos tira el driver ("device lost").
+- llama.cpp oficial solo permite fijar todo o nada. El parche deja elegir qué capas fijar con `-ot ...=Vulkan_Host`:
+  así entran 44 de 48 capas en el tope.
+
+Sin el parche ese modelo no carga con la configuración del panel; el resto de los modelos no lo necesita.
+Detalles, números y cómo reaplicarlo: [patches/README.md](patches/README.md).
+
+Para actualizar llama.cpp sin perder el parche: `scripts/update-llama.sh` (con `--check` solo informa cuántos commits nuevos hay).
+La versión queda fija hasta que se corre el script.
 
 ## Desarrollo
 
