@@ -1,0 +1,127 @@
+From 3372dc6828c8e0732e1c0886ef74c8f73edf77c9 Mon Sep 17 00:00:00 2001
+From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 00:33:11 -0300
+Subject: [PATCH] vulkan : add an fp32 variant of the lightning indexer for
+ devices without shaderFloat16
+
+The lightning indexer required device->fp16, so on GPUs without shaderFloat16
+(e.g. GCN/Polaris) it fell back to the CPU, adding two CPU/GPU round trips per
+sparse-attention layer. The new variant keeps K and the mask as 16-bit storage
+but uses fp32 tiles and dot products.
+
+test-backend-ops -o LIGHTNING_INDEXER: 210/210 OK on an RX 580 (RADV).
+Qwen3.8-Flash-Next decode, temp 0, no speculative decoding: 12.5-12.7 -> 13.1-13.2 t/s
+(98 instead of 122 graph splits per token).
+
+Written with AI assistance (Claude).
+---
+ ggml/src/ggml-vulkan/ggml-vulkan.cpp          |  8 ++++++--
+ .../vulkan-shaders/lightning_indexer.comp     | 20 +++++++++++++------
+ .../vulkan-shaders/vulkan-shaders-gen.cpp     |  4 +++-
+ 3 files changed, 23 insertions(+), 9 deletions(-)
+
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+index bb5aec3..24a5eb6 100644
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -3879,7 +3879,11 @@ void ggml_vk_load_shaders(vk_device& device, vk_pipeline requested) {
+ 
+     for (ggml_type k_type : lightning_indexer_k_types) {
+         const std::string name = "lightning_indexer_" + std::string(ggml_type_name(k_type)) + "_k_f32";
+-        ggml_vk_create_pipeline(device, device->pipeline_lightning_indexer_f32[k_type], name.c_str(), lightning_indexer_f32_len, lightning_indexer_f32_data, "main", 5, sizeof(vk_op_lightning_indexer_push_constants), {1, 1, 1}, {(uint32_t)k_type, fa_block_bytes(k_type)}, 1, true);
++        if (device->fp16) {
++            ggml_vk_create_pipeline(device, device->pipeline_lightning_indexer_f32[k_type], name.c_str(), lightning_indexer_f32_len, lightning_indexer_f32_data, "main", 5, sizeof(vk_op_lightning_indexer_push_constants), {1, 1, 1}, {(uint32_t)k_type, fa_block_bytes(k_type)}, 1, true);
++        } else {
++            ggml_vk_create_pipeline(device, device->pipeline_lightning_indexer_f32[k_type], name.c_str(), lightning_indexer_f32_fp32_len, lightning_indexer_f32_fp32_data, "main", 5, sizeof(vk_op_lightning_indexer_push_constants), {1, 1, 1}, {(uint32_t)k_type, fa_block_bytes(k_type)}, 1, true);
++        }
+     }
+ 
+     {
+@@ -16512,7 +16516,7 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
+ 
+                 // the q/w/m types and the shape relationships between q, k, w, m and dst
+                 // are already asserted in ggml_lightning_indexer()
+-                if (!ggml_vk_lightning_indexer_k_type_supported(k->type) || !device->fp16) {
++                if (!ggml_vk_lightning_indexer_k_type_supported(k->type)) {
+                     return false;
+                 }
+ 
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/lightning_indexer.comp b/ggml/src/ggml-vulkan/vulkan-shaders/lightning_indexer.comp
+index 56e8d18..89672ee 100644
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/lightning_indexer.comp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/lightning_indexer.comp
+@@ -2,7 +2,15 @@
+ 
+ #extension GL_EXT_control_flow_attributes : require
+ #extension GL_EXT_shader_16bit_storage : require
++
++// without FLOAT16 (no shaderFloat16, e.g. GCN/Polaris) K and the mask are still read as 16-bit storage,
++// but the tiles and the dot products are fp32
++#ifdef FLOAT16
+ #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
++#define LI_VEC4 f16vec4
++#else
++#define LI_VEC4 vec4
++#endif
+ 
+ #define BINDING_IDX_K 0u
+ 
+@@ -53,8 +61,8 @@ layout(push_constant) uniform PushConstants {
+ };
+ 
+ // the row padding keeps the keys of consecutive invocations in distinct banks
+-shared f16vec4 k_tile[BK][HEAD_SIZE / 4 + 1];
+-shared f16vec4 q_tile[BT][HEAD_SIZE / 4];
++shared LI_VEC4 k_tile[BK][HEAD_SIZE / 4 + 1];
++shared LI_VEC4 q_tile[BT][HEAD_SIZE / 4];
+ shared float   w_tile[BT];
+ 
+ void main() {
+@@ -92,7 +100,7 @@ void main() {
+             }
+         }
+ 
+-        k_tile[r][c4] = f16vec4(v);
++        k_tile[r][c4] = LI_VEC4(v);
+     }
+ 
+     const uint kl = tid % BK;
+@@ -117,7 +125,7 @@ void main() {
+                 const uint q_base = h * q_nb1 + t * q_nb2 + s * q_nb3 + c4 * 4;
+                 v = vec4(q[q_base], q[q_base + 1], q[q_base + 2], q[q_base + 3]);
+             }
+-            q_tile[r][c4] = f16vec4(v);
++            q_tile[r][c4] = LI_VEC4(v);
+         }
+ 
+         if (tid < BT) {
+@@ -133,9 +141,9 @@ void main() {
+         }
+ 
+         [[unroll]] for (uint c4 = 0; c4 < HEAD_SIZE / 4; ++c4) {
+-            const f16vec4 kv = k_tile[kl][c4];
++            const LI_VEC4 kv = k_tile[kl][c4];
+             [[unroll]] for (uint j = 0; j < TPI; ++j) {
+-                const f16vec4 qv = q_tile[tl + j * TS][c4];
++                const LI_VEC4 qv = q_tile[tl + j * TS][c4];
+                 qk[j] += float(dot(kv, qv));
+             }
+         }
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+index d263574..ad34a47 100644
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/vulkan-shaders-gen.cpp
+@@ -1162,7 +1162,9 @@ void process_shaders() {
+     // Compile IQ4_NL support in so its shared LUT is available when K uses it.
+     // K quant type is selected at runtime via the FaTypeK spec constant.
+     std::map<std::string, std::string> li_dict = {{"FLOAT_TYPE", "float"}, {"FLOAT_TYPEV4", "vec4"}, {"DATA_A_IQ4_NL", "1"}};
+-    string_to_spv("lightning_indexer_f32", "lightning_indexer.comp", li_dict);
++    string_to_spv("lightning_indexer_f32", "lightning_indexer.comp", merge_maps(li_dict, {{"FLOAT16", "1"}}));
++    // fp32 tiles for devices without shaderFloat16
++    string_to_spv("lightning_indexer_f32", "lightning_indexer.comp", li_dict, false);
+ 
+     string_to_spv("rwkv_wkv7_f32", "wkv7.comp", merge_maps(base_dict, {{"A_TYPE", "float"}}));
+ 
+-- 
+2.43.0
+

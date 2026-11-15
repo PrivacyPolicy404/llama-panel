@@ -19,7 +19,7 @@ PANEL = "http://127.0.0.1:8090"
 ROUTER = "http://127.0.0.1:8080"
 BASELINES = Path(__file__).with_name("baselines.json")
 TOLERANCE = 0.85
-DEFAULT_MODELS = ["Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K", "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0"]
+DEFAULT_MODELS = ["Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K", "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8"]
 
 
 def call(url, body=None, timeout=600):

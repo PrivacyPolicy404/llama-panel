@@ -1,11 +1,11 @@
 ---
 name: llama-cpp-update
-description: Revisar las novedades de llama.cpp y, si conviene, actualizar el llama.cpp de esta máquina (fork PrivacyPolicy404/llama.cpp, rama ot-host-buffers con un parche local) sin romper el panel ni los modelos MoE. Usar cuando el usuario pregunte si hay algo nuevo en llama.cpp, si conviene actualizar, pida actualizarlo, o haya que verificar que los modelos siguen rindiendo después de un cambio.
+description: Revisar las novedades de llama.cpp y, si conviene, actualizar el llama.cpp de esta máquina (fork PrivacyPolicy404/llama.cpp, rama ot-host-buffers con parches locales) sin romper el panel ni los modelos MoE. Usar cuando el usuario pregunte si hay algo nuevo en llama.cpp, si conviene actualizar, pida actualizarlo, o haya que verificar que los modelos siguen rindiendo después de un cambio.
 ---
 
 # Revisar y actualizar llama.cpp
 
-Antes de empezar, leer `docs/notas.md` (hardware, mediciones, por qué cada configuración) y `patches/README.md` (el fork y el parche).
+Antes de empezar, leer `docs/notas.md` (hardware, mediciones, por qué cada configuración) y `patches/README.md` (el fork y los parches).
 
 **Regla:** la versión de llama.cpp está fijada a propósito. Revisar e informar está bien; **actualizar solo si el usuario lo pide o lo aprueba** después de ver el resumen.
 
@@ -42,11 +42,15 @@ Tabla corta: commit, qué hace, si le sirve y por qué. Terminar con una recomen
 
 1. Confirmar que no esté usando los modelos (el script reinicia el router si está encendido).
 2. `~/llama-panel/scripts/update-llama.sh`
-   - Rebase de la rama `ot-host-buffers` (2 commits: el parche + la nota del README del fork) sobre `upstream/master`, compila, verifica el parche, sube al fork.
-   - Si el parche no aplica limpio, el script no cambia nada. Adaptarlo a mano: el cambio está en `common/arg.cpp` (agregar `ggml_backend_dev_host_buffer_type` a la lista de `-ot`), `tools/llama-bench/llama-bench.cpp` (lo mismo) y `src/llama-model-loader.cpp` (aviso cuando un override explícito a host buffer se ignora por mmap).
-   - Si choca la nota del README del fork, rehacerla arriba de todo del README nuevo.
-3. Volver a exportar el parche al repo del panel y commitear:
-   `git -C ~/llama.cpp format-patch -1 --stdout HEAD~1 > ~/llama-panel/patches/llama.cpp-ot-host-buffers.patch`
+   - Rebase de la rama `ot-host-buffers` (3 parches + 2 commits de notas del README del fork) sobre `upstream/master`, compila, verifica, sube al fork.
+   - Si algún parche no aplica limpio, el script no cambia nada. Adaptarlo a mano (detalle en `patches/README.md`):
+     1. `-ot` con host buffers: `common/arg.cpp` y `tools/llama-bench/llama-bench.cpp` (agregar `ggml_backend_dev_host_buffer_type` a la lista), `src/llama-model-loader.cpp` (aviso cuando un override explícito a host buffer se ignora por mmap).
+     2. Lightning indexer fp32: `vulkan-shaders/lightning_indexer.comp` (`LI_VEC4` según `FLOAT16`), `vulkan-shaders-gen.cpp` (variante `_fp32`), `ggml-vulkan.cpp` (elegir la variante si `!device->fp16` y no exigir fp16 en `supports_op`).
+     3. `llama-quantize COPY --tensor-type`: `src/llama-quant.cpp`, donde se arma `metadata[i].target_type`.
+   - Si choca una nota del README del fork, rehacerla arriba de todo del README nuevo.
+3. Volver a exportar los parches al repo del panel y commitear (buscar cada hash con `git log --oneline`):
+   `git -C ~/llama.cpp format-patch -1 --stdout <hash> > ~/llama-panel/patches/<nombre>.patch`
+4. Si el oficial ya incluye alguno de los parches (por ejemplo, si soportan fp16 opcional en el indexer), sacarlo de la rama.
 
 ## 5. Verificar
 

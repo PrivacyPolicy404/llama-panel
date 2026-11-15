@@ -1,0 +1,38 @@
+From 3ff09a6281f403eb8a1fbb144385aa32b3c6be08 Mon Sep 17 00:00:00 2001
+From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 00:33:11 -0300
+Subject: [PATCH] quantize : apply --tensor-type overrides in COPY mode
+
+COPY used to ignore --tensor-type. Now COPY copies every tensor as is except the
+ones matched by --tensor-type, so a few tensors of an already quantized model can be
+requantized without touching the rest (e.g. BF16 tensors left by a mixed-precision quant).
+
+Written with AI assistance (Claude).
+---
+ src/llama-quant.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/llama-quant.cpp b/src/llama-quant.cpp
+index 4ae3961..6578bc2 100644
+--- a/src/llama-quant.cpp
++++ b/src/llama-quant.cpp
+@@ -1193,6 +1193,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
+             metadata[i].target_type = llama_tensor_get_type(qs, params, tensor, default_type, metadata[i]);
+         } else {
+             metadata[i].target_type = tensor->type;
++            // COPY + --tensor-type: copy everything as is, except the tensors named explicitly
++            if (params->only_copy && ggml_n_dims(tensor) >= 2) {
++                const std::string tensor_name(tensor->name);
++                for (const auto & [pattern, qtype] : qs.tensor_type_patterns) {
++                    if (std::regex_search(tensor_name, pattern)) {
++                        metadata[i].target_type = tensor_type_fallback(qs, tensor, qtype);
++                        break;
++                    }
++                }
++            }
+         }
+ 
+         metadata[i].requires_imatrix = tensor_requires_imatrix(tensor->name, metadata[i].target_type, ftype);
+-- 
+2.43.0
+

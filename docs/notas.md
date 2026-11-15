@@ -33,7 +33,8 @@ Velocidades medidas por el router del panel (`tools/bench/baselines.json`). Prom
 | Modelo | Dónde | Generación | Prompt largo | VRAM |
 |---|---|---|---|---|
 | Huihui-Qwen3.6-35B-A3B-abliterated Q4_K (21.7 GB) | `/mnt/hdd1/gen/models` | 27.8 tok/s | 225 tok/s | 7.1 GB |
-| Qwen3.8-Flash-Next GSQ-RCO abliterated Q2_0 (SC117, 66.8 GB en 2 shards) | `~/models-nvme/qwen3.8-flash-next` | 15.0 tok/s | 105 tok/s | 7.2 GB |
+| Qwen3.8-Flash-Next GSQ-RCO abliterated Q2_0, **hc en Q8_0** (66 GB en 2 shards) | `~/models-nvme/qwen3.8-flash-next-hcq8` | 15.0–15.4 tok/s | 132 tok/s | 7.2 GB |
+| (el original, hc en BF16: queda como respaldo, comparte el shard de n-gramas por enlace duro) | `~/models-nvme/qwen3.8-flash-next` | 14.7 tok/s | 107 tok/s | 7.2 GB |
 
 Los densos de 8–9B (Qwen3, Qwen3.5) entran enteros en la VRAM y van a ~23–31 tok/s.
 
@@ -61,12 +62,46 @@ spec-type = draft-mtp
 spec-draft-model = ~/models-nvme/qwen3.8-flash-next/mtp-Qwen3.8-Flash-Next-Q4_0.gguf
 spec-draft-n-max = 2         # borradores de 2 tokens: +30% de generación (3 y 4 rinden menos)
 parallel = 1                 # IMPRESCINDIBLE: con 4 slots (default del router) rinde la mitad y el GTT llega a 30 GiB
-ubatch-size = 1024           # 2048 da algo más de prompt pero deja la VRAM en 7.8/8
-batch-size = 1024
+ubatch-size = 2048           # entra gracias a la VRAM que libera hc en Q8_0 (con el original deja la VRAM en 7.8/8)
+batch-size = 2048
 ```
 
-Camino de mejoras (prompt largo / generación): por defecto 62 / 12.8 → tandas grandes 104 / 12.7 →
-44 capas fijas (parche) 120 / 12.4 → + MTP 120 / 16.7 → final con margen de VRAM 105 / 15.
+El GGUF `-hcq8` es el de SC117 con las hyper-connections (`hc_(attn|ffn)_(up|down)`, 1.2 GiB en BF16) pasadas a Q8_0
+con `llama-quantize COPY --tensor-type` (parche 3). Calidad medida con `llama-perplexity --kl-divergence` (12 × 512 tokens):
+perplejidad 0.9988× ± 0.003 (igual), KLD media 0.0077, 97.5 % mismo token más probable. VRAM −0.55 GB, velocidad +2–3 %.
+
+Camino de mejoras (prompt largo / generación, por el router): por defecto 62 / 12.8 → tandas grandes 104 / 12.7 →
+44 capas fijas (parche 1) 120 / 12.4 → + MTP 120 / 16.7 → margen de VRAM 105 / 15 → indexer en GPU (parche 2) +4 % gen →
+hc en Q8_0 + tandas de 2048: **132 / 15–15.4**.
+
+### Dónde se va el tiempo de un token de Flash-Next (2026-11-15)
+
+Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~83 ms por token con el medidor:
+
+| Parte | ms por token |
+|---|---|
+| GPU, suma de operaciones | 47 (57 %) |
+| · matmul (de eso, pesos BF16 de las hyper-connections: 10.9 antes de Q8_0) | 29 |
+| · operaciones chicas (ADD, MUL, CPY, GET_ROWS…): ~2980 lanzamientos por token, 15.7 µs de promedio | 8 |
+| · DeltaNet 2.4 · lightning indexer 0.27 | |
+| Expertos en CPU + sincronizaciones + copias | 35.5 (43 %) |
+
+- GPU y CPU **se turnan y nunca trabajan a la vez** (98 tramos por token: 49 GPU + 49 CPU).
+- Perf del CPU: 65 % de los hilos **girando en espera** (libgomp), 27 % calculando expertos (`ggml_vec_dot_q2_0_q8_0`).
+  Esa espera activa es lo mejor: `OMP_WAIT_POLICY=PASSIVE` 12.2, `GOMP_SPINCOUNT=10000` 12.4, `--prio 2` 12.4,
+  contra 13.2 tok/s por defecto.
+- Margen que queda: fusionar operaciones chicas en Vulkan (hasta ~8 ms), solapar CPU y GPU (cambio grande en el scheduler).
+
+### Lo que no funcionó (para no repetirlo)
+
+- MTP con borradores de 3 o 4 tokens (acierta igual que Strata, 3.1 tokens por pasada, pero verificar más tokens obliga
+  a leer más expertos en el CPU): 16.2 contra 16.9 tok/s de borradores de 2. `--spec-draft-p-min` 0.7/0.85 tampoco.
+- Combinar MTP con prompt lookup (`--spec-type draft-mtp,ngram-simple` / `ngram-mod`): igual en texto,
+  **−29 % / −4 % al editar código** (18.8 tok/s con MTP solo).
+- Expert cache en Flash-Next (no hay VRAM: 3.2 GB para 37 GB de expertos): siempre peor.
+- Una variante del lightning indexer "de a 1 token": en la GPU tarda 0.27 ms por token, no hay qué ganar.
+- Medir con MTP y temperatura 0.7 para comparar cambios chicos: el ruido del borrador tapa diferencias de ±5 %.
+  Para A/B usar `TEMP=0`, sin MTP, y alternar las versiones.
 
 ## Descubrimientos
 
@@ -86,13 +121,18 @@ Camino de mejoras (prompt largo / generación): por defecto 62 / 12.8 → tandas
 - El router descarga de forma asíncrona: cargar otro modelo enseguida da `model limit reached`. El panel descarga los
   otros y reintenta (`actions._load_with_retry`).
 - `mtp-q2_0.gguf` del repo de SC117 es formato de Strata (`qwen4exp-mtp`), llama.cpp no lo carga. Usar el `mtp-*-Q4_0.gguf`.
-- Strata (motor de terceros) promete más con caching por experto, pero no se verificó si soporta Vulkan/AMD.
+- **Strata** (github.com/Niko1221/Strata, MIT) no corre en la RX 580: necesita CUDA (RTX 20+) o HIP/ROCm (RDNA2+);
+  Polaris (gfx803) quedó fuera de ROCm. Sus ideas ya están casi todas en llama.cpp; sus kernels propios son CUDA/HIP.
+- La RX 580 **no tiene `shaderFloat16`** (sí lectura/escritura de 16 bits). Operaciones de Vulkan que exigen fp16 caen al CPU:
+  revisar con `tools/bench/sched_profile.py` qué corre en el CPU además de los expertos.
+- `GGML_VK_PERF_LOGGER` aborta (`GGML_ASSERT(ctx->compute_ctx.expired())`) en modelos que alternan CPU/GPU; para medir se
+  usó una copia de `libggml-vulkan` con ese assert cambiado por un `synchronize` (no está en el fork).
 
-## llama.cpp: fork y parche
+## llama.cpp: fork y parches
 
-- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + parche + nota en el README.
+- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 3 parches + notas en el README.
 - Clon superficial en `~/llama.cpp`; `origin` = fork, `upstream` = oficial (push deshabilitado).
-- Parche: `-ot` acepta `Vulkan_Host` / `CUDA_Host` para fijar solo parte de los tensores en RAM. Ver `patches/README.md`.
+- Parches (ver `patches/README.md`): `-ot` con `Vulkan_Host`; lightning indexer fp32 en Vulkan; `llama-quantize COPY --tensor-type`.
 - Actualizar: skill `llama-cpp-update` / `scripts/update-llama.sh` (con `--check` solo informa). La versión queda fija hasta correrlo.
 - Al 2026-11-14: base `9183a55`; había 33 commits nuevos en el oficial y ninguno mejoraba algo en esta máquina.
 
@@ -110,13 +150,31 @@ Camino de mejoras (prompt largo / generación): por defecto 62 / 12.8 → tandas
 - `utilization.py`: cuánto trabajan CPU y GPU durante una generación (para encontrar el cuello de botella).
 - `gguf_sizes.py`: tamaño de los expertos por capa (para calcular cuántas capas entran en el GTT).
 - `smoke_models.py`: carga cada MoE por el panel y compara contra `baselines.json`.
+- `sched_profile.py`: tramos (splits) por token y qué operaciones que no son expertos caen en el CPU.
+- `vk_timings.py`: tiempo de GPU por operación y cuánto queda para CPU + esperas (necesita una libggml-vulkan sin el
+  assert del medidor, ver Descubrimientos).
+- `cpu_profile.sh`: perfil del CPU con `perf` (requiere `sudo sysctl kernel.perf_event_paranoid=1`, vuelve a 4 al reiniciar).
+- `moebench.py` acepta `TEMP=0` (comparar sin ruido), `PROMPT_FILE` y `LD_LIBRARY_PATH` (comparar dos `libggml-vulkan`
+  sin recompilar).
 
 Antes de medir: apagar texto e imágenes en el panel. Para probar `--load-mode none` con modelos grandes, envolver
 el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryMax=56G ..."`).
 
+## Modo IA
+
+Botón «Modo IA» en el panel: apaga SDDM/KDE y Sunshine (~350–400 MiB de VRAM: kwin 95, plasmashell 79, Xorg, Sunshine)
+y muestra un dashboard estilo btop en tty1 (`llama_panel/kiosk.py`, curses, solo caracteres de la consola de Linux:
+bloques y bordes, no braille). «Salir del modo IA» vuelve a levantar SDDM, que tiene inicio de sesión automático.
+Se instala una vez con `sudo ~/llama-panel/scripts/install-modo-ia.sh`: ayudante root `/usr/local/sbin/llama-modo-ia`
+(solo systemctl/chvt con argumentos fijos), servicio `llama-kiosk.service` (corre como el usuario) y una regla de sudoers
+limitada a ese ayudante. Probar el cuadro por SSH: `python3 -m llama_panel.kiosk --once --size 150x44`.
+
 ## Pendientes / ideas
 
-- Mover Qwen3.6 al NVMe para que cargue en segundos y no en ~2 minutos.
+- Con el modo IA activo, medir cuánta VRAM queda y si entran tandas o cache más grandes.
+- Borrar el Flash-Next original (shard 1, 38 GB) si el `-hcq8` anda bien un tiempo.
+- Fusionar operaciones chicas en Vulkan (cadenas de ADD de las hyper-connections): hasta ~8 ms por token.
+- Mover Qwen3.6 al NVMe (el usuario prefiere dejarlo en el HDD por ahora: tarda ~2 min en cargar si no está en caché).
 - Sacar `n-gpu-layers = 99` de los ajustes globales.
 - Campos propios para MoE en el panel (expertos en RAM, cache, reparto con el CPU) y un botón de tuning.
 - Botón "Actualizar desde GitHub" en el panel; descarga automática por inactividad.

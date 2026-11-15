@@ -5,10 +5,10 @@
     "vram_gib": 7.09,
     "fecha": "2026-11-14"
   },
-  "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0": {
+  "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8": {
     "gen_tps": 15.0,
-    "prompt_largo_tps": 105.5,
-    "vram_gib": 7.16,
-    "fecha": "2026-11-14"
+    "prompt_largo_tps": 131.8,
+    "vram_gib": 7.24,
+    "fecha": "2026-11-15"
   }
 }

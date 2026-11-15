@@ -10,6 +10,9 @@ Escribe un log bench-<etiqueta>.log en la carpeta actual: correrlo desde una car
 Variables de entorno:
   PROMPT_MULT=8     largo del prompt (8 ~ 335 tokens, 64 ~ 2600 tokens)
   N_PREDICT=256     tokens a generar por corrida
+  PROMPT_FILE=...   usar el texto de un archivo como prompt (crudo, igual en las 3 corridas)
+  TEMP=0.7          temperatura de muestreo (0 = determinista, para comparar sin ruido)
+  LD_LIBRARY_PATH=  carpeta con otra libggml-vulkan.so.1 para comparar versiones sin recompilar
   WRAP="systemd-run --user --scope --quiet -p MemoryMax=56G -p MemorySwapMax=0"
                     envuelve el server en un limite de memoria (recomendado al probar -lm none:
                     si algo se carga entero en RAM, muere el server y no el escritorio)
@@ -23,6 +26,8 @@ model = sys.argv[1]
 PROMPT = ("Explica con detalle, en español, cómo funciona un motor de combustión interna de cuatro tiempos, "
           "sus partes principales, la historia de su desarrollo y sus ventajas y desventajas frente a un motor eléctrico. ") * int(os.environ.get("PROMPT_MULT", "8"))
 N_PREDICT = int(os.environ.get("N_PREDICT", "256"))
+if os.environ.get("PROMPT_FILE"):  # prompt propio (texto crudo, sin plantilla de chat)
+    PROMPT = open(os.environ["PROMPT_FILE"]).read()
 
 
 def req(path, body=None, timeout=900):
@@ -60,7 +65,7 @@ for spec in sys.argv[2:]:
         load_s = time.time() - t0
         runs = []
         for i in range(3):
-            r = req("/completion", {"prompt": PROMPT + f" (variante {i})", "n_predict": N_PREDICT, "temperature": 0.7,
+            r = req("/completion", {"prompt": PROMPT if os.environ.get("PROMPT_FILE") else PROMPT + f" (variante {i})", "n_predict": N_PREDICT, "temperature": float(os.environ.get("TEMP", "0.7")),
                                     "ignore_eos": True, "cache_prompt": False})
             t = r["timings"]
             runs.append((t["prompt_per_second"], t["predicted_per_second"], t["prompt_n"]))

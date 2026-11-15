@@ -1,37 +1,49 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más el parche de abajo. En `~/llama.cpp`:
+el `master` oficial más los parches de abajo y una nota en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
 
-Para actualizar sin perder el parche:
+Para actualizar sin perder los parches:
 
 ```bash
 ~/llama-panel/scripts/update-llama.sh --check   # cuántos commits nuevos hay
 ~/llama-panel/scripts/update-llama.sh           # rebase + compilar + verificar + subir al fork + reiniciar el router
 ```
 
-Si el parche deja de aplicar limpio, el script no cambia nada y avisa.
+Si algún parche deja de aplicar limpio, el script no cambia nada y avisa.
+Los archivos `.patch` son copias de los commits (sin las notas del README), por si hiciera falta reaplicarlos a mano con `git am`.
 
-La rama tiene dos commits sobre el oficial: el parche y una nota en el README del fork que explica qué cambia y por qué.
+## 1. `llama.cpp-ot-host-buffers.patch`
 
-## llama.cpp-ot-host-buffers.patch
+`-ot` / `--override-tensor` acepta los buffers de memoria fija (`Vulkan_Host`, `CUDA_Host`, ...), para fijar solo una
+parte de los tensores que viven en RAM. En amdgpu la memoria fija (GTT) está limitada a la mitad de la RAM (31 GiB acá)
+y los expertos de Flash-Next ocupan 31.6 GiB: fijarlos todos tira el driver.
 
-Copia del commit del parche (sin la nota del README), por si hiciera falta reaplicarlo a mano (`git apply`).
+Uso: `-lm none --lazy-mode on --no-host -ot "blk\.([0-9]|[1-3][0-9]|4[0-3])\.ffn_.*_exps=Vulkan_Host,ffn_.*_exps=CPU"`
+(44 de 48 capas fijas). Prompt largo 104 -> 125 tok/s. **Sin este parche la configuración de Flash-Next no carga.**
 
-Permite usar los buffers de memoria fija (`Vulkan_Host`, `CUDA_Host`, ...) en `-ot` / `--override-tensor`,
-para fijar solo una parte de los tensores que viven en RAM. Sirve cuando la memoria fija tiene un límite
-(en amdgpu, el GTT es por defecto la mitad de la RAM: 31 GiB en esta máquina) y los expertos de un MoE no entran enteros.
+## 2. `llama.cpp-vulkan-lightning-indexer-fp32.patch`
 
-Lo usa la configuración de Qwen3.8-Flash-Next en el panel. **Sin el parche ese modelo no carga** (`unknown buffer type`).
+La RX 580 no tiene `shaderFloat16` y el lightning indexer de Vulkan lo exigía, así que corría en el CPU: dos turnos
+GPU↔CPU extra en cada una de las 12 capas de atención dispersa de Flash-Next. El parche agrega una variante del shader
+que lee K y la máscara en 16 bits pero calcula en 32. `test-backend-ops`: 210/210 OK.
+Tramos por token 122 -> 98; generación +4–5 % (temperatura 0, sin MTP). En la GPU tarda 0.27 ms por token.
 
-Uso (ejemplo): `-lm none --lazy-mode on --no-host -ot "blk\.([0-9]|[1-3][0-9]|4[0-3])\.ffn_.*_exps=Vulkan_Host,ffn_.*_exps=CPU"`.
+## 3. `llama.cpp-quantize-copy-tensor-type.patch`
 
-## Si se manda upstream
+`llama-quantize ENTRADA SALIDA COPY --tensor-type 'patron=tipo'` recuantiza solo los tensores nombrados y copia el
+resto tal cual (antes `COPY` ignoraba `--tensor-type`). Se usó para generar Flash-Next con las hyper-connections en Q8_0:
+
+```bash
+llama-quantize --keep-split --tensor-type 'hc_(attn|ffn)_(up|down)=q8_0' \
+    ORIGINAL-00001-of-00002.gguf SALIDA-hcq8.gguf COPY 8
+```
+
+## Si se propone upstream
 
 Las reglas de llama.cpp (`CONTRIBUTING.md`, `AGENTS.md`) piden abrir primero un issue, declarar el uso de IA,
-y que la descripción del PR y los mensajes de commit los escriba una persona. El commit de la rama del fork
-tiene un mensaje escrito con IA: para un PR hay que rehacerlo con un mensaje propio, y llevar solo el commit
-del parche (la nota del README es propia del fork).
+y que la descripción del PR y los mensajes de commit los escriba una persona. Los commits del fork tienen mensajes
+escritos con IA: para un PR hay que rehacerlos con mensajes propios, uno por PR, sin las notas del README del fork.

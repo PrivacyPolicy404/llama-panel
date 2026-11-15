@@ -8,7 +8,7 @@ Responder en castellano rioplatense. El usuario trabaja por SSH en la máquina.
 ## Leer primero
 
 - `docs/notas.md`: hardware y sus límites (GTT 31 GiB, HDD vs NVMe), mediciones, por qué cada configuración de modelo, trampas conocidas.
-- `patches/README.md`: el fork de llama.cpp y el parche local.
+- `patches/README.md`: el fork de llama.cpp y sus 3 parches locales.
 - `README.md`: estructura del código.
 
 ## Código
@@ -19,12 +19,15 @@ Responder en castellano rioplatense. El usuario trabaja por SSH en la máquina.
 - Tests: `python3 -m unittest`. Errores del panel: `journalctl --user -u llama-panel -f`.
 - La configuración del usuario vive fuera del repo, en `~/.config/llama-panel/` (`settings.json`, `presets.ini` generado, `kobold.env`).
   Al tocar ajustes por la API, conservar los de modelos que no están en disco.
+- Modo IA (`llama_panel/kiosk.py` + `scripts/install-modo-ia.sh`): apaga el escritorio KDE y muestra un dashboard en tty1.
+  Activarlo **cierra la sesión gráfica del usuario**: nunca hacerlo sin que lo pida. Probar el dashboard por SSH con `--once`.
 
 ## llama.cpp
 
-- `~/llama.cpp` sale del fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` (oficial + parche). La versión está fijada a propósito:
+- `~/llama.cpp` sale del fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` (oficial + 3 parches). La versión está fijada a propósito:
   **no actualizar sin que el usuario lo pida**. Para revisar novedades o actualizar, usar la skill `llama-cpp-update`.
-- La configuración de Qwen3.8-Flash-Next en el panel necesita el parche (`-ot ...=Vulkan_Host`).
+- La configuración de Qwen3.8-Flash-Next en el panel necesita el parche 1 (`-ot ...=Vulkan_Host`); el modelo `-hcq8` se generó con el parche 3.
+- Para comparar cambios chicos de rendimiento: `TEMP=0`, sin MTP, versiones alternadas (el MTP con muestreo mete ±5 % de ruido).
 
 ## Probar cambios con modelos
 
