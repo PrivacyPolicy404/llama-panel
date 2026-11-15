@@ -56,3 +56,7 @@ if [ "$(systemctl --user is-active llama-router || true)" = active ]; then
     systemctl --user restart llama-router
 fi
 say "Listo: llama.cpp actualizado ($behind commits nuevos) con el parche aplicado."
+echo "Verificar: python3 ~/llama-panel/tools/bench/smoke_models.py"
+echo "Para volver a la version anterior si algo anda peor:"
+echo "  git -C $LLAMA_DIR reset --hard $old_head && cmake --build $LLAMA_DIR/build --target llama-server llama-bench -j $JOBS"
+echo "  git -C $LLAMA_DIR push --force-with-lease origin $BRANCH"

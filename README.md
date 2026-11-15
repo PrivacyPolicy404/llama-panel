@@ -37,6 +37,13 @@ static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo)
 tests/                unittest de la stdlib
+scripts/
+  update-llama.sh     actualiza llama.cpp manteniendo el parche (--check solo informa)
+patches/              parche local de llama.cpp y cómo reaplicarlo
+tools/bench/          benchmark, uso de CPU/GPU, tamaños de GGUF y test de humo de los modelos
+docs/notas.md         hardware, mediciones, por qué cada configuración, trampas conocidas
+.claude/skills/       skill llama-cpp-update (revisar novedades y actualizar llama.cpp)
+CLAUDE.md             contexto y convenciones para Claude Code
 ```
 
 ## Instalación

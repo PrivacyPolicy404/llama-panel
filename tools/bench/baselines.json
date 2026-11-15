@@ -1,0 +1,14 @@
+{
+  "Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K": {
+    "gen_tps": 27.8,
+    "prompt_largo_tps": 225.3,
+    "vram_gib": 7.09,
+    "fecha": "2026-11-14"
+  },
+  "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0": {
+    "gen_tps": 15.0,
+    "prompt_largo_tps": 105.5,
+    "vram_gib": 7.16,
+    "fecha": "2026-11-14"
+  }
+}

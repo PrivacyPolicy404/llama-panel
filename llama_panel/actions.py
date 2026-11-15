@@ -74,11 +74,40 @@ def text_load(body):
             router("GET", "/models?reload=1", timeout=10)
         except Exception:  # noqa: BLE001
             pass
-    try:
-        router("POST", "/models/load", {"model": mid}, timeout=15)
-    except Exception as e:  # noqa: BLE001
-        return fail(f"No se pudo cargar {mid}: {router_error(e)}")
-    return ok(f"Cargando {mid}… (si habia otro modelo cargado, se descarga).{note}")
+    others = _unload_others(mid)
+    err = _load_with_retry(mid)
+    if err:
+        return fail(f"No se pudo cargar {mid}: {err}")
+    if others:
+        note = f" Se descargo {', '.join(others)}." + note
+    return ok(f"Cargando {mid}…{note}")
+
+
+def _unload_others(keep):
+    """El router admite un solo modelo (--models-max 1): descarga los demas antes de cargar otro."""
+    others = [k for k, v in router_models().items()
+              if k != keep and v["status"] in ("loaded", "loading", "sleeping")]
+    for k in others:
+        try:
+            router("POST", "/models/unload", {"model": k}, timeout=15)
+        except Exception:  # noqa: BLE001
+            pass
+    return others
+
+
+def _load_with_retry(mid, timeout=90):
+    """La descarga es asincrona: mientras el modelo anterior termina de salir, el router responde
+    "model limit reached". Reintenta solo en ese caso. Devuelve None si salio bien o el mensaje de error."""
+    end = time.time() + timeout
+    while True:
+        try:
+            router("POST", "/models/load", {"model": mid}, timeout=15)
+            return None
+        except Exception as e:  # noqa: BLE001
+            msg = router_error(e)
+            if "limit reached" not in msg or time.time() > end:
+                return msg
+            time.sleep(1)
 
 
 def text_unload(body):
