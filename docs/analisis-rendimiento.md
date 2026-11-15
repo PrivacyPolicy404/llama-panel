@@ -330,6 +330,11 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   usaron muchas veces). Con la tabla modificada, Polaris falla los cambios de nivel de memoria cuando cambia la
   configuración de pantallas. +1–2 % no paga cuelgues. (Unas rayas en pantalla en ese momento eran el cable HDMI.)
   `install-gpu-mclk.sh` sin `--oc` ahora saca un overclock anterior.
+- **Último intento** (a pedido, "si no anda volvemos"): piso de voltaje 1000 mV para ese nivel, tope de 200 W y la
+  memoria fija desde el arranque (sin transiciones después). Falló en el arranque mismo, antes del escritorio: el SMU
+  rechazó pasar la memoria al nivel 2 apenas aplicada la tabla ("last message was failed ret is 255", queda en 300
+  MHz). **Conclusión final: este SMU no acepta cambios de nivel de memoria con la tabla modificada, con o sin
+  pantallas de por medio, con o sin más voltaje. Placa de fábrica.**
 
 ---
 
