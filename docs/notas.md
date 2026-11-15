@@ -100,7 +100,7 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 - **Reloj de la memoria de la GPU:** con los MoE la GPU trabaja a ráfagas y amdgpu baja la VRAM a 1000 MHz en las pausas.
   `scripts/install-gpu-mclk.sh` (una vez, con sudo) instala un ayudante root; los units del router y de KoboldCpp fijan
   la memoria en 2000 MHz al arrancar y la devuelven a `auto` al parar. Flash-Next con MTP +2–3 %. (Instalado el 2026-11-15.)
-- **RAM en XMP perfil 1 (DDR4-3200)** desde el 2026-11-15: 43.5 GB/s. **Overclock de VRAM: solo al arrancar** (`install-gpu-mclk.sh --oc`), nunca en caliente: colgó la máquina (bitácora 5.13).
+- **RAM en XMP perfil 1 (DDR4-3200)** desde el 2026-11-15: 43.5 GB/s. **Sin overclock de VRAM**: el SMU de Polaris falla con la tabla modificada (cuelgue, memoria clavada en 300 MHz; bitácora 5.13).
 - **`GGML_VK_MAX_NODES_PER_SUBMIT=16`** en el unit del router: la GPU arranca antes en cada tramo. +1.4 % con MTP.
 - **Expertos en el CPU (parche 5):** el kernel Q2_0 viejo era el límite (3.8 GB/s por hilo, la RAM da 40). Con el nuevo
   Flash-Next pasa a 15.2 tok/s sin MTP y **17.6 por el router**. Detalle en `analisis-rendimiento.md` 5.8.

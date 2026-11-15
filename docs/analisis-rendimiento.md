@@ -323,8 +323,13 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   de nivel el driver, como siempre. Arrancó bien (2250 MHz, 950 mV, sin errores del kernel), texto idéntico.
   Contra 2000 MHz (RAM a 3200 en los dos): sin MTP 15.24 → 15.40 (+1 %), MTP a temp 0.8 20.15 → 20.64 (+2 %),
   prompt largo igual (~135). **La placa llega al tope de potencia (153–156 W de 155) y baja el núcleo a ~1210–1240
-  MHz**: por eso la ganancia es chica y el prompt (más núcleo) no mejora. Siguiente: tope de potencia a 200 W
-  (`--power 200`, máximo del driver 201), también solo al arrancar.
+  MHz**: por eso la ganancia es chica y el prompt (más núcleo) no mejora.
+- **Descartado del todo**: en ese mismo arranque, al entrar al modo IA (se apaga el escritorio y se reconfiguran las
+  salidas de video) y pedir la memoria al máximo, el SMU rechazó el cambio ("last message was failed ret is 255") y la
+  memoria quedó clavada en 300 MHz en `manual`. Con la tabla de fábrica eso nunca pasó (modo IA + memoria fija se
+  usaron muchas veces). Con la tabla modificada, Polaris falla los cambios de nivel de memoria cuando cambia la
+  configuración de pantallas. +1–2 % no paga cuelgues. (Unas rayas en pantalla en ese momento eran el cable HDMI.)
+  `install-gpu-mclk.sh` sin `--oc` ahora saca un overclock anterior.
 
 ---
 
@@ -412,7 +417,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | 3–4 borradores MTP, `--backend-sampling` | Peor / ruido (5.9) |
 | Enviar a la GPU cada 4–8 nodos | Peor que 16 (el costo de cada envío empieza a pesar, 5.10) |
 | Vocabulario recortado para el borrador MTP | +3 % a temp 0, -6 % a temp 0.8 (5.12) |
-| Overclock de VRAM (pp_od_clk_voltage) | Calcula bien a 2250, pero cambiar la tabla en caliente colgó la máquina (5.13) |
+| Overclock de VRAM (pp_od_clk_voltage) | +1–2 % (tope de potencia); el SMU falla con la tabla modificada: cuelgue y memoria clavada (5.13) |
 
 ---
 

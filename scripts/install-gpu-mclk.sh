@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Memoria de la GPU al máximo mientras haya un servidor de modelos encendido. Correr UNA vez con sudo:
 #
-#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh             # instalar (sin overclock)
+#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh             # instalar (sin overclock; saca uno anterior)
 #   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --oc 2250   # instalar + overclock de VRAM al arrancar
 #   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --oc 2250 --power 200   # + tope de potencia en W (al arrancar)
 #   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --uninstall # desinstalar todo
@@ -92,6 +92,14 @@ EOF
 chown root:root "$HELPER"
 chmod 755 "$HELPER"
 rm -f /etc/llama-gpu-mclk.conf  # de la versión que cambiaba el overclock en caliente (descartada)
+
+if [ -z "$OC_MHZ" ] && [ -f "$OC_UNIT" ]; then
+    # sin --oc: sacar el overclock de una instalación anterior (vuelve a fábrica en el próximo arranque)
+    systemctl disable llama-gpu-oc.service 2>/dev/null || true
+    rm -f "$OC_UNIT" "$OC_SCRIPT" /etc/llama-gpu-oc.mhz /etc/llama-gpu-oc.power
+    systemctl daemon-reload
+    echo "Overclock de VRAM desactivado: la placa vuelve a fábrica en el próximo arranque."
+fi
 
 if [ -n "$OC_MHZ" ]; then
     cat > "$OC_SCRIPT" <<'OCEOF'
