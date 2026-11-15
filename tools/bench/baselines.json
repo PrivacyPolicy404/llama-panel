@@ -6,9 +6,9 @@
     "fecha": "2026-11-15"
   },
   "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8": {
-    "gen_tps": 17.6,
-    "prompt_largo_tps": 132.6,
-    "vram_gib": 7.27,
+    "gen_tps": 18.2,
+    "prompt_largo_tps": 135.3,
+    "vram_gib": 7.23,
     "fecha": "2026-11-15"
   }
 }

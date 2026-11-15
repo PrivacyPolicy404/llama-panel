@@ -113,7 +113,7 @@ cuantización) no corre en la RX 580 (CUDA RTX 20+ / ROCm RDNA2+).
 
 ---
 
-## 5. Flash-Next: de 12.8 a 17.6 tok/s
+## 5. Flash-Next: de 12.8 a 18.2 tok/s
 
 ### 5.1 Punto de partida y lo que no funcionó (directo, temp 0.7)
 
@@ -288,6 +288,15 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 - Uso real por el router en modo IA (32K de contexto, muestreo por defecto): el MTP acierta 59–69 % (83 % a temp 0);
   una respuesta de 900 tokens dio 15.6 tok/s y el test de humo 16.8. Con muestreo hay ±5 % de ruido entre corridas.
 
+### 5.11 Muestreo de los borradores del MTP (2026-11-15, temp 0.8)
+
+- llama.cpp trae `--spec-draft-sampling probabilistic`: el borrador muestrea a la misma temperatura y el modelo lo
+  verifica por rechazo (exacto: la distribución del texto es la de sin MTP). El MTP lo soporta (`pending_h`).
+- A/B directo, 3 rondas: greedy 19.34 (acepta ~72 %), probabilistic 19.80 (~74 %), **probabilistic + `p-min 0`
+  19.78 (~75 %)**: +2.3 %. A temp 0 no cambia nada (p y q son puntuales). Va en las opciones extra de Flash-Next.
+- **Router con todo lo de 5.9–5.11** (memoria fija, envíos cada 16 nodos, borradores probabilísticos), 3 corridas del
+  test de humo: generación **18.3 / 17.9 / 18.4** (antes 17.6), prompt largo 135.3 (antes 132.6). Nueva referencia.
+
 ---
 
 ## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -381,7 +390,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Modelo | Router | Claves |
 |---|---|---|
 | Qwen3.6-35B-A3B | 28.8 gen, 228 prompt largo, VRAM 7.1 | `cpu-moe`, `load-mode = none`, cache 4608 + cpu 0.8 |
-| Flash-Next `-hcq8` | 17.6 gen, 133 prompt largo, VRAM 7.3 | parche 1 (44 capas fijas), `lazy-mode`, MTP 2, `parallel = 1`, tandas 2048; modo IA: 32K de contexto |
+| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16; modo IA: 32K de contexto |
 
 ---
 
