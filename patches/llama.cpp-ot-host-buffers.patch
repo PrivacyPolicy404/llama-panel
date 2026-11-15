@@ -1,4 +1,4 @@
-From fc10f5de91922b729229be908320fc9112130ff2 Mon Sep 17 00:00:00 2001
+From f13119962a01212cf720e9f4ea50916f68b19ca8 Mon Sep 17 00:00:00 2001
 From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
 Date: Sat, 14 Nov 2026 21:44:27 -0300
 Subject: [PATCH] common, llama-bench : allow pinned host buffer types in
@@ -13,7 +13,7 @@ is enabled.
 
 Local patch used by llama-panel; not submitted upstream.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Written with AI assistance (Claude).
 ---
  common/arg.cpp                    | 5 +++++
  src/llama-model-loader.cpp        | 9 +++++++++
