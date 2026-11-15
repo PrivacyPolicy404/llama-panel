@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Memoria de la GPU al máximo mientras haya un servidor de modelos encendido. Correr UNA vez con sudo:
 #
-#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh             # instalar
-#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --uninstall # desinstalar
+#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh             # instalar (sin overclock)
+#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --oc 2250   # instalar + overclock de VRAM al arrancar
+#   sudo ~/llama-panel/scripts/install-gpu-mclk.sh --uninstall # desinstalar todo
 #
 # Por qué: con los MoE la GPU trabaja a ráfagas (espera al CPU en cada capa) y amdgpu baja el reloj de la VRAM
 # en las pausas (2000 -> 1000 MHz el 16 % del tiempo): las matmul, que dependen de la memoria, arrancan a media
@@ -13,9 +14,13 @@
 #   /usr/local/sbin/llama-gpu-mclk        ayudante root: high|auto|status sobre la placa amdgpu (no recibe rutas)
 #   /etc/sudoers.d/llama-gpu-mclk         permite a tu usuario correr SOLO ese ayudante sin contraseña
 #
-# Sin overclock: se probó subir la VRAM (pp_od_clk_voltage) y la placa calculaba bien hasta 2250 MHz, pero reescribir
-# la tabla de relojes en caliente (2250 -> 2000) colgó el SMU y la máquina entera (bitácora 5.13). Solo se elige
-# entre niveles de fábrica, lo mismo que hace el driver en automático.
+#   /etc/systemd/system/llama-gpu-oc.service   (solo con --oc) overclock de VRAM, UNA vez por arranque y antes del escritorio
+#   /usr/local/sbin/llama-gpu-oc               (solo con --oc) el script que lo aplica
+#
+# Overclock: la placa calcula bien hasta 2250 MHz (test-backend-ops y texto idéntico), pero reescribir la tabla de relojes
+# en caliente (2250 -> 2000, con el escritorio activo) colgó el SMU y la máquina entera (bitácora 5.13). Por eso el
+# ayudante nunca la toca: se escribe una sola vez al arrancar, antes de SDDM, con el mismo voltaje de fábrica.
+# Necesita amdgpu.ppfeaturemask con el bit de overdrive (0x4000) en la línea del kernel.
 set -euo pipefail
 
 [ "$(id -u)" = 0 ] || { echo "Correr con sudo"; exit 1; }
@@ -24,12 +29,23 @@ USER_NAME="${SUDO_USER:-}"
 
 HELPER=/usr/local/sbin/llama-gpu-mclk
 SUDOERS=/etc/sudoers.d/llama-gpu-mclk
+OC_UNIT=/etc/systemd/system/llama-gpu-oc.service
+OC_SCRIPT=/usr/local/sbin/llama-gpu-oc
 
 if [ "${1:-}" = "--uninstall" ]; then
     [ -x "$HELPER" ] && "$HELPER" auto || true
-    rm -f "$HELPER" "$SUDOERS"
-    echo "llama-gpu-mclk desinstalado (memoria de la GPU en automático)."
+    systemctl disable llama-gpu-oc.service 2>/dev/null || true
+    rm -f "$HELPER" "$SUDOERS" "$OC_UNIT" "$OC_SCRIPT" /etc/llama-gpu-oc.mhz
+    systemctl daemon-reload
+    echo "Desinstalado: memoria de la GPU en automático; el overclock deja de aplicarse desde el próximo arranque."
     exit 0
+fi
+
+OC_MHZ=""
+if [ "${1:-}" = "--oc" ]; then
+    OC_MHZ="${2:-}"
+    case "$OC_MHZ" in 2050|2100|2150|2200|2250) ;; *) echo "uso: --oc 2050|2100|2150|2200|2250"; exit 2 ;; esac
+    grep -q "amdgpu.ppfeaturemask" /proc/cmdline || { echo "Falta amdgpu.ppfeaturemask (bit 0x4000) en la línea del kernel"; exit 1; }
 fi
 
 cat > "$HELPER" <<'EOF'
@@ -61,7 +77,52 @@ esac
 EOF
 chown root:root "$HELPER"
 chmod 755 "$HELPER"
-rm -f /etc/llama-gpu-mclk.conf  # de la versión con overclock (descartada)
+rm -f /etc/llama-gpu-mclk.conf  # de la versión que cambiaba el overclock en caliente (descartada)
+
+if [ -n "$OC_MHZ" ]; then
+    cat > "$OC_SCRIPT" <<'OCEOF'
+#!/bin/sh
+# Overclock de la VRAM: el nivel más alto de la memoria a la frecuencia de /etc/llama-gpu-oc.mhz, con su voltaje de
+# fábrica. Corre UNA vez por arranque, antes del escritorio (llama-gpu-oc.service). No reescribir la tabla en caliente:
+# colgó la máquina (bitácora 5.13 de llama-panel).
+set -e
+MHZ=$(cat /etc/llama-gpu-oc.mhz)
+DEV=""
+for i in $(seq 1 60); do
+    for d in /sys/class/drm/card*/device; do
+        [ -w "$d/pp_od_clk_voltage" ] && DEV="$d"
+    done
+    [ -n "$DEV" ] && break
+    sleep 0.5
+done
+[ -n "$DEV" ] || { echo "sin pp_od_clk_voltage (falta amdgpu.ppfeaturemask?)" >&2; exit 1; }
+OD="$DEV/pp_od_clk_voltage"
+LVL=$(awk '/^OD_MCLK:/{f=1;next} /^OD_/{f=0} f{n=$1} END{sub(":","",n); print n}' "$OD")
+MV=$(awk '/^OD_MCLK:/{f=1;next} /^OD_/{f=0} f{v=$3} END{sub("mV","",v); print v}' "$OD")
+echo "m $LVL $MHZ $MV" > "$OD"
+echo c > "$OD"
+echo "VRAM: nivel $LVL a $MHZ MHz ($MV mV)"
+OCEOF
+    chown root:root "$OC_SCRIPT"
+    chmod 755 "$OC_SCRIPT"
+    echo "$OC_MHZ" > /etc/llama-gpu-oc.mhz
+    cat > "$OC_UNIT" <<OCEOF
+[Unit]
+Description=llama-panel: overclock de la VRAM de la GPU, una vez al arrancar
+After=systemd-udev-settle.service systemd-modules-load.service
+Before=display-manager.service sddm.service llama-kiosk.service
+
+[Service]
+Type=oneshot
+ExecStart=$OC_SCRIPT
+
+[Install]
+WantedBy=multi-user.target
+OCEOF
+    systemctl daemon-reload
+    systemctl enable llama-gpu-oc.service
+    echo "Overclock de VRAM a $OC_MHZ MHz: se aplica desde el PRÓXIMO arranque (la tabla no se toca ahora, en caliente)."
+fi
 
 TMP=$(mktemp)
 cat > "$TMP" <<EOF

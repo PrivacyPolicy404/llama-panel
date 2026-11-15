@@ -317,8 +317,10 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   kernel; Q8_0 4096×14336 285 → 255 µs. **Pero al volver de 2250 a 2000 en caliente (escritorio activo) el SMU dejó de
   responder ("last message was failed"), se colgó el anillo gfx (kscreenlocker) y el reset de la GPU no terminó:
   la máquina quedó colgada.** Descartado: reescribir la tabla de relojes con displays activos no es seguro en Polaris.
-  El ayudante `llama-gpu-mclk` volvió a solo elegir niveles de fábrica (`high`/`auto`). El parámetro del kernel queda
-  (sin escribir la tabla no cambia nada).
+  El ayudante `llama-gpu-mclk` volvió a solo elegir niveles de fábrica (`high`/`auto`).
+- **Segundo intento: aplicarlo una sola vez al arrancar**, antes del escritorio (`install-gpu-mclk.sh --oc 2250`:
+  `llama-gpu-oc.service`, `Before=display-manager.service`). Nadie usa la placa en ese momento y después solo cambia
+  de nivel el driver, como siempre. Pendiente de medir de punta a punta.
 
 ---
 
