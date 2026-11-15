@@ -56,7 +56,10 @@ Reglas que salieron de errores reales:
    Para medir se compila una copia aparte de `libggml-vulkan` cambiando ese assert por
    `if (!ctx->compute_ctx.expired()) ggml_backend_vk_synchronize(backend);` y se restaura el árbol. No está en el fork.
 7. `perf` necesita `sudo sysctl kernel.perf_event_paranoid=1` (vuelve a 4 al reiniciar).
-8. Trampas del entorno de trabajo: el scratchpad vive en `/tmp` y **se borra al reiniciar**; `pkill -f` con un patrón
+8. **El medidor de Vulkan serializa todo**: la suma por operación exagera el costo de las operaciones chicas
+   (decía 6–8 ms, eran ~1.7). Para saber cuánto vale de verdad sacar operaciones, despacharlas dos veces (5.7);
+   saltearlas no sirve en un MoE (el router colapsa y el CPU trabaja menos).
+9. Trampas del entorno de trabajo: el scratchpad vive en `/tmp` y **se borra al reiniciar**; `pkill -f` con un patrón
    que aparece en el propio comando mata la shell; en una corrida en segundo plano, las líneas
    `VAR=valor comando` de un script se saltearon sin error (correr esas variantes en primer plano o con `export`).
 
@@ -185,6 +188,38 @@ por token, 15.7 µs de promedio.
 
 La espera activa es lo mejor: los hilos arrancan apenas la GPU les pasa el turno (49 veces por token).
 
+### 5.7 ¿Cuánto valen las operaciones chicas de la GPU? (2026-11-15, `-hcq8`, temp 0, sin MTP)
+
+**Respuesta: ~1.7 ms de ~73 ms por token. Fusionarlas todas daría como mucho +2.4 %. No vale la pena.**
+
+1. **Medidor** (`vk_timings.py`, 43.4 ms de GPU por token): matmul 27.0, RMS_NORM_MUL 2.0, DeltaNet 2.4,
+   GET_ROWS 1.6 + CPY 1.5 (estados de DeltaNet, `build_rs`), MUL 0.9, SCALE 0.79 (188/token: el resto ya está fusionado),
+   ADD 0.56, sigmoides/silu/concat/etc. ~3. Las escalas por 1/hc no justifican hornearlas en los pesos.
+2. **Hallazgo puntual**: `hc_*_inject` (4 filas × 10240, BF16) lanza 2 grupos de trabajo para 36 CUs: 14.5 µs, 5.6 GB/s,
+   1.38 ms/token en el medidor. llama.cpp ya sabe unirla con `hc_*_down` si el GGUF trae `hc_*_down_inject`
+   (`build_hc_mix`). Se generó ese GGUF con `tools/gguf_merge_hc.py` (37 s, inject a Q8_0) y hubo que cambiar el
+   grafo (escalar después de partir; si no, se rompe la fusión `HC_POST_GATE`). Medidor: GPU 43.4 → 41.6 ms.
+   **A/B real (4 rondas alternadas): 13.86 → 13.97 (+0.8 %)**. Descartado: no paga un parche en el grafo de `qwen4exp`
+   ni validar calidad de nuevo. Se revirtió y se borró el modelo.
+3. **Por qué el medidor exagera**: escribe un timestamp y una barrera entre cada operación, así que todo corre en serie.
+   Sin medidor, operaciones independientes se solapan (la matmul de 4 filas corría en paralelo con la de 320).
+   **La suma del medidor sirve para ver proporciones de las operaciones grandes, no el costo de las chicas.**
+4. **Ablación salteando operaciones: no sirve en un MoE.** Saltear las elementales dio gen 14.0 → 16.4 y prompt
+   62 → 168: con el estado basura el router elige expertos degenerados y el CPU trabaja mucho menos.
+5. **Método que sí sirve: despachar dos veces** cada operación chica sin fusionar (lib temporal con
+   `GGML_VK_DOUBLE_OPS=SCALE,MUL,...`; en `ggml_backend_vk_graph_compute`, una llamada extra a `ggml_vk_build_graph`
+   antes de la normal, solo si no hay fusión, `view_src == nullptr` y la salida no pisa una entrada). La salida queda
+   **idéntica** (verificado a temp 0), así que ruteo y CPU no cambian; lo que sube es el costo real de esas operaciones:
+
+| Variante (2 rondas alternadas) | gen | ms/token |
+|---|---|---|
+| normal | 13.78 / 13.77 | 72.6 |
+| elementales ×2 (SCALE, MUL, ADD, SIGMOID, SILU, GLU, CONT, CONCAT, FILL…) | 13.52 / 13.55 | 73.9 (+1.3) |
+| todas las chicas ×2 (+ GET_ROWS, CPY, SET_ROWS, RMS_NORM, ROPE, SOFT_MAX, TOP_K…) | 13.54 / 13.39 | 74.3 (+1.7) |
+
+Conclusión: de los ~73 ms por token, la GPU real son ~35–40 y las operaciones chicas casi no pesan.
+Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
+
 ---
 
 ## 6. Los cuatro parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -257,6 +292,9 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | `mtp-q2_0.gguf` de SC117 | Formato Strata (`qwen4exp-mtp`), llama.cpp no lo carga |
 | Tandas de 4096 | Prompt 45 tok/s (llama.cpp cambia a un camino peor) |
 | Lightning indexer "de a 1 token" | Techo <1 %: no se implementó |
+| Unir `hc_down` + `hc_inject` (`-hcq8m`) | +0.8 %: no paga el parche en el grafo (5.7) |
+| Fusionar / hornear las operaciones chicas | Techo medido +2.4 % (todas juntas cuestan ~1.7 ms/token, 5.7) |
+| Ablación salteando operaciones | Resultado falso: el router de expertos colapsa (5.7) |
 
 ---
 
@@ -271,10 +309,9 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 
 ## 10. Próximos pasos posibles (con lo que se espera ganar)
 
-1. **Más fusiones de operaciones chicas** (quedan por token en la GPU: SCALE 448, MUL 372, RMS_NORM 256, SIGMOID 230,
-   CPY 150, GET_ROWS 148, SILU 134). Candidato claro: escalas por constante (1/4) justo después de una matmul
-   (`hc_inject`, etc.), que se podrían hornear en los pesos y sacar del grafo. Medir primero cuánto suman en ms.
-2. Solapar CPU y GPU (hoy se turnan): cambio grande en el scheduler; techo teórico alto pero costoso.
+1. ~~Más fusiones de operaciones chicas~~: medido en 5.7, techo +2.4 %. Descartado.
+2. **El CPU + los cambios de turno (~35 ms/token, casi la mitad)**: es lo único grande que queda. Solapar CPU y GPU
+   (hoy se turnan) es un cambio grande en el scheduler; antes, medir cuánto es cálculo de expertos y cuánto espera/sincronización.
 3. Atención con contexto largo (lo que más crece con los 32K del modo IA).
 4. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 

@@ -91,7 +91,8 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 - Perf del CPU: 65 % de los hilos **girando en espera** (libgomp), 27 % calculando expertos (`ggml_vec_dot_q2_0_q8_0`).
   Esa espera activa es lo mejor: `OMP_WAIT_POLICY=PASSIVE` 12.2, `GOMP_SPINCOUNT=10000` 12.4, `--prio 2` 12.4,
   contra 13.2 tok/s por defecto.
-- Margen que queda: fusionar operaciones chicas en Vulkan (hasta ~8 ms), solapar CPU y GPU (cambio grande en el scheduler).
+- Margen que queda: solapar CPU y GPU (cambio grande en el scheduler). Las operaciones chicas de Vulkan cuestan de verdad
+  ~1.7 ms/token (el medidor exagera): fusionarlas no vale la pena (`analisis-rendimiento.md` 5.7).
 - **Operaciones chicas, primer paso hecho (parche 4):** las fusiones de las hyper-connections (`DSV4_HC_PRE/POST`) ya
   estaban activas; las ~430 sumas sin nombre por token eran la combinación de los 10 expertos (9 sumas por capa).
   La fusión `multi_add` estaba apagada en Polaris por exigir RTE fp16; habilitada: 2980 → 2591 operaciones por token,
@@ -203,7 +204,7 @@ ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
 
 - Con el modo IA activo, medir cuánta VRAM queda y si entran tandas o cache más grandes.
 - Borrar el Flash-Next original (shard 1, 38 GB) si el `-hcq8` anda bien un tiempo.
-- Fusionar operaciones chicas en Vulkan (cadenas de ADD de las hyper-connections): hasta ~8 ms por token.
+- ~~Fusionar operaciones chicas en Vulkan~~: medido, techo +2.4 % (`analisis-rendimiento.md` 5.7).
 - Mover Qwen3.6 al NVMe (el usuario prefiere dejarlo en el HDD por ahora: tarda ~2 min en cargar si no está en caché).
 - Sacar `n-gpu-layers = 99` de los ajustes globales.
 - Campos propios para MoE en el panel (expertos en RAM, cache, reparto con el CPU) y un botón de tuning.
