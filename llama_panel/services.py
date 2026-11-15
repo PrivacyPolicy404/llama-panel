@@ -1,5 +1,6 @@
 """Control de los servicios: systemctl y los clientes HTTP del router de llama-server y de KoboldCpp."""
 import json
+import os
 import subprocess
 import time
 import urllib.error
@@ -29,6 +30,29 @@ def svc_states():
     out = run("systemctl", "--user", "is-active", C.SERVICE, C.IMG_SERVICE).splitlines()
     out += ["unknown"] * (2 - len(out))
     return {"text": out[0], "img": out[1]}
+
+
+AI_MODE_HELPER = "/usr/local/sbin/llama-modo-ia"
+
+
+def ai_mode_state():
+    """Modo IA: escritorio apagado y dashboard de texto en tty1 (ver scripts/install-modo-ia.sh)."""
+    installed = os.path.exists(AI_MODE_HELPER)
+    active = installed and run("systemctl", "is-active", "llama-kiosk.service") == "active"
+    return {"installed": installed, "active": active}
+
+
+def ai_mode(on):
+    """Prende o apaga el modo IA. Devuelve (ok, salida)."""
+    if not os.path.exists(AI_MODE_HELPER):
+        return False, "El modo IA no esta instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh"
+    if on:
+        run("systemctl", "--user", "stop", "sunshine.service")
+    out = run("sudo", "-n", AI_MODE_HELPER, "on" if on else "off", timeout=60)
+    ok = ai_mode_state()["active"] == on
+    if not on:
+        run("systemctl", "--user", "start", "sunshine.service")
+    return ok, out
 
 
 def free_vram_for(which):

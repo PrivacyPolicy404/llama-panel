@@ -91,6 +91,7 @@ a { color: var(--accent); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.ghost { background: transparent; color: var(--text); border-color: var(--border); }
 .btn.ghost:hover { background: var(--surface-2); }
+.btn.ghost.on { border-color: var(--good); color: var(--good); }
 .btn.danger { background: var(--critical); }
 .btn.danger:hover { background: #b8302f; }
 .btn.danger-text { color: var(--critical-text); }

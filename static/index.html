@@ -17,7 +17,9 @@
   </div>
   <div class="top-actions">
     <span class="conn" id="conn" hidden>Sin conexión con el panel</span>
-    <button class="btn danger" data-action="stop_all" title="Apaga texto e imágenes y libera la VRAM">Apagar todo</button>
+    <button class="btn ghost" id="ai-mode" data-action="ai_mode_on" data-confirm="¿Apagar el escritorio? Tocá de nuevo"
+      title="Apaga el escritorio (KDE) para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla">Modo IA</button>
+    <button class="btn danger" data-action="stop_all" data-confirm="¿Seguro? Tocá de nuevo" title="Apaga texto e imágenes y libera la VRAM">Apagar todo</button>
   </div>
 </header>
 

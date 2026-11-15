@@ -20,10 +20,22 @@ async function pollState() {
     if (S.config && S.state.img.selected_key !== undefined && S.state.img.selected_key !== S.config.img_selected && !S.dirtyImg) {
       S.config.img_selected = S.state.img.selected_key;
     }
-    renderTiles(); renderEngines(); updateTextStates(); updateImgStates();
+    renderTiles(); renderEngines(); updateTextStates(); updateImgStates(); renderAiMode();
   } catch {
     $('#conn').hidden = false;
   }
+}
+
+function renderAiMode() {
+  const b = $('#ai-mode'), ai = S.state?.ai_mode;
+  if (!b || !ai || b.dataset.armed || b.classList.contains('busy')) return;
+  b.dataset.action = ai.active ? 'ai_mode_off' : 'ai_mode_on';
+  b.textContent = ai.active ? 'Salir del modo IA' : 'Modo IA';
+  b.dataset.confirm = ai.active ? '' : '¿Apagar el escritorio? Tocá de nuevo';
+  b.classList.toggle('on', ai.active);
+  b.title = !ai.installed ? 'No instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh'
+    : ai.active ? 'Vuelve a prender el escritorio (KDE)'
+    : 'Apaga el escritorio (KDE) para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla';
 }
 
 async function loadConfig() {
@@ -54,14 +66,16 @@ function bind() {
 
   for (const b of $$('[data-action]')) {
     b.onclick = async () => {
-      if (b.dataset.action === 'stop_all' && !b.dataset.armed) {
-        b.dataset.armed = '1'; const txt = b.textContent; b.textContent = '¿Seguro? Tocá de nuevo';
-        setTimeout(() => { delete b.dataset.armed; b.textContent = txt; }, 3000);
+      // los botones con data-confirm piden un segundo toque antes de actuar
+      if (b.dataset.confirm && !b.dataset.armed) {
+        b.dataset.armed = '1'; b.dataset.label = b.textContent; b.textContent = b.dataset.confirm;
+        setTimeout(() => { if (b.dataset.armed) { delete b.dataset.armed; b.textContent = b.dataset.label; } }, 3000);
         return;
       }
+      const label = b.dataset.armed ? b.dataset.label : b.textContent;
       delete b.dataset.armed;
       const res = await withBusy(b, () => post('/api/action', { do: b.dataset.action }));
-      if (b.dataset.action === 'stop_all') b.textContent = 'Apagar todo';
+      b.textContent = label;
       report(res);
       pollState();
     };

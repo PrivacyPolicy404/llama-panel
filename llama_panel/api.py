@@ -7,7 +7,7 @@ from . import hardware
 from . import img_models as IM
 from . import stats
 from . import text_models as TM
-from .services import kobold_status, router_models, svc_states
+from .services import ai_mode_state, kobold_status, router_models, svc_states
 
 
 def state():
@@ -23,6 +23,7 @@ def state():
         "hw": hardware.latest(),
         "text": {"models": router_models() if st["text"] == "active" else {}},
         "img": img,
+        "ai_mode": ai_mode_state(),
     }
 
 

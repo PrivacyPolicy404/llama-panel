@@ -6,6 +6,7 @@ import time
 
 from . import config as C
 from . import img_models as IM
+from . import services
 from . import text_models as TM
 from .services import free_vram_for, router, router_error, router_models, svc, svc_state, wait_router
 
@@ -40,6 +41,13 @@ def do_action(action):
     if action == "img_stop":
         svc("stop", C.IMG_SERVICE)
         return ok("Generador de imagenes apagado.")
+    if action in ("ai_mode_on", "ai_mode_off"):
+        on = action == "ai_mode_on"
+        good, out = services.ai_mode(on)
+        if not good:
+            return fail(f"No se pudo {'activar' if on else 'desactivar'} el modo IA. {out}".strip())
+        return ok("Modo IA activado: escritorio apagado, dashboard en la pantalla." if on
+                  else "Modo IA desactivado: el escritorio vuelve en unos segundos.")
     if action == "stop_all":
         svc("stop")
         svc("stop", C.IMG_SERVICE)

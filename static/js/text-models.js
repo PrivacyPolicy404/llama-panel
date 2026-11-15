@@ -10,7 +10,7 @@ function textBadges(m, cfg) {
   if (cfg.reasoning) b.push(`<span class="badge">razonamiento: ${esc(rs[cfg.reasoning])}</span>`);
   b.push(`<span class="badge">${cfg.ctx ? 'ctx ' + esc(cfg.ctx) : 'ctx global'}</span>`);
   const nExtra = cfg.extra.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
-  if (nExtra) b.push(`<span class="badge">+${nExtra} opción${nExtra > 1 ? 'es' : ''}</span>`);
+  if (nExtra) b.push(`<span class="badge">+${nExtra} ${nExtra > 1 ? 'opciones' : 'opción'}</span>`);
   if (vramBytes && m.size > vramBytes * 0.95) b.push(`<span class="badge warn" title="No entra completo en la VRAM: parte va a la RAM y será más lento">más grande que la VRAM</span>`);
   return b.join('');
 }
