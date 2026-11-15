@@ -169,6 +169,16 @@ Se instala una vez con `sudo ~/llama-panel/scripts/install-modo-ia.sh`: ayudante
 (solo systemctl/chvt con argumentos fijos), servicio `llama-kiosk.service` (corre como el usuario) y una regla de sudoers
 limitada a ese ayudante. Probar el cuadro por SSH: `python3 -m llama_panel.kiosk --once --size 150x44`.
 
+Lecciones de la primera prueba (2026-11-15):
+- **Libera 415 MiB**: la VRAM en reposo pasa de 429 a 14 MiB.
+- **Sin escritorio se pierde la GPU** si el usuario no está en los grupos `render`/`video`: el permiso sobre `/dev/dri`
+  lo da logind (ACL) solo a la sesión activa del asiento. Sin él, Vulkan cae a `llvmpipe` (CPU): 1.9 tok/s.
+  El instalador agrega los grupos (hace falta reiniciar) y el panel no deja activar el modo si su proceso no los tiene.
+- **La consola queda en 640×480**: hay algo en HDMI-A-1 que reporta ese modo (el monitor real es HDMI-A-2, 1080p) y
+  la consola clona las salidas. El dashboard elige la fuente sola (8×16 → 80×30) y tiene un layout compacto.
+  Arreglo de fondo: `video=HDMI-A-1:d` en la línea del kernel (GRUB), si eso que está en HDMI-A-1 no hace falta sin escritorio.
+- El dashboard se recarga solo cuando cambia `kiosk.py`.
+
 ## Pendientes / ideas
 
 - Con el modo IA activo, medir cuánta VRAM queda y si entran tandas o cache más grandes.

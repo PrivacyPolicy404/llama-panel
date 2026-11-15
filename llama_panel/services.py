@@ -35,17 +35,30 @@ def svc_states():
 AI_MODE_HELPER = "/usr/local/sbin/llama-modo-ia"
 
 
+def gpu_access_without_desktop():
+    """True si este proceso puede usar la GPU sin sesion de escritorio: necesita el grupo render (el permiso que da
+    logind a la sesion activa desaparece al apagar el escritorio y los modelos caerian a llvmpipe, en el CPU)."""
+    import grp
+    try:
+        return grp.getgrnam("render").gr_gid in os.getgroups()
+    except KeyError:  # sin grupo render en el sistema: no hay forma de saberlo, no bloquear
+        return True
+
+
 def ai_mode_state():
     """Modo IA: escritorio apagado y dashboard de texto en tty1 (ver scripts/install-modo-ia.sh)."""
     installed = os.path.exists(AI_MODE_HELPER)
     active = installed and run("systemctl", "is-active", "llama-kiosk.service") == "active"
-    return {"installed": installed, "active": active}
+    return {"installed": installed, "active": active, "gpu_ok": gpu_access_without_desktop()}
 
 
 def ai_mode(on):
     """Prende o apaga el modo IA. Devuelve (ok, salida)."""
     if not os.path.exists(AI_MODE_HELPER):
         return False, "El modo IA no esta instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh"
+    if on and not gpu_access_without_desktop():
+        return False, ("Sin escritorio, los modelos perderían el acceso a la GPU. Correr de nuevo  "
+                       "sudo ~/llama-panel/scripts/install-modo-ia.sh  (agrega los grupos render y video) y reiniciar.")
     if on:
         run("systemctl", "--user", "stop", "sunshine.service")
     out = run("sudo", "-n", AI_MODE_HELPER, "on" if on else "off", timeout=60)

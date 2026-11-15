@@ -95,7 +95,22 @@ else
     exit 1
 fi
 
+# 4) Acceso permanente a la GPU. Sin escritorio no hay sesion activa en el asiento y logind le saca al usuario
+#    el permiso temporal (ACL) sobre /dev/dri: los modelos caerian a llvmpipe (CPU). Con los grupos no depende de eso.
+NEED_RELOGIN=0
+for g in render video; do
+    if getent group "$g" >/dev/null && ! id -nG "$USER_NAME" | tr ' ' '\n' | grep -qx "$g"; then
+        usermod -aG "$g" "$USER_NAME"
+        NEED_RELOGIN=1
+    fi
+done
+
 systemctl daemon-reload
 echo "Modo IA instalado para $USER_NAME."
 echo "  Probar: sudo -n $HELPER status   (no debería pedir contraseña)"
 echo "  Usar:   botón «Modo IA» en el panel"
+if [ "$NEED_RELOGIN" = 1 ]; then
+    echo
+    echo "IMPORTANTE: se agregó $USER_NAME a los grupos render y video. Reiniciar la máquina para que el panel y los"
+    echo "modelos (servicios de usuario) los tomen. Hasta entonces el panel no deja activar el modo IA."
+fi

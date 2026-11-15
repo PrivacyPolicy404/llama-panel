@@ -232,20 +232,73 @@ def procs_box(cpu, width):
     return box("procesos", lines, width)
 
 
+def compact_boxes(state, stats, hw, samples, cpu, width, gh, now):
+    """Layout de una columna para pantallas chicas (por ejemplo 80x30): mismas cajas, graficos mas bajos."""
+    w = width - 2
+    bw = max(8, w - 24)
+    vu, vt = hw.get("vram_used") or 0, hw.get("vram_total") or 8
+    g = hw.get("gpu") or 0
+    gpu = [f" VRAM {bar(vu, vt, bw)} {vu:4.1f}/{vt:.0f}G",
+           f" GPU  {bar(g, 100, bw)} {g:4d} %"]
+    gpu += [" " + r for r in graph([s.get("gpu") for s in samples], w - 2, gh, 0, 100)]
+    gpu.append(f" {hw.get('temp') or 0:.0f} °C · {hw.get('power') or 0:.0f} W · {hw.get('fan') or 0} rpm · {hw.get('sclk') or 0} MHz")
+
+    cores = cpu.get("cores") or []
+    hist = cpu.get("total_hist") or []
+    total = hist[-1] if hist else 0
+    cpu_l = [f" CPU  {bar(total, 100, bw)} {total:4.0f} %"]
+    if cores:  # una columna por hilo, separadas por espacios
+        rows = graph(cores, len(cores), max(1, gh - 1), 0, 100)
+        cpu_l += [(" hilos " if i == 0 else "       ") + " ".join(r) for i, r in enumerate(rows)]
+    cpu_l.append(f" {len(cores)} hilos · carga {hw.get('load', 0):.1f} · RAM {hw.get('ram_used', 0):.1f}/{hw.get('ram_total', 0):.0f}G · GTT {hw.get('gtt_used', 0):.1f}/31G")
+
+    svc = state["svc"]
+    loaded = [k for k, v in (state["text"].get("models") or {}).items() if v.get("status") in ("loaded", "loading")]
+    icon, label = SVC.get(svc["text"], ("?", svc["text"]))
+    mod = [f" texto {icon} {label}  {(loaded[0] if loaded else '')[:w - 22]}"]
+    img = state.get("img") or {}
+    icon, label = SVC.get(svc["img"], ("?", svc["img"]))
+    pr = img.get("progress") or {}
+    gen = f" paso {pr['step']}/{pr['steps']}" if svc["img"] == "active" and pr.get("steps") else ""
+    mod.append(f" imágenes {icon} {label}{gen}")
+    resp = (stats or {}).get("text") or []
+    if resp:
+        r = resp[-1]
+        mod.append(f" última {r['g_tps']:.1f} tok/s · prompt {r['p_tps']:.0f} · {ago(r['t'], now)}")
+        mod += [" " + x for x in graph([x["g_tps"] for x in resp], w - 2, max(1, gh - 1), 0)]
+
+    procs = [f" {p['name'][:12]:<12}{p['cpu']:>6.0f}%{p['threads']:>4} hilos{p['rss'] / 2**30:>6.1f}G"
+             for p in (cpu.get("procs") or [])[:3]] or [" (sin modelos corriendo)"]
+    return [box("gpu", gpu, width), box("cpu · memoria", cpu_l, width), box("modelos", mod, width), box("procesos", procs, width)]
+
+
 def render(state, stats, hist, cpu, width=120, height=40, now=None):
-    """Devuelve las lineas del dashboard como [(texto, estilo)]; estilo en {"", "title", "dim", "good", "warn", "bad"}."""
+    """Devuelve las lineas del dashboard como [(texto, estilo)]; estilo en {"", "title", "dim", "good", "warn", "bad"}.
+    Con 120x36 o mas usa dos columnas; si no, una columna compacta que se achica hasta entrar en la altura."""
     now = now or time.time()
-    width = max(80, width)
+    width = max(40, width)
     out = []
     clock = time.strftime("%H:%M:%S", time.localtime(now))
-    out.append((f" PANEL IA · modo IA".ljust(width - len(clock) - 1) + clock + " ", "title"))
+    out.append((f" PANEL IA · modo IA".ljust(width - len(clock) - 1)[:width - len(clock) - 1] + clock + " ", "title"))
     if state is None:
         out.append(("", ""))
-        out.append(("  Sin conexión con el panel (http://127.0.0.1:8090). Reintentando…", "bad"))
+        out.append(("  Sin conexión con el panel. Reintentando…"[:width], "bad"))
         return out
     hw = state.get("hw") or {}
     samples = (hist or {}).get("samples") or []
     cpu = cpu or {}
+    if width < 120 or height < 36:
+        for gh in (3, 2, 1):
+            boxes = compact_boxes(state, stats, hw, samples, cpu, width, gh, now)
+            while boxes and 1 + sum(len(b) for b in boxes) > height:
+                if gh > 1:
+                    break
+                boxes.pop()  # sin lugar: se descartan las cajas de abajo (procesos, modelos)
+            if 1 + sum(len(b) for b in boxes) <= height:
+                break
+        for b in boxes:
+            out += [(l, "") for l in b]
+        return out[:height]
     left_w = width // 2
     right_w = width - left_w - 1
     top = side_by_side(gpu_box(hw, samples, left_w), cpu_box(cpu, hw, right_w))
@@ -287,8 +340,11 @@ def run_curses():
         scr.timeout(2000)
         sampler = CpuSampler()
         sampler.sample()
-        cached, last_fetch, last_stats = (None, None, None), 0, 0
+        cached, last_fetch, started = (None, None, None), 0, time.time()
         while True:
+            if source_changed(started):  # codigo nuevo: reiniciar el proceso con la version actual
+                curses.endwin()
+                os.execv(sys.executable, [sys.executable, "-m", "llama_panel.kiosk"])
             if time.time() - last_fetch > 1.8:
                 state, stats, hist = snapshot()
                 cached, last_fetch = (state, stats if stats is not None else cached[1], hist), time.time()
@@ -306,6 +362,38 @@ def run_curses():
     curses.wrapper(main)
 
 
+FONTS = ["Uni2-TerminusBold24x12", "Uni2-TerminusBold22x11", "Uni2-TerminusBold20x10", "Uni2-TerminusBold16",
+         "Uni2-TerminusBold14", "Uni2-Terminus12x6"]
+
+
+def tty_size():
+    import fcntl, struct, termios
+    rows, cols, _, _ = struct.unpack("HHHH", fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b"\0" * 8))
+    return cols, rows
+
+
+def pick_font(min_cols=80, min_rows=28):
+    """En la consola de Linux, prueba de la fuente mas grande a la mas chica y se queda con la primera que deja
+    al menos min_cols x min_rows (la resolucion depende de las pantallas conectadas). Fuera de una consola no hace nada."""
+    import subprocess
+    if os.environ.get("TERM") != "linux" or not sys.stdout.isatty():
+        return
+    for font in FONTS:
+        if subprocess.run(["setfont", font], capture_output=True).returncode != 0:
+            continue
+        cols, rows = tty_size()
+        if cols >= min_cols and rows >= min_rows:
+            return
+
+
+def source_changed(started):
+    """True si el codigo del dashboard cambio desde que arranco (para recargarse solo)."""
+    try:
+        return os.path.getmtime(__file__) > started
+    except OSError:
+        return False
+
+
 if __name__ == "__main__":
     if "--once" in sys.argv:
         size = sys.argv[sys.argv.index("--size") + 1] if "--size" in sys.argv else "140x44"
@@ -316,6 +404,11 @@ if __name__ == "__main__":
         for text, _ in render(*snapshot(), sampler.sample(), width=w, height=h):
             print(text)
     else:
+        import signal
+        # al salir del modo IA systemd cuelga la terminal (SIGHUP) o pide terminar (SIGTERM): salir limpio, no como error
+        for sig in (signal.SIGHUP, signal.SIGTERM):
+            signal.signal(sig, lambda *_: os._exit(0))
+        pick_font()
         while True:  # si algo falla de forma inesperada, no dejar la consola colgada
             try:
                 run_curses()

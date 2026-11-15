@@ -34,6 +34,7 @@ function renderAiMode() {
   b.dataset.confirm = ai.active ? '' : '¿Apagar el escritorio? Tocá de nuevo';
   b.classList.toggle('on', ai.active);
   b.title = !ai.installed ? 'No instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh'
+    : !ai.active && ai.gpu_ok === false ? 'Falta acceso permanente a la GPU: correr de nuevo el instalador del modo IA y reiniciar'
     : ai.active ? 'Vuelve a prender el escritorio (KDE)'
     : 'Apaga el escritorio (KDE) para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla';
 }
