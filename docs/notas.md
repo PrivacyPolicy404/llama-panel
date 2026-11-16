@@ -251,6 +251,8 @@ ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
   entrada + 2048 de salida por el router**, sin truncamiento; prompt 93.76, gen con MTP 16.86 tok/s. Pico **7.761 GiB**
   de VRAM total y **29.422 GiB** de GTT del proceso. Tres cargas sin acumulación visible de memoria. Una corrida,
   no una prueba de horas ni de calidad; el margen cerca de 64K es menor que el medido con 30K. No subir a 80K.
+  Vuelto a medir el 2026-11-16 con el borrador recortado (bitácora 5.30): 64K con 60.7K de entrada, pico **7.49 GiB**,
+  prompt 92, gen 18.0–18.2 tok/s. **80K no entra**: la VRAM llega a 7.99 GiB y el prompt se desploma desde ~26K.
 - Para eso cada modelo tiene **«opciones extra en modo IA»** (`extra_ai` en settings.json): se suman y pisan a las normales
   solo con el modo IA activo. Al entrar o salir del modo IA el panel regenera el preset y recarga el modelo cargado.
 

@@ -1028,6 +1028,29 @@ router arrancó vacío; hay que volver a cargarlo antes de lanzar `sparse_attent
 arrancar, `systemctl --user reset-failed tpge-sparse-study` antes de reintentar.
 Resultados en `~/llama-panel-results/2026-11-16-tpge-mtp/iq4xs-cols-*`.
 
+### 5.30 ¿Entra más contexto con la VRAM que liberó el borrador recortado? 80K no (2026-11-16)
+
+**Hipótesis.** La medición de 5.16 (62K de entrada, pico 7.76 GiB) es anterior al parche 8, que liberó 0.24 GiB.
+Con ese lugar podría entrar algo más que 64K.
+
+**Método.** `moebench.py` con un server aparte y los mismos argumentos del preset de modo IA (KV Q8_0, borrador
+`d2t65k` en tandas de 512, MTP 2, parches 9 y 10), prompt repetido hasta casi llenar el contexto, 256 tokens de
+salida, temp 0.8. Pico de VRAM y de GTT de la placa muestreado cada segundo. Modo IA activo, panel descargado.
+
+| contexto | prompt | pico VRAM | pico GTT | prompt tok/s | gen tok/s |
+|---|---|---|---|---|---|
+| 64K | 60.7K | **7.49 GiB** | 29.49 GiB | 92.0 | 18.0–18.2 |
+| 80K | ~76K (no terminó) | **7.99 GiB** | 29.63 GiB | 56 a los 43K y cayendo | — |
+
+Con 80K el prompt ya va más lento desde ~26K (102.7 tok/s acumulado contra 113.2 con 64K) y a los 43K lleva 56
+contra ~100: es el desplome por VRAM llena de 5.14. El pedido cortó por tiempo (900 s). El salto de 64K a 80K
+ocupa 0.5 GiB, el doble de lo que explica la caché KV sola (~16 MiB por cada 1K): también crecen los buffers.
+
+**Conclusión.** **Se queda en 64K.** El margen actual a contexto lleno es 0.5 GiB; con la regla de dejar
+0.3–0.4 libres, 72K quedaría en ~7.74, justo en el borde, por 12 % más de contexto. No se midió 72K.
+De paso: a 61K de contexto llenos la generación da 18 tok/s (16.9 en 5.16).
+Resultados en `~/llama-panel-results/2026-11-16-ctx80k/`.
+
 ---
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
