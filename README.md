@@ -87,6 +87,19 @@ python3 -m unittest            # tests
 journalctl --user -u llama-panel -f   # ver errores del panel
 ```
 
+Para validar la ventana de 64K por el router, con 62.000 tokens de entrada y 2.048 de salida,
+`tools/bench/ctx_stability.py` registra memoria VRAM/GTT por proceso y verifica tres cargas con generación.
+Requiere servidores y modo IA apagados. **Cierra la sesión gráfica** durante la prueba y restaura el
+escritorio y los límites de memoria al terminar:
+
+```bash
+python3 tools/bench/ctx_stability.py --ai-mode --output ~/llama-panel-results/64k-corrida-1
+```
+
+La carpeta de salida debe ser nueva. Conserva respuestas, tokens de entrada, muestras con fecha y fase,
+presets, versiones y registros del router/kernel. Puede tardar más de 15 minutos. La generación forzada
+evalúa estabilidad, no calidad semántica; las velocidades dependen del texto y del contexto ocupado.
+
 Los modelos de texto se buscan en `LLAMA_MODELS_DIR` y en las carpetas de `LLAMA_EXTRA_MODELS_DIRS` (separadas por `:`, por defecto `~/models-nvme`). Los modelos partidos en shards (`-00001-of-0000N.gguf`) cuentan como uno solo.
 
 Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.

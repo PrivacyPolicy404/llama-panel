@@ -39,6 +39,7 @@ Herramientas (todas en `tools/bench/`, con instrucciones en su encabezado):
 | `utilization.py` | % de GPU ocupada y núcleos de CPU durante una generación |
 | `gguf_sizes.py` | Tamaño de los expertos por capa (para calcular cuántas capas entran en el GTT) |
 | `gpu_mem_watch.sh` | VRAM y GTT del `llama-server` según el kernel (fdinfo): muestra lo que pidió como VRAM y terminó en GTT |
+| `ctx_stability.py` | Ventana de 64K por el router: entrada de 62K, salida de 2048, tres cargas y muestras DRM con fecha/fase; restaura escritorio y límites |
 
 Reglas que salieron de errores reales:
 
@@ -396,6 +397,46 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 - **Queda**: `spec-draft-n-ubatch = 512` en la configuración normal (8K F16: misma velocidad, 0.42 GiB menos) y, en las
   opciones de modo IA, 64K con KV Q8_0 (7.56 GB, prompt largo 109, gen 16.3 con 30K de contexto). Sin modo IA, el
   máximo con margen es ~48K. No se subió el modo IA a 80K: quedaría en ~7.8, al borde del umbral.
+
+---
+
+### 5.16 Consolidación: cerca de 64K ocupados por el router (2026-11-15)
+
+- Objetivo: cerrar lo que no probaba el prompt de 29.5K de 5.15: llenar casi toda la ventana, sostener generación
+  y verificar que descargar/recargar no acumula recursos. Sin cambiar modelos, binarios ni settings.json.
+- Camino real: API del panel -> router :8080 -> Flash-Next `-hcq8`. Modo IA, contexto 65536, KV Q8_0 en modelo
+  y borrador, tandas 2048/512, MTP 2 probabilístico, un slot. Router limitado temporalmente a 58 GiB, sin swap.
+- Entrada: **62.000 tokens exactos** de documentación variada de llama.cpp, guardados como IDs. `cache_prompt = false`:
+  **ningún token reutilizado**. Salida forzada con `ignore_eos`, temperatura 0.8 y semilla 1234.
+
+| Medida | Resultado |
+|---|---|
+| Prompt | **62.000 tokens**, 661,29 s, **93,76 tok/s** |
+| Generación con MTP | **2.048 tokens**, 121,40 s, **16,86 tok/s** |
+| Entrada + salida | **64.048 posiciones**, 97,73 % de la ventana; sin truncamiento ni desplazamiento de contexto registrado |
+| Aceptación MTP | 1228/1638, **74,97 %** |
+| Pico de VRAM total | **7,761 GiB** (proceso: 7,747 GiB) |
+| Pico de GTT del proceso | **29,422 GiB**, se mantiene cerca de los expertos fijados |
+| Tres cargas, prompt corto idéntico, temp 0 | **19,454 / 19,463 / 19,467 tok/s**, texto idéntico en las tres |
+| VRAM tras descargar, antes de recargar | **0,014 GiB**; sin acumulación visible entre ciclos |
+| Registros del kernel/router | Sin errores Vulkan, reset de GPU, fallos de anillo ni OOM detectados |
+
+- **Conclusión acotada:** pasó una carga casi completa y dos recargas posteriores con generación. Los 7,56 GiB de
+  5.15 eran con 30K ocupados: cerca del límite el pico sube a 7,761 GiB y el margen físico baja a ~0,24 GiB.
+  No habilitar 80K a partir de este resultado. No es una prueba de horas ni valida calidad semántica o recuperación
+  de información a 64K. Tampoco es un A/B de velocidad con 5.15: el texto y la longitud son distintos.
+- Escritorio restaurado, router apagado y límites devueltos a los valores iniciales; hash de settings.json sin cambios.
+  Al restaurar el escritorio aparecen los mensajes conocidos `No EDID found` del dummy HDMI-A-1; no son fallos
+  de cómputo durante la carga.
+- Humo posterior con escritorio, por el router, **ambos modelos OK**, sin reescribir baselines:
+  Flash-Next **17,8 gen / 134,2 prompt**, VRAM **6,67 GiB**; Qwen3.6 **28,9 / 231,9**, VRAM 6,92 GiB.
+  Flash-Next quedó ~2 % por debajo de la referencia 18,2, dentro del ruido conocido con MTP y muestreo;
+  una sola corrida no prueba un cambio de velocidad. Qwen3.6 cargó en frío desde el HDD en 119 s.
+  Ver `smoke-normal.log` en los artefactos. Los 33 tests del panel también pasaron.
+- Reproducir: `python3 tools/bench/ctx_stability.py --ai-mode --output ~/llama-panel-results/64k-corrida-2`.
+  **Cierra KDE**; requiere servidores y modo IA apagados. Artefactos de esta corrida:
+  `/home/gen/llama-panel-results/2026-11-15-64k-stability/` (respuestas, tokens, muestras, presets, versiones y logs).
+  Panel base `016758b`, fork `9d77a39`; no se recompiló ni actualizó llama.cpp.
 
 ---
 

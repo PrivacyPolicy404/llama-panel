@@ -166,6 +166,8 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 - `utilization.py`: cuánto trabajan CPU y GPU durante una generación (para encontrar el cuello de botella).
 - `gguf_sizes.py`: tamaño de los expertos por capa (para calcular cuántas capas entran en el GTT).
 - `smoke_models.py`: carga cada MoE por el panel y compara contra `baselines.json`.
+- `ctx_stability.py`: por el router, 62K de entrada + 2048 de salida, tres cargas, memoria por proceso y logs.
+  `--ai-mode` cierra KDE y lo restaura al terminar; salida en una carpeta nueva fuera de `/tmp`.
 - `sched_profile.py`: tramos (splits) por token y qué operaciones que no son expertos caen en el CPU.
 - `vk_timings.py`: tiempo de GPU por operación y cuánto queda para CPU + esperas (necesita una libggml-vulkan sin el
   assert del medidor, ver Descubrimientos).
@@ -205,7 +207,10 @@ ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
 - **Contexto: Flash-Next pasa de 8K a 32K** (VRAM 7.56 GB en reposo, 7.72 con un prompt de 16K; con escritorio no entra).
   Superado: con la cache KV en Q8_0 y el borrador MTP en tandas de 512 entran **64K** (opciones de modo IA; bitácora
   5.14–5.15). Ojo: la VRAM «usada» engaña cuando no entra (el kernel manda el resto a GTT): mirar `tools/bench/gpu_mem_watch.sh`.
-  Prompt de 16 224 tokens a 124 tok/s, generación 16.9 tok/s. 64K deja la VRAM en 7.97: demasiado justo.
+  La cifra vieja de 7.97 era antes de reducir las tandas del borrador. Consolidación (bitácora 5.16): **62.000 de
+  entrada + 2048 de salida por el router**, sin truncamiento; prompt 93.76, gen con MTP 16.86 tok/s. Pico **7.761 GiB**
+  de VRAM total y **29.422 GiB** de GTT del proceso. Tres cargas sin acumulación visible de memoria. Una corrida,
+  no una prueba de horas ni de calidad; el margen cerca de 64K es menor que el medido con 30K. No subir a 80K.
 - Para eso cada modelo tiene **«opciones extra en modo IA»** (`extra_ai` en settings.json): se suman y pisan a las normales
   solo con el modo IA activo. Al entrar o salir del modo IA el panel regenera el preset y recarga el modelo cargado.
 
