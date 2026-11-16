@@ -802,7 +802,7 @@ servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `
   matrices (q8_0 10.7 → 14.0 → 18.8; iq4_xs 3.8 → 7.1 → 9.5; atención 4.2 → 6.1 → 7.6): es trabajo real por columna,
   no una anomalía. La única rareza es el salto de 3 a 4 columnas en **q3_K** (10240×2560: 177 → 225 → **382 µs**;
   8.5 → 10.7 → 17.9 ms por paso) y q5_K (3.6 → 4.2 → 6.5), que explica por qué la cuarta posición cuesta 35 ms.
-  Arreglarlo solo acercaría 3 borradores a 2, sin superarlos.
+  Arreglarlo solo acercaría 3 borradores a 2, sin superarlos. (Confirmado en 5.28.)
 - **Borrador en Q8_0 (para usar la VRAM libre): descartado.** `mtp-…-Q8_0.gguf` del repo de SC117 (sha256 verificado),
   con la salida recortada igual (`gguf_mtp_d2t.py` ahora acepta Q8_0). Temp 0.8, 5 semillas, alternado con el Q4_0:
   aceptación 0.700 → 0.729 a 12K y 0.727 → 0.724 a 30K (sin mejora real), y **18.4 → 14.6–15.4 / 18.2 → 13.8–14.0
@@ -813,7 +813,7 @@ servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `
   aceptación idénticos a temp 0, pero 19.21 → 19.33 a 12K y 17.59 → 17.65 a 30K (+0.3–0.6 %, dentro del ruido).
   Para dejarlo firme habría que cuidar el estado guardado del slot; no lo vale. Diff con este prototipo y los
   instrumentos en `~/llama-panel-results/2026-11-16-tpge-mtp/worktree-instrumentos-y-defer.diff`.
-- **Queda abierto:** el shader q3_K / q5_K con 4 columnas si alguna vez conviene MTP 3.
+- ~~Queda abierto: el shader q3_K / q5_K con 4 columnas~~: resuelto en 5.28 (parche 9).
 
 ### 5.25 Techo de pregrabar los comandos de Vulkan: medido, no alcanza (2026-11-16)
 
@@ -906,9 +906,72 @@ en 5.1 con mmap; ahora con expertos fijos tampoco).
 No existe un Coder en Q2_0. Un pool de 256 no acelera por sí mismo: baja la RAM (33 → 17 GiB) y duplicaría el alcance
 de cualquier caché, que acá no rinde. **Ninguno mejora nuestro cuello**; el nuestro sigue siendo el más liviano por token.
 
+### 5.28 El salto de q3_K / q5_K con 4 columnas era un umbral de registros (parche 9, 2026-11-16)
+
+**Hipótesis.** En 5.24 quedó una rareza: la multiplicación q3_K de 10240×2560 (`attn_qkv`) costaba 177 → 225 → 382 µs
+con 2 / 3 / 4 columnas, y q5_K hacía lo mismo. Un escalón así no es trabajo por columna.
+
+**Método.** Casos de `test-backend-ops perf` con esa forma y 1–5 columnas para los cuatro tipos K, y
+`RADV_DEBUG=shaderstats,nocache` para ver lo que compila ACO en cada variante.
+
+**Qué se descartó primero.**
+- Filas por grupo (`rm_kq`, 4 en GCN): bajarlas empeora y subirlas no cambia nada.
+- Camino con producto entero (MMVQ): la RX 580 no lo acelera (`int dot: 0`), siempre corre el camino flotante;
+  `GGML_VK_DISABLE_MMVQ` y `GGML_VK_FORCE_MMVQ` dan los mismos números.
+
+**Causa.** El escalón coincide exacto con el paso de 128 a 256 registros vectoriales (VGPRs). En GCN los registros
+de un SIMD se reparten entre tandas (waves): hasta 128 entran dos a la vez, con más entra una sola.
+
+| VGPRs antes de planificar | 2 col | 3 col | 4 col | 5 col |
+|---|---|---|---|---|
+| q3_K original | 107 | 127 | **147** | 167 |
+| q4_K (sin tocar) | 79 | 100 | 120 | **140** |
+| q5_K original | — | 119 | **143** | — |
+| q3_K nuevo | 88 | 108 | 128 | **148** |
+| q5_K nuevo | 75 | 95 | 115 | **135** |
+
+q4_K y q6_K saltan recién en 5 columnas y Flash-Next no los usa en la GPU: no se tocaron.
+
+**Arreglo.** Los shaders multiplicaban cada valor de B por su escala dentro del bucle de columnas, con los pesos
+desempaquetados, las 8 escalas y (q5_K) las sumas por grupo vivos a la vez. Ahora las escalas se pliegan en los pesos
+una vez por fila (q5_K: `d·escala·q − dmin·escala_min`) y cada columna es un producto punto de 16 términos.
+
+| µs por corrida (10240×2560) | 1 | 2 | 3 | 4 | 5 col |
+|---|---|---|---|---|---|
+| q3_K antes | 134 | 176 | 226 | 369 | 432 |
+| q3_K ahora | 122 | 168 | 210 | **265** | 399 |
+| q5_K antes | 122 | 161 | 194 | 290 | 336 |
+| q5_K ahora | 126 | 152 | 192 | **221** | 320 |
+
+`test-backend-ops`: MUL_MAT 2592/2592, MUL_MAT_ID 1160/1160. El redondeo cambia, así que el texto a temp 0 no es
+idéntico al de antes.
+
+**Decode, temp 0, brazos alternados (viejo, nuevo, viejo, nuevo), 4 mediciones por celda, tok/s:**
+
+| | 12K viejo → nuevo | 30K viejo → nuevo |
+|---|---|---|
+| MTP 2 | 19.50 → **19.71** (+1.1 %) | 17.92 → 17.98 (+0.3 %) |
+| MTP 3 | 18.93 → 18.83 | 17.65 → **18.59** (+5.3 %) |
+
+**MTP 3 contra MTP 2 con el shader nuevo, temp 0.8, 3 semillas × 2 vueltas:**
+
+| contexto | MTP 2 tok/s (aceptación) | MTP 3 tok/s (aceptación) |
+|---|---|---|
+| 12K | **19.61** (0.784) | 18.55 (0.674) |
+| 20K | **18.15** (0.698) | 17.14 (0.594) |
+| 30K | **17.28** (0.669) | 16.55 (0.587) |
+
+MTP 3 depende mucho de la semilla (a 20K: 14.4 / 18.8 / 18.2 contra 18.7 / 18.0 / 17.8 de MTP 2): gana en dos de tres
+y se hunde en la otra. El 18.59 a 30K y temp 0 era un solo texto favorable.
+
+**Conclusión.** Parche 9 adoptado (gana con la configuración vigente y no pierde en ningún caso). **El preset sigue
+en 2 borradores.** Lección: cuando una variante de shader cuesta más de lo que explica su trabajo, mirar
+`RADV_DEBUG=shaderstats`; en GCN los umbrales son 64 / 84 / 128 VGPRs. Resultados en
+`~/llama-panel-results/2026-11-16-tpge-mtp/kq-cols-*`.
+
 ---
 
-## 6. Los ocho parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
+## 6. Los nueve parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
 ### Parche 1 — `-ot` con buffers de memoria fija (`Vulkan_Host`)
 Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un override a host buffer se ignora; el parche avisa.
@@ -957,6 +1020,11 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 - Hallazgo y método en 5.23. Si el GGUF del borrador trae `d2t`, `output.weight` tiene solo esas filas y los logits
   se reparten sobre el vocabulario completo (convención de eagle3 / dflash). Sin `d2t` no cambia nada.
 - Resultado: **+2 %** con los 65536 tokens más frecuentes, misma aceptación, −0.24 GiB de VRAM.
+
+### Parche 9 — shaders q3_K / q5_K: escalas plegadas en los pesos
+- Hallazgo y método en 5.28. Las escalas (y en q5_K el mínimo del bloque) se multiplican en los pesos una vez por
+  fila; cada columna queda como un producto punto y 4 columnas entran en 128 registros vectoriales.
+- Resultado: 4 columnas −28 % (q3_K) y −24 % (q5_K) en la operación; decode con MTP 2 **+1.1 %** a 12K, +0.3 % a 30K.
 
 ---
 
@@ -1030,6 +1098,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 5. Solapar CPU y GPU (hoy se turnan): lo único independiente es el experto compartido, techo ~1.5–2 ms/token (5.21).
 6. ~~Atención con contexto largo~~: hecho (5.20, parche 6). Con MTP a 30K: 16.4 → 17.4.
 7. ~~Revisar MTP 3 contra MTP 2 en contexto largo~~: medido en 5.22, sigue 2 (la brecha bajó a −1.3 / −2.5 %).
+   Vuelto a medir en 5.28 con el parche 9 y temperatura: sigue 2.
 8. ~0.4 GiB libres sin modo IA desde 5.15 (borrador en tandas de 512), sin uso todavía.
 9. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 10. ~~Recortar la salida del borrador MTP~~: hecho (5.23, parche 8), +2 %.

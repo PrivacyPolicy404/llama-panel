@@ -10,7 +10,7 @@ Responder en castellano rioplatense. El usuario trabaja por SSH en la máquina.
 - `docs/notas.md`: hardware y sus límites (GTT 31 GiB, HDD vs NVMe), mediciones, por qué cada configuración de modelo, trampas conocidas.
 - `docs/analisis-rendimiento.md`: bitácora de cada experimento (hipótesis, método, números, conclusión) y cómo medir sin
   engañarse. Leerlo antes de proponer una optimización: puede que ya se haya probado.
-- `patches/README.md`: el fork de llama.cpp y sus 8 parches locales.
+- `patches/README.md`: el fork de llama.cpp y sus 9 parches locales.
 - `README.md`: estructura del código.
 
 ## Código
@@ -26,7 +26,7 @@ Responder en castellano rioplatense. El usuario trabaja por SSH en la máquina.
 
 ## llama.cpp
 
-- `~/llama.cpp` sale del fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` (oficial + 8 parches). La versión está fijada a propósito:
+- `~/llama.cpp` sale del fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` (oficial + 9 parches). La versión está fijada a propósito:
   **no actualizar sin que el usuario lo pida**. Para revisar novedades o actualizar, usar la skill `llama-cpp-update`.
 - La configuración de Qwen3.8-Flash-Next en el panel necesita el parche 1 (`-ot ...=Vulkan_Host`); el modelo `-hcq8` se generó con el parche 3
   y su borrador MTP recortado (`-d2t65k`) necesita el parche 8.

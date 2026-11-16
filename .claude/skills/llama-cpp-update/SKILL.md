@@ -42,7 +42,7 @@ Tabla corta: commit, qué hace, si le sirve y por qué. Terminar con una recomen
 
 1. Confirmar que no esté usando los modelos (el script reinicia el router si está encendido).
 2. `~/llama-panel/scripts/update-llama.sh`
-   - Rebase de la rama `ot-host-buffers` (8 parches + commits de notas del README del fork) sobre `upstream/master`, compila, verifica, sube al fork.
+   - Rebase de la rama `ot-host-buffers` (9 parches + commits de notas del README del fork) sobre `upstream/master`, compila, verifica, sube al fork.
    - Si algún parche no aplica limpio, el script no cambia nada. Adaptarlo a mano (detalle en `patches/README.md`):
      1. `-ot` con host buffers: `common/arg.cpp` y `tools/llama-bench/llama-bench.cpp` (agregar `ggml_backend_dev_host_buffer_type` a la lista), `src/llama-model-loader.cpp` (aviso cuando un override explícito a host buffer se ignora por mmap).
      2. Lightning indexer fp32: `vulkan-shaders/lightning_indexer.comp` (`LI_VEC4` según `FLOAT16`), `vulkan-shaders-gen.cpp` (variante `_fp32`), `ggml-vulkan.cpp` (elegir la variante si `!device->fp16` y no exigir fp16 en `supports_op`).

@@ -1,0 +1,178 @@
+From 103fa70603ddf7346e789b8c3be88d2d053b51d0 Mon Sep 17 00:00:00 2001
+From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 15:17:35 -0300
+Subject: [PATCH] vulkan : q3_K / q5_K mat-vec, fold the scales into the
+ weights once per row
+
+With several B columns the q3_K and q5_K shaders redid the scale products
+for every column and kept the unpacked weights, the scales and (q5_K) the
+per-group sums of B live at the same time. On GCN that pushed the 4-column
+variants over 128 VGPRs (q3_K 147, q5_K 143), so only one wave fits per SIMD
+instead of two and the cost jumps: q3_K 10240x2560 took 226 us with 3
+columns and 369 with 4.
+
+The weights are now multiplied by their scale (and, for q5_K, by d with the
+block minimum folded in) once per row, and each column is a plain dot
+product. RADV shaderstats, pre-sched VGPRs with 4 columns: q3_K 147 -> 128,
+q5_K 143 -> 115; instructions 6889 -> 6175 and 3576 -> 3421.
+
+RX 580, test-backend-ops perf, 10240x2560, us/run for 1/2/3/4/5 columns:
+q3_K 134/176/226/369/432 -> 122/168/210/265/399
+q5_K 122/161/194/290/336 -> 126/152/192/221/320
+test-backend-ops MUL_MAT q3_K/q5_K: 139/139 against the CPU.
+
+Qwen3.8-Flash-Next, MTP with 2 drafts (verify batches of 3 columns), temp 0,
+alternated arms: 19.50 -> 19.71 tok/s at 12K and 17.92 -> 17.98 at 30K. With
+3 drafts (4 columns) 17.65 -> 18.59 at 30K; 3 drafts still lose to 2 with
+sampling, so the default stays at 2.
+
+Written with AI assistance (Claude).
+---
+ .../vulkan-shaders/mul_mat_vec_q3_k.comp      | 46 ++++++------
+ .../vulkan-shaders/mul_mat_vec_q5_k.comp      | 70 +++++--------------
+ 2 files changed, 44 insertions(+), 72 deletions(-)
+
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q3_k.comp b/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q3_k.comp
+index 93e48b7..0ff4c69 100644
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q3_k.comp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q3_k.comp
+@@ -47,28 +47,32 @@ void calc_superblock(const uint a_offset, const uint b_offset, const uint ix, co
+ 
+         const FLOAT_TYPE d = FLOAT_TYPE(data_a[ib0 + i].d);
+ 
++        // fold the scales into the unpacked weights once per row: each column then only costs the dot
++        // product, and fewer values stay live (4 columns fit in 128 VGPRs, so GCN keeps 2 waves per SIMD)
++        const float sc0 = float(sccache[csel][ix][v_im][0]);
++        const float sc1 = float(sccache[csel][ix][v_im][1]);
++        const float sc2 = float(sccache[csel][ix][v_im][2]);
++        const float sc3 = float(sccache[csel][ix][v_im][3]);
++        const float sc4 = float(sccache[csel][ix][v_im][4]);
++        const float sc5 = float(sccache[csel][ix][v_im][5]);
++        const float sc6 = float(sccache[csel][ix][v_im][6]);
++        const float sc7 = float(sccache[csel][ix][v_im][7]);
++        const vec4 w0 = (qs_u32_0 - hmk_0) * vec4(sc0, sc0, sc1, sc1);
++        const vec4 w1 = (qs_u32_2 - hmk_1) * vec4(sc2, sc2, sc3, sc3);
++        const vec4 w2 = (qs_u32_4 - hmk_2) * vec4(sc4, sc4, sc5, sc5);
++        const vec4 w3 = (qs_u32_6 - hmk_3) * vec4(sc6, sc6, sc7, sc7);
++
+         [[unroll]] for (uint j = 0; j < NUM_COLS; ++j) {
+-            vec2 b0 =   vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 +  0]);
+-            vec2 b16 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 +  8]);
+-            vec2 b32 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 + 16]);
+-            vec2 b48 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 + 24]);
+-            vec2 b64 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 + 32]);
+-            vec2 b80 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 + 40]);
+-            vec2 b96 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 + 48]);
+-            vec2 b112 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y_idx) / 2 + 56]);
+-
+-            FLOAT_TYPE sum = FLOAT_TYPE(0.0);
+-            [[unroll]] for (int l = 0; l < 2; ++l) {
+-                sum = fma(FLOAT_TYPE(  b0[l]) * sccache[csel][ix][v_im][0], qs_u32_0[l  ] - hmk_0[l  ],
+-                      fma(FLOAT_TYPE( b16[l]) * sccache[csel][ix][v_im][1], qs_u32_0[l+2] - hmk_0[l+2],
+-                      fma(FLOAT_TYPE( b32[l]) * sccache[csel][ix][v_im][2], qs_u32_2[l  ] - hmk_1[l  ],
+-                      fma(FLOAT_TYPE( b48[l]) * sccache[csel][ix][v_im][3], qs_u32_2[l+2] - hmk_1[l+2],
+-                      fma(FLOAT_TYPE( b64[l]) * sccache[csel][ix][v_im][4], qs_u32_4[l  ] - hmk_2[l  ],
+-                      fma(FLOAT_TYPE( b80[l]) * sccache[csel][ix][v_im][5], qs_u32_4[l+2] - hmk_2[l+2],
+-                      fma(FLOAT_TYPE( b96[l]) * sccache[csel][ix][v_im][6], qs_u32_6[l  ] - hmk_3[l  ],
+-                      fma(FLOAT_TYPE(b112[l]) * sccache[csel][ix][v_im][7], qs_u32_6[l+2] - hmk_3[l+2], sum))))))));
+-            }
+-            temp[j][n] = fma(d, sum, temp[j][n]);
++            const uint bi = (j*p.batch_stride_b + b_offset + y_idx) / 2;
++            vec2 acc = vec2(data_b_v2[bi +  0]) * w0.xy;
++            acc = fma(vec2(data_b_v2[bi +  8]), w0.zw, acc);
++            acc = fma(vec2(data_b_v2[bi + 16]), w1.xy, acc);
++            acc = fma(vec2(data_b_v2[bi + 24]), w1.zw, acc);
++            acc = fma(vec2(data_b_v2[bi + 32]), w2.xy, acc);
++            acc = fma(vec2(data_b_v2[bi + 40]), w2.zw, acc);
++            acc = fma(vec2(data_b_v2[bi + 48]), w3.xy, acc);
++            acc = fma(vec2(data_b_v2[bi + 56]), w3.zw, acc);
++            temp[j][n] = fma(d, FLOAT_TYPE(acc.x + acc.y), temp[j][n]);
+         }
+     }
+ }
+diff --git a/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q5_k.comp b/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q5_k.comp
+index 54d7e1b..b5f0d57 100644
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q5_k.comp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q5_k.comp
+@@ -59,59 +59,27 @@ void calc_superblock(const uint a_offset, const uint b_offset, const uint v_im,
+         const vec4 qs0_16_hi4 = vec4(unpack8(qs0_16_u32_hi4));
+         const vec4 qs64_80_hi4 = vec4(unpack8(qs64_80_u32_hi4));
+ 
+-        const FLOAT_TYPE q4_0  = qs0_16_lo4.x;
+-        const FLOAT_TYPE q4_1  = qs0_16_lo4.y;
+-        const FLOAT_TYPE q4_2  = qs0_16_lo4.z;
+-        const FLOAT_TYPE q4_3  = qs0_16_lo4.w;
+-        const FLOAT_TYPE q4_4  = qs0_16_hi4.x;
+-        const FLOAT_TYPE q4_5  = qs0_16_hi4.y;
+-        const FLOAT_TYPE q4_6  = qs0_16_hi4.z;
+-        const FLOAT_TYPE q4_7  = qs0_16_hi4.w;
+-        const FLOAT_TYPE q4_8  = qs64_80_lo4.x;
+-        const FLOAT_TYPE q4_9  = qs64_80_lo4.y;
+-        const FLOAT_TYPE q4_10 = qs64_80_lo4.z;
+-        const FLOAT_TYPE q4_11 = qs64_80_lo4.w;
+-        const FLOAT_TYPE q4_12 = qs64_80_hi4.x;
+-        const FLOAT_TYPE q4_13 = qs64_80_hi4.y;
+-        const FLOAT_TYPE q4_14 = qs64_80_hi4.z;
+-        const FLOAT_TYPE q4_15 = qs64_80_hi4.w;
++        // fold the scales and the block minimum into the unpacked weights once per row: each column then
++        // only costs the dot product, and fewer values stay live (4 columns fit in 128 VGPRs on GCN)
++        const float dx = float(dm.x);
++        const float dy = -float(dm.y);
++        const vec4 wx = fma(vec4(dx * float(sc0)), qs0_16_lo4,  vec4(dy * float(sc2)));
++        const vec4 wy = fma(vec4(dx * float(sc1)), qs0_16_hi4,  vec4(dy * float(sc3)));
++        const vec4 wz = fma(vec4(dx * float(sc4)), qs64_80_lo4, vec4(dy * float(sc6)));
++        const vec4 ww = fma(vec4(dx * float(sc5)), qs64_80_hi4, vec4(dy * float(sc7)));
+ 
+         [[unroll]] for (uint j = 0; j < NUM_COLS; ++j) {
+-            vec2 by10 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y1_idx) / 2     ]);
+-            vec2 by116 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y1_idx) / 2 +  8]);
+-            vec2 by132 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y1_idx) / 2 + 16]);
+-            vec2 by148 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y1_idx) / 2 + 24]);
+-            vec2 by20 =  vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y2_idx) / 2     ]);
+-            vec2 by216 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y2_idx) / 2 +  8]);
+-            vec2 by232 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y2_idx) / 2 + 16]);
+-            vec2 by248 = vec2(data_b_v2[(j*p.batch_stride_b + b_offset + y2_idx) / 2 + 24]);
+-
+-            const FLOAT_TYPE sx =
+-              fma(FLOAT_TYPE(by10.x), q4_0,
+-              fma(FLOAT_TYPE(by10.y), q4_1,
+-              fma(FLOAT_TYPE(by116.x), q4_2,
+-                 FLOAT_TYPE(by116.y) * q4_3)));
+-            const FLOAT_TYPE sy =
+-              fma(FLOAT_TYPE(by132.x), q4_4,
+-              fma(FLOAT_TYPE(by132.y), q4_5,
+-              fma(FLOAT_TYPE(by148.x), q4_6,
+-                 FLOAT_TYPE(by148.y) * q4_7)));
+-            const FLOAT_TYPE sz =
+-              fma(FLOAT_TYPE(by20.x), q4_8,
+-              fma(FLOAT_TYPE(by20.y), q4_9,
+-              fma(FLOAT_TYPE(by216.x), q4_10,
+-                 FLOAT_TYPE(by216.y) * q4_11)));
+-            const FLOAT_TYPE sw =
+-              fma(FLOAT_TYPE(by232.x), q4_12,
+-              fma(FLOAT_TYPE(by232.y), q4_13,
+-              fma(FLOAT_TYPE(by248.x), q4_14,
+-                 FLOAT_TYPE(by248.y) * q4_15)));
+-            const FLOAT_TYPE smin =
+-              fma(FLOAT_TYPE(by10.x) + FLOAT_TYPE(by10.y) + FLOAT_TYPE(by116.x) + FLOAT_TYPE(by116.y), sc2,
+-              fma(FLOAT_TYPE(by132.x) + FLOAT_TYPE(by132.y) + FLOAT_TYPE(by148.x) + FLOAT_TYPE(by148.y), sc3,
+-              fma(FLOAT_TYPE(by20.x) + FLOAT_TYPE(by20.y) + FLOAT_TYPE(by216.x) + FLOAT_TYPE(by216.y), sc6,
+-                  (FLOAT_TYPE(by232.x) + FLOAT_TYPE(by232.y) + FLOAT_TYPE(by248.x) + FLOAT_TYPE(by248.y)) * sc7)));
+-            temp[j][n] = fma(dm.x, fma(sx, sc0, fma(sy, sc1, fma(sz, sc4, sw * sc5))), fma(-dm.y, smin, temp[j][n]));
++            const uint b1 = (j*p.batch_stride_b + b_offset + y1_idx) / 2;
++            const uint b2 = (j*p.batch_stride_b + b_offset + y2_idx) / 2;
++            vec2 acc = vec2(data_b_v2[b1     ]) * wx.xy;
++            acc = fma(vec2(data_b_v2[b1 +  8]), wx.zw, acc);
++            acc = fma(vec2(data_b_v2[b1 + 16]), wy.xy, acc);
++            acc = fma(vec2(data_b_v2[b1 + 24]), wy.zw, acc);
++            acc = fma(vec2(data_b_v2[b2     ]), wz.xy, acc);
++            acc = fma(vec2(data_b_v2[b2 +  8]), wz.zw, acc);
++            acc = fma(vec2(data_b_v2[b2 + 16]), ww.xy, acc);
++            acc = fma(vec2(data_b_v2[b2 + 24]), ww.zw, acc);
++            temp[j][n] += FLOAT_TYPE(acc.x + acc.y);
+         }
+     }
+ }
+-- 
+2.43.0
+

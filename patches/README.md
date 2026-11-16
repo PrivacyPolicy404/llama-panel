@@ -1,7 +1,7 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más los 8 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
+el `master` oficial más los 9 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
@@ -86,6 +86,16 @@ El modelo sigue verificando contra el vocabulario entero, así que la distribuci
 El GGUF se genera con `tools/mtp_vocab_order.py` (orden por frecuencia) y `tools/gguf_mtp_d2t.py` (recorte).
 Con los 65536 tokens más frecuentes: 18.8 -> 19.2 tok/s a 12K y 17.6 -> 18.0 a 30K, mismos borradores aceptados,
 VRAM 7.34 -> 7.10 GiB, borrador 263 MB más chico.
+
+## 9. `llama.cpp-vulkan-kq-matvec-fold-scales.patch`
+
+Los shaders de matriz por vector q3_K y q5_K rehacían los productos de las escalas en cada columna y mantenían vivos
+a la vez los pesos, las escalas y (en q5_K) las sumas por grupo. Con 4 columnas eso pasaba los 128 registros
+vectoriales (147 y 143), y en GCN entra una sola tanda por SIMD en vez de dos: q3_K 10240×2560 costaba 226 µs con
+3 columnas y 369 con 4. Ahora las escalas se pliegan en los pesos una vez por fila y cada columna es un producto punto.
+Con 4 columnas: 369 -> 265 µs (q3_K) y 290 -> 221 µs (q5_K); 1 a 3 columnas hasta 7 % más rápido.
+`test-backend-ops` MUL_MAT 2592/2592 y MUL_MAT_ID 1160/1160.
+Flash-Next con 2 borradores MTP: 19.50 -> 19.71 tok/s a 12K y 17.92 -> 17.98 a 30K. Ver bitácora 5.28.
 
 ## Si se propone upstream
 
