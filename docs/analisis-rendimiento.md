@@ -868,6 +868,44 @@ suerte de trayectoria. Además las posiciones aceptadas quedan en la caché KV c
 con 5.24 (pesos planos: no hay expertos de relleno). **No se adopta**; para afirmar algo haría falta medir muchos
 prompts y calidad, por un techo de ~2–3 %.
 
+### 5.27 Uso de expertos, caché en la VRAM libre y los modelos "Coder" (2026-11-16)
+
+**Qué expertos se usan** (`TPGE_MOE_IDS_LOG`, solo worktree; MTP 2, 3 contextos × 512 tokens, 48 capas de 512 expertos):
+
+| Los N más usados de cada capa | Cubren (misma muestra) | Cubren (ordenados con 2/3, probados en 1/3) |
+|---|---|---|
+| 14 (lo que entra en ~0.9 GiB) | 26 % | 19 % |
+| 32 | 43 % | 34 % |
+| 64 | 63 % | 53 % |
+| 128 | 84 % | 76 % |
+| 256 | 98 % | 96 % |
+
+Además: el 37 % de los expertos de un paso se usó en el paso anterior (59 % en los últimos 4, 84 % en 16), y dentro de un
+lote de 3 posiciones el 24 % se repite (5.21 decía "casi no comparten": era menos cierto de lo anotado). Cada experto
+(gate + up + down en Q2_0) pesa 1.32 MiB.
+
+**Caché de expertos en VRAM** (`moe-cache-mib` 512 / 768, `moe-cache-cpu-share` 0.95) con la configuración vigente
+(expertos fijos en `Vulkan_Host`, parches 1–8), temp 0, MTP 2. Funciona, pero el texto cambia entre repeticiones
+(GPU y CPU no suman igual) y **el paso sale 2–4 % más caro**: 12K 129 → 135 ms por paso (19.5 → 18.5–19.4 tok/s);
+30K 132.5 → 135–137 (el 17.9 → 18.0–18.9 tok/s es aceptación con suerte, 115–117 aceptados contra 111). Calcular un
+acierto en la GPU no es más barato que nuestro kernel de CPU, y encima mete tramos extra. **Descartado** (ya lo estaba
+en 5.1 con mmap; ahora con expertos fijos tampoco).
+
+**Modelos "Coder" de Qwen3.8-Flash-Next** (API de Hugging Face, 2026-11-16). Lo que nos cuesta por token es
+10 expertos × 48 capas × bytes por experto; el tamaño del pool no entra en esa cuenta.
+
+| Modelo | Pool | Expertos | Para nosotros |
+|---|---|---|---|
+| El nuestro (SC117 abliterated Q2_0) | 512 | Q2_0, 2.25 bpw | ~630 MiB leídos por token |
+| ISTA-DASLab `…-GSQ-RCO-Coder-GGUF` (820K descargas; SWE-bench 79.2 vs 82.8 del original) | 256 | down IQ4_NL 4.5 bpw (39 capas), gate/up IQ3 2.6–3.4 | ~950 MiB por token y tipos IQ sin kernel rápido de CPU: más lento |
+| Variantes sin censura del anterior (alesha-pro Strata, Abiray Orca, DatKurai) | 256 | mismos bytes | ídem |
+| Schiltmans `…-Coder-cut240` | 185–255 por capa | ídem | necesita otro fork (expertos por capa) |
+| agentionai Gyro-Coder (`TQ2_0`, 2.125 bpw trellis) | 256 | formato propio | no carga en llama.cpp oficial ni en el nuestro |
+| Jab1718 `flash-coder` (160 expertos, DoRA) | 160 | Q4_K_M ~4.8 bpw | el doble de lectura por token |
+
+No existe un Coder en Q2_0. Un pool de 256 no acelera por sí mismo: baja la RAM (33 → 17 GiB) y duplicaría el alcance
+de cualquier caché, que acá no rinde. **Ninguno mejora nuestro cuello**; el nuestro sigue siendo el más liviano por token.
+
 ---
 
 ## 6. Los ocho parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -951,6 +989,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 |---|---|
 | Expert cache con mmap | Peor (Qwen3.6 14.6 vs 23 sin cache) |
 | Expert cache en Flash-Next | Siempre peor: solo hay ~3.2 GB de VRAM para 37 GB de expertos |
+| Expert cache chico (512–768 MiB) con expertos fijos y parches 1–8 | Paso 2–4 % más caro (5.27) |
 | Fijar los 48 capas de Flash-Next | device lost (GTT 31 GiB). Se podría subir el GTT por GRUB: no se hizo |
 | Más hilos / menos hilos | Sin cambio (el CPU espera a la GPU) |
 | OpenMP pasivo, giro corto, prioridad alta | Peor que el default |
