@@ -1051,6 +1051,28 @@ ocupa 0.5 GiB, el doble de lo que explica la caché KV sola (~16 MiB por cada 1K
 De paso: a 61K de contexto llenos la generación da 18 tok/s (16.9 en 5.16).
 Resultados en `~/llama-panel-results/2026-11-16-ctx80k/`.
 
+### 5.31 Carga tipo agente: herramientas, caché del prompt y razonamiento (2026-11-16)
+
+**Para qué.** Antes de elegir un cliente (tareas de código, un framework de agentes), saber qué cuesta cada cosa
+con una conversación con forma de agente. `tools/bench/agent_check.py`, por el router, razonamiento activado,
+prompt de sistema de ~6.3K tokens más dos herramientas.
+
+| Paso | Prompt nuevo | De caché | Tiempo de prompt | Salida |
+|---|---|---|---|---|
+| 1. Primer turno (frío) | 6317 | 0 | 55.2 s | 58 tok, llamada a herramienta correcta |
+| 2. Turno con el resultado de la herramienta | 800 | 6376 | 10.1 s | 201 tok |
+| 3. Turno siguiente | 17 | 7378 | 1.0 s | 243 tok |
+| 4. Mismo historial con una fecha y hora al inicio del sistema | 7684 | 0 | 69.4 s | 700 tok |
+
+- Las llamadas a herramientas funcionan con la plantilla del modelo, y devolver el mensaje del asistente con su
+  razonamiento no rompe la caché.
+- **Un prefijo que cambia (paso 4) reprocesa todo**: 69 s contra 1 s. Es el riesgo principal con frameworks que
+  ponen la hora o reordenan herramientas al principio del prompt.
+- En el paso 4 los 700 tokens de tope se fueron enteros en razonamiento, sin respuesta.
+- Misma tarea de código corta: razonamiento activado 669 tokens en 37 s; apagado por pedido
+  (`chat_template_kwargs: {"enable_thinking": false}`) 573 tokens en 27 s, con más respuesta útil.
+- Una corrida por caso, con muestreo: sirve para órdenes de magnitud, no para comparar calidad.
+
 ---
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
