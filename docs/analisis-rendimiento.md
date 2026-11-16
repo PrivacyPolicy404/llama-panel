@@ -771,6 +771,35 @@ brazos alternados. Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`hot-
 - Descartadas por la cuenta: árboles de candidatos (cada posición cuesta 33–37 ms y la segunda alternativa acertaría
   ~6 %); precargar expertos predichos (20–30 MB por capa contra 16 MiB de L3).
 
+### 5.24 Tres pistas medidas: umbral de confianza, expertos de peso bajo y el costo real del paso MTP (2026-11-16)
+
+Motor experimental con tres instrumentos de diagnóstico (no van al fork): `LLAMA_MTP_CONF_LOG` (probabilidad de cada
+borrador y cuántos se aceptaron), `LLAMA_MOE_W_LOG` (pesos del enrutador) y `TPGE_TIMINGS` (tiempos por etapa del
+servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `pmin-temp-n2`, `pmin-temp-n4`,
+`moe-w.log`, `timings`).
+
+- **Umbral de confianza (SpecDec++): no rinde.** La probabilidad del borrador está bien calibrada (1163 pasos, temp
+  0.8: p ≥ 0.99 → 95–99 % aceptado; p < 0.5 → 40–50 %; aceptación condicional por posición 0.775 / 0.751 / 0.721 /
+  0.686). Pero medido con 5 semillas: 2 borradores sin umbral **18.31 / 18.17** (12K / 30K); con `p-min` 0.9,
+  16.9 / 16.85; 4 borradores con 0.8–0.95, 17.3–17.7. Un borrador rinde aunque se acepte la mitad de las veces.
+- **Saltear expertos de peso bajo: descartado.** Pesos normalizados medios por rango (11613 muestras, 49 capas):
+  0.206 0.148 0.120 0.102 0.089 0.079 0.072 0.066 0.061 0.057. El último lleva 5.7 % y los tres últimos 18 %:
+  no hay expertos despreciables. Con umbral 0.1 × el mayor se saltea 0.09 de 10.
+- **Tiempos por etapa del paso MTP** (temp 0, 12K, ms por paso):
+
+| Borradores | tok/s | generar borradores | modelo (lote) | puesta al día | resto | total |
+|---|---|---|---|---|---|---|
+| 1 | 18.96 | 4.4 | 91.9 (2) | 4.3 | 1.3 | 102.0 |
+| 2 | 18.83 | 7.2 | 120.9 (3) | 4.8 | 1.6 | 134.4 |
+| 3 | 18.58 | 10.0 | 155.5 (4) | 5.8 | 1.9 | 173.2 |
+
+  El modelo es el 90 % del paso y **cada posición extra cuesta más que la anterior: +26, +29, +35 ms** sobre los
+  ~66 de un token solo. Si la tercera costara 26, 3 borradores ganarían. Cada borrador son 2.8 ms; la puesta al día
+  (`process()`: vuelve a pasar el lote verificado por el bloque MTP para llenar su caché) 4.3–5.8 ms por paso.
+  A temp 0, 1 borrador rinde igual que 2.
+- **Queda abierto:** (1) por qué el costo por posición crece con el lote (perfil por operación con lotes de 2, 3 y 4);
+  (2) fusionar la puesta al día con el primer borrador (techo ~2 %).
+
 ---
 
 ## 6. Los ocho parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
