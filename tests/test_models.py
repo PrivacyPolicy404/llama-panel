@@ -68,6 +68,7 @@ class Preset(unittest.TestCase):
         self.assertIn("[x-MTP-Q4]\nmodel = /m/x-MTP-Q4.gguf\nspec-type = draft-mtp\nspec-draft-n-max = 2\n", out)
         self.assertIn("[y]\nmodel = /m/y.gguf\n", out)
         self.assertIn("\n[*]\nn-gpu-layers = 99\n", out)
+        self.assertIn(f"\nslot-save-path = {C.SLOTS_DIR}/\n", out)
 
     def test_extra_overrides_fields(self):
         s = settings(models={"y.gguf": {"ctx": "4096", "reasoning": "on", "extra": "ctx-size = 2048\nparallel = 1"}})

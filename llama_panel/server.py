@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import config as C
 from . import hardware
+from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES
 
 MAX_BODY = 1_000_000
@@ -76,4 +77,5 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve():
     hardware.start_sampler()
+    prompt_cache.start_watcher()
     ThreadingHTTPServer(("0.0.0.0", C.PANEL_PORT), Handler).serve_forever()

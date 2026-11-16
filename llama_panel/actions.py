@@ -6,6 +6,7 @@ import time
 
 from . import config as C
 from . import img_models as IM
+from . import prompt_cache as PC
 from . import services
 from . import text_models as TM
 from .services import free_vram_for, router, router_error, router_models, svc, svc_state, wait_router
@@ -129,6 +130,36 @@ def text_unload(body):
     except Exception as e:  # noqa: BLE001
         return fail(f"No se pudo descargar {mid}: {router_error(e)}")
     return ok(f"{mid} descargado: la VRAM queda libre.")
+
+
+def _loaded_model(body):
+    mid = str(body.get("id", ""))
+    return mid if router_models().get(mid, {}).get("status") == "loaded" else None
+
+
+def text_prompt_save(body):
+    mid = _loaded_model(body)
+    if not mid:
+        return fail("El modelo tiene que estar cargado.")
+    tokens, err = PC.save(mid)
+    if err:
+        return fail(f"No se pudo guardar el prompt: {err}")
+    return ok(f"Prompt guardado: {tokens} tokens. Se restaura solo cada vez que {mid} se cargue.")
+
+
+def text_prompt_restore(body):
+    mid = _loaded_model(body)
+    if not mid:
+        return fail("El modelo tiene que estar cargado.")
+    tokens, err = PC.restore(mid)
+    if err:
+        return fail(f"No se pudo restaurar el prompt: {err}")
+    return ok(f"Prompt restaurado: {tokens} tokens." if tokens else "No hay un prompt guardado para la configuración actual.")
+
+
+def text_prompt_delete(body):
+    n = PC.delete(str(body.get("id", "")))
+    return ok("Prompt guardado borrado." if n else "No había un prompt guardado.")
 
 
 def apply_text():

@@ -13,6 +13,8 @@ CFG_DIR = Path(os.environ.get("LLAMA_PANEL_DIR", HOME / ".config" / "llama-panel
 SETTINGS_FILE = CFG_DIR / "settings.json"
 PRESET_FILE = CFG_DIR / "presets.ini"
 IMG_ENV = CFG_DIR / "kobold.env"
+# Estados de slot guardados (prompt inicial ya procesado): ~0.5 GB por modelo, van a un disco rapido
+SLOTS_DIR = Path(os.environ.get("LLAMA_PANEL_SLOTS_DIR", HOME / ".cache" / "llama-panel" / "slots"))
 
 MODELS_DIR = Path(os.environ.get("LLAMA_MODELS_DIR", "/mnt/hdd1/gen/models"))
 # Carpetas extra separadas por ":" (por ejemplo, un NVMe para modelos que necesitan lectura rapida)

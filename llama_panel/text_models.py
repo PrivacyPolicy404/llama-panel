@@ -65,7 +65,10 @@ def build_preset(settings, models, ai_mode=False):
     glob_lines, _ = C.clean_lines(settings["global"])
     out = ["# Generado por llama-panel. No editar a mano: se reescribe al guardar.",
            f"# Modo IA: {'activo (incluye las opciones extra de modo IA)' if ai_mode else 'inactivo'}", "", "[*]"]
-    out += glob_lines + [""]
+    out += glob_lines
+    if not any(l.split("=", 1)[0].strip() == "slot-save-path" for l in glob_lines):
+        out.append(f"slot-save-path = {C.SLOTS_DIR}/")  # para guardar y restaurar el prompt inicial (prompt_cache.py)
+    out.append("")
     for m in models:
         cfg = model_cfg(settings, m)
         extra, _ = C.clean_lines(cfg.get("extra", ""))
@@ -91,6 +94,7 @@ def write_preset(ai_mode=None):
     settings = C.load_settings()
     models = scan_models()
     C.CFG_DIR.mkdir(parents=True, exist_ok=True)
+    C.SLOTS_DIR.mkdir(parents=True, exist_ok=True)  # llama-server no arranca si slot-save-path no existe
     C.PRESET_FILE.write_text(build_preset(settings, models, ai_mode_active() if ai_mode is None else ai_mode))
     return models
 

@@ -5,6 +5,7 @@ from . import actions
 from . import config as C
 from . import hardware
 from . import img_models as IM
+from . import prompt_cache as PC
 from . import stats
 from . import text_models as TM
 from .services import ai_mode_state, kobold_status, router_models, svc_states
@@ -18,10 +19,14 @@ def state():
            "progress": None, "perf": None}
     if st["img"] == "active":
         img["progress"], img["perf"] = kobold_status()
+    models = router_models() if st["text"] == "active" else {}
+    for mid, m in models.items():
+        if m["status"] == "loaded":
+            m["prompt"] = PC.info(mid)  # prompt inicial guardado para la configuracion vigente, o None
     return {
         "svc": st,
         "hw": hardware.latest(),
-        "text": {"models": router_models() if st["text"] == "active" else {}},
+        "text": {"models": models},
         "img": img,
         "ai_mode": ai_mode_state(),
     }
@@ -71,6 +76,9 @@ POST_ROUTES = {
     "/api/action": lambda b: actions.do_action(str(b.get("do", ""))),
     "/api/text/load": actions.text_load,
     "/api/text/unload": actions.text_unload,
+    "/api/text/prompt/save": actions.text_prompt_save,
+    "/api/text/prompt/restore": actions.text_prompt_restore,
+    "/api/text/prompt/delete": actions.text_prompt_delete,
     "/api/text/rescan": actions.text_rescan,
     "/api/text/settings": actions.text_settings,
     "/api/img/settings": actions.img_settings,

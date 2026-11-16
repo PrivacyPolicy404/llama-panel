@@ -1073,6 +1073,37 @@ prompt de sistema de ~6.3K tokens más dos herramientas.
   (`chat_template_kwargs: {"enable_thinking": false}`) 573 tokens en 27 s, con más respuesta útil.
 - Una corrida por caso, con muestreo: sirve para órdenes de magnitud, no para comparar calidad.
 
+### 5.32 Cline real y el prompt inicial guardado (2026-11-16)
+
+**Cline por el router** (proveedor OpenAI Compatible, razonamiento activado), del log:
+
+| Pedido | Prompt nuevo | Reusado | Tiempo de prompt |
+|---|---|---|---|
+| Primer mensaje (frío) | 6839 | 0 | 60.1 s (114 tok/s) |
+| Segundo mensaje, misma tarea | 14 | todo | 1.0 s |
+| Tarea nueva, mensaje distinto | 17 | ~6830 (`f_keep` 0.970) | 1.1 s |
+
+El prompt fijo de Cline (~6.8K tokens) es idéntico entre tareas del mismo proyecto: mientras el modelo siga cargado
+y nadie más use el slot, no hay nada que arreglar. El minuto se paga al cargar el modelo, cuando otro uso pisa el
+slot y (sin probar) al cambiar de proyecto.
+
+**Prompt inicial guardado** (`llama_panel/prompt_cache.py`). El preset lleva `slot-save-path`; el botón "Guardar
+prompt" guarda el estado del slot y un hilo del panel lo restaura cuando el modelo pasa a cargado, si el slot
+todavía no atendió nada. El nombre del archivo lleva un hash de las opciones del modelo: al cambiar un ajuste o el
+modo IA, el guardado viejo deja de usarse.
+
+Prueba con un prompt de sistema de 2.5K tokens: frío 2503 tokens en 23.7 s; guardar; descargar y cargar el modelo;
+el panel restaura 2526 tokens solo; la pregunta siguiente (distinta) procesa **19 tokens en 1.2 s** con 2485 de caché.
+
+- El archivo pesa ~0.5 GB casi fijo (517 MB con 2.5K tokens; 572 MB con 12K en las mediciones): incluye los
+  checkpoints de contexto y el estado del borrador MTP.
+- Guarda lo que haya en el slot, incluido el primer mensaje de esa conversación: queda en disco en
+  `~/.cache/llama-panel/slots/`.
+- El router anuncia `context_length` 262144 (el de entrenamiento), no los 64K cargados: en el cliente hay que poner
+  65536 a mano.
+- `llama-server` de esta versión ya expone la API de Anthropic (`/v1/messages`): Claude Code podría apuntarle sin
+  proxy. Sin probar.
+
 ---
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)

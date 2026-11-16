@@ -112,6 +112,8 @@ export function renderTextModels() {
           </div>
           <span class="status model-state" data-mstate><i></i><b>Sin cargar</b></span>
           <div class="model-actions">
+            <button class="btn ghost small" data-psave hidden title="Guarda a disco el prompt que el modelo ya procesó (por ejemplo, las instrucciones y herramientas de un agente). Se restaura solo cada vez que el modelo se carga.">Guardar prompt</button>
+            <button class="btn ghost small" data-pdel hidden>Borrar prompt</button>
             <button class="btn small" data-load>Cargar</button>
             <button class="btn ghost small" data-toggle aria-expanded="false">Ajustes</button>
           </div>
@@ -145,6 +147,8 @@ export function renderTextModels() {
     });
     renderOpts(row);
     $('[data-load]', row).onclick = e => loadModel(m.id, e.currentTarget);
+    $('[data-psave]', row).onclick = e => promptAction('save', m.id, e.currentTarget);
+    $('[data-pdel]', row).onclick = e => promptAction('delete', m.id, e.currentTarget);
     box.append(row);
   }
   updateTextStates();
@@ -159,6 +163,18 @@ export function updateTextStates() {
     const info = modelStatus(ms, textOn);
     setStatus($('[data-mstate]', row), info);
     row.classList.toggle('loaded', info[1] === 'Cargado');
+    const loaded = textOn && ms?.status === 'loaded';
+    const saved = loaded ? ms.prompt : null;
+    const psave = $('[data-psave]', row), pdel = $('[data-pdel]', row);
+    psave.hidden = !loaded;
+    pdel.hidden = !saved;
+    if (saved) {
+      const k = saved.tokens ? fix(saved.tokens / 1000) + 'K tokens' : gb(saved.bytes);
+      psave.textContent = `Prompt guardado · ${k}`;
+      pdel.title = `Guardado el ${new Date(saved.saved_at * 1000).toLocaleString()} (${gb(saved.bytes)}). Clic en "Prompt guardado" lo reemplaza por lo que el modelo tiene procesado ahora.`;
+    } else {
+      psave.textContent = 'Guardar prompt';
+    }
     const btn = $('[data-load]', row);
     if (btn.classList.contains('busy')) continue;
     const st = textOn && ms ? ms.status : 'unloaded';
@@ -167,6 +183,11 @@ export function updateTextStates() {
     btn.disabled = st === 'loading';
     btn.dataset.mode = st === 'loaded' || st === 'sleeping' ? 'unload' : 'load';
   }
+}
+
+async function promptAction(what, id, btn) {
+  report(await withBusy(btn, () => post('/api/text/prompt/' + what, { id })));
+  await hooks.pollState();
 }
 
 async function loadModel(id, btn) {

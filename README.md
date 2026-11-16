@@ -14,6 +14,8 @@ Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build.
 - Encender, reiniciar y apagar texto e imágenes; al encender uno, el otro se apaga para liberar VRAM.
 - Cargar y descargar un modelo de texto puntual (API del router de llama-server) sin reiniciar nada.
 - Ajustes por modelo (MTP, razonamiento, contexto, opciones extra); "Guardar y aplicar" recarga solo lo necesario.
+- Prompt inicial guardado: con un cliente tipo agente (Cline, etc.), "Guardar prompt" escribe a disco el prompt fijo
+  ya procesado y el panel lo restaura solo cada vez que el modelo se carga (un minuto de espera menos por sesión).
 - Elegir el modelo de imagen y sus flags de KoboldCpp, con progreso de la generación en curso.
 - Rendimiento: tokens/s por respuesta (prompt y generación, aceptación MTP) y duración de cada imagen.
 - Registros en vivo de cada servicio, con filtro.
@@ -25,6 +27,7 @@ panel.py              punto de entrada: corre el servidor o --install
 llama_panel/
   config.py           rutas, puertos, settings.json
   text_models.py      escaneo de .gguf, presets.ini del router, validación
+  prompt_cache.py     prompt inicial guardado: estado del slot a disco y restauración al cargar
   img_models.py       escaneo de imagen, acompañantes (VAE/codificadores), kobold.env
   services.py         systemctl y clientes HTTP del router y de KoboldCpp
   hardware.py         sensores de GPU/RAM y muestreo en segundo plano
