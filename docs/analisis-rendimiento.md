@@ -803,6 +803,11 @@ servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `
   no una anomalía. La única rareza es el salto de 3 a 4 columnas en **q3_K** (10240×2560: 177 → 225 → **382 µs**;
   8.5 → 10.7 → 17.9 ms por paso) y q5_K (3.6 → 4.2 → 6.5), que explica por qué la cuarta posición cuesta 35 ms.
   Arreglarlo solo acercaría 3 borradores a 2, sin superarlos.
+- **Borrador en Q8_0 (para usar la VRAM libre): descartado.** `mtp-…-Q8_0.gguf` del repo de SC117 (sha256 verificado),
+  con la salida recortada igual (`gguf_mtp_d2t.py` ahora acepta Q8_0). Temp 0.8, 5 semillas, alternado con el Q4_0:
+  aceptación 0.700 → 0.729 a 12K y 0.727 → 0.724 a 30K (sin mejora real), y **18.4 → 14.6–15.4 / 18.2 → 13.8–14.0
+  tok/s**: el bloque del borrador tiene 512 expertos que quedan en RAM, y en Q8_0 el CPU lee el doble. VRAM 7.10 →
+  7.53 GiB. La cuantización del borrador no limita la aceptación.
 - **Queda abierto:** fusionar la puesta al día con el primer borrador (techo ~2 %); el shader q3_K / q5_K con 4
   columnas si alguna vez conviene MTP 3; un borrador de mejor calidad con la VRAM libre (más aceptación).
 

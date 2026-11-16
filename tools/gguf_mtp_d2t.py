@@ -11,7 +11,8 @@ import json
 import struct
 import sys
 
-GGML_TYPE_Q4_0, GGML_TYPE_I64 = 2, 27
+GGML_TYPE_I64 = 27
+ROW_BYTES_PER_BLOCK = {2: 18, 8: 34}  # Q4_0 y Q8_0: bytes por bloque de 32 pesos
 SCALAR = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
 T_STRING, T_ARRAY = 8, 9
 
@@ -76,9 +77,9 @@ def main():
     out_infos, plan, pos = [], [], 0
     for name, dims, ty, off in tensors:
         if name == b"output.weight":
-            assert ty == GGML_TYPE_Q4_0 and dims[0] % 32 == 0, (dims, ty)
+            assert ty in ROW_BYTES_PER_BLOCK and dims[0] % 32 == 0, (dims, ty)
             assert dims[1] == len(order) and sorted(order) == list(range(dims[1])) and 0 < k < dims[1]
-            row = dims[0] // 32 * 18
+            row = dims[0] // 32 * ROW_BYTES_PER_BLOCK[ty]
             f.seek(data_start + off)
             old = f.read(row * dims[1])
             blob = b"".join(old[t * row:(t + 1) * row] for t in order[:k])
