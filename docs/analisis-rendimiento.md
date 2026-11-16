@@ -680,6 +680,33 @@ Qwen3.6 29.2 tok/s / 230 prompt largo (referencia 28.8 / 227.6), Flash-Next 17.6
   expertos (dependen de formas y buffers, no de datos). Techo ~3 ms/token; refactorización del backend Vulkan.
 - *Revisar MTP 3 en contexto largo:* la consulta extra ahora es casi gratis en la atención; el costo de CPU no cambió.
 
+### 5.22 MTP con los parches 6 y 7: confianza mínima y cantidad de borradores (2026-11-16)
+
+Mismo lanzador (`--arm-preset CLAVE`, un preset por brazo), temp 0, 192 tokens, estados guardados de 12K y 30K,
+motor estable con parches 6 y 7. Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/`.
+
+- **Contadores del borrador** (`verbosity = 5`, línea `statistics draft-mtp`): 75 pasos, generar los 2 borradores
+  cuesta **9.0 ms por paso** (6.7 % de ~135 ms). Aceptación por posición: **0.88 y 0.67** a 12K. La aceptación total
+  baja con el contexto: 77 % a 12K, 70 % a 30K.
+- **`spec-draft-p-min`** con 2 borradores (tok/s):
+
+| p-min | 12K | 30K |
+|---|---|---|
+| **0 (queda)** | 18.80–18.95 | 17.33–17.45 |
+| 0.3 | 18.74–18.87 | 17.33–17.37 |
+| 0.5 | 18.49–18.83 | 17.65–17.82 |
+| 0.7 | 17.88–18.25 | 17.52–17.86 |
+
+  0.5 gana ~2 % a 30K y pierde ~1.3 % a 12K (un solo prompt por contexto): no es una mejora robusta.
+- **`spec-draft-n-max`** (p-min 0): 2 → **18.87–19.20 / 17.44–17.62**; 3 → 18.49–18.61 / 17.31–17.36;
+  4 → 18.40–18.55 / 15.03–15.17. **Sigue 2**, pero la brecha con 3 bajó de −6.4 % (5.9) a −2.5 % / −1.3 %.
+- **La cuenta:** paso sin MTP ~66 ms; con 2 borradores ~133 ms; con 3, ~170 ms (3.15 tokens por paso). Cada posición
+  extra cuesta ~33–37 ms (CPU ~14, GPU ~13–18, generar el borrador ~4.5), sin anomalía entre la 3.ª y la 4.ª.
+  Costo por token ganado: 1.er borrador 37 ms, 2.º 49 ms, 3.º ~70 ms contra un promedio de 53. Para que 3 rinda
+  hay que abaratar la posición extra o subir la aceptación.
+- **Sin abrir:** la «puesta al día» del contexto del borrador (`process()`, una ejecución del bloque MTP por paso
+  además de las 2 de borradores): ~8 ms por paso según 5.9 (17 de borradores + muestreo − 9 de generación).
+
 ---
 
 ## 6. Los siete parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)

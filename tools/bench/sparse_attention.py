@@ -36,8 +36,10 @@ def main():
     ap.add_argument("--ops-perf", action="store_true")
     ap.add_argument("--mode", choices=("ops", "decode"), required=True)
     ap.add_argument("--contexts", type=int, nargs="+", default=[20480, 30720])
-    ap.add_argument("--ratios", type=int, nargs="+", default=[16, 4, 16, 8])
+    ap.add_argument("--ratios", nargs="+", default=["16", "4", "16", "8"], help="valor de cada brazo")
     ap.add_argument("--arm-env", default="GGML_VK_FA_Q8_SPARSE_RATIO", help="variable de entorno que recibe el valor de cada brazo")
+    ap.add_argument("--arm-preset", help="clave del preset del modelo que recibe el valor de cada brazo (en vez de --arm-env)")
+    ap.add_argument("--preset", nargs="*", default=[], metavar="CLAVE=VALOR", help="claves del preset para todos los brazos")
     ap.add_argument("--predict", type=int, default=128)
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--mtp", action="store_true")
@@ -45,8 +47,8 @@ def main():
     args = ap.parse_args()
     if any(n < 4096 or n + args.predict + 32 > 65536 for n in args.contexts):
         ap.error("Los contextos deben entrar en la ventana de 64K")
-    if any(n < 0 or n > 200 for n in args.ratios) or args.predict < 1 or args.reps < 1:
-        ap.error("Presupuestos o ratios inválidos")
+    if args.predict < 1 or args.reps < 1:
+        ap.error("Presupuestos inválidos")
     lib = args.library_dir.expanduser().resolve()
     if not (lib / "libggml-vulkan.so.1").is_file():
         ap.error("Falta libggml-vulkan.so.1")
@@ -107,8 +109,8 @@ def main():
             "--property=MemoryMax=58G", "--property=MemorySwapMax=0",
             "--property=StandardOutput=append:" + str(out / (label + ".log")),
             "--property=StandardError=inherit", "--setenv=LD_LIBRARY_PATH=" + str(lib),
-            "--setenv=GGML_VK_VISIBLE_DEVICES=0", "--setenv=GGML_VK_MAX_NODES_PER_SUBMIT=16",
-            "--setenv=" + args.arm_env + "=" + str(ratio), "--setenv=GGML_VK_FA_SPARSE_TRACE=1"]
+            "--setenv=GGML_VK_VISIBLE_DEVICES=0", "--setenv=GGML_VK_MAX_NODES_PER_SUBMIT=16", "--setenv=GGML_VK_FIRST_SUBMIT_NODES=2",
+            *([] if args.arm_preset else ["--setenv=" + args.arm_env + "=" + str(ratio)])]
         if wait:
             cmd.append("--wait")
         command(*cmd, str(executable), *extra)
@@ -177,6 +179,9 @@ def main():
                 if key.startswith("spec-"):
                     cfg.remove_option(MODEL, key)
             cfg.set(MODEL, "spec-type", "none")
+        for item in args.preset:
+            key, _, value = item.partition("=")
+            cfg.set(MODEL, key, value)
         preset = out / "bench.ini"
         with preset.open("w") as f:
             cfg.write(f)
@@ -213,7 +218,13 @@ def main():
 
         for i, ratio in enumerate(args.ratios):
             label = f"arm-{i}-r{ratio}"
-            load(label, ratio, preset)
+            arm_preset = preset
+            if args.arm_preset:
+                cfg.set(MODEL, args.arm_preset, ratio)
+                arm_preset = out / (label + ".ini")
+                with arm_preset.open("w") as f:
+                    cfg.write(f)
+            load(label, ratio, arm_preset)
             for n, prompt in prompts.items():
                 for rep in range(args.reps + 1):
                     phase[0] = f"{label}/{n}/{rep}"
