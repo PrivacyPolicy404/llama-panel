@@ -40,6 +40,7 @@ Herramientas (todas en `tools/bench/`, con instrucciones en su encabezado):
 | `gguf_sizes.py` | Tamaño de los expertos por capa (para calcular cuántas capas entran en el GTT) |
 | `gpu_mem_watch.sh` | VRAM y GTT del `llama-server` según el kernel (fdinfo): muestra lo que pidió como VRAM y terminó en GTT |
 | `ctx_stability.py` | Ventana de 64K por el router: entrada de 62K, salida de 2048, tres cargas y muestras DRM con fecha/fase; restaura escritorio y límites |
+| `ctx_quality.py` | Recuperación en ~58K tokens del proyecto, conversación con caché, cercanía al límite y rechazo del exceso; guarda rúbrica y respuestas |
 
 Reglas que salieron de errores reales:
 
@@ -437,6 +438,54 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   **Cierra KDE**; requiere servidores y modo IA apagados. Artefactos de esta corrida:
   `/home/gen/llama-panel-results/2026-11-15-64k-stability/` (respuestas, tokens, muestras, presets, versiones y logs).
   Panel base `016758b`, fork `9d77a39`; no se recompiló ni actualizó llama.cpp.
+
+---
+
+### 5.17 Recuperación y conversación con el proyecto como contexto (2026-11-15)
+
+- Flash-Next `-hcq8` por el router, configuración de modo IA vigente: 64K Q8_0, MTP 2, tandas 2048/512.
+  Temperatura 0, semilla 1234, pensamiento desactivado y respuesta JSON. No se cambiaron versiones ni settings.
+- Corpus de **57.999 tokens**: archivos del proyecto, preservando completos los documentos y fuentes necesarios
+  para responder. Tres marcas aleatorias nuevas en posiciones **68 / 39.783 / 57.769**. La marca interior está
+  aproximadamente al 69 %, no exactamente a la mitad. Rúbrica guardada antes de inferir; no se suministra al modelo.
+- **23/23 campos cerrados correctos**: tres marcas y diez datos del proyecto (capas, tandas, ventanas, reintento de
+  carga, prefetch Q2_0, dashboard y sensor), seis campos de razonamiento sobre memoria y comparación de velocidades,
+  tres campos de recuerdo entre turnos y un campo en la conversación cercana al límite.
+
+| Turno | Entrada total | Reutilizados | Tokens nuevos procesados | Tiempo de prompt | Salida / gen |
+|---|---:|---:|---:|---:|---:|
+| Recuperación de datos | 57.999 | 0 | 57.999 | 623,07 s | 262 / 19,83 tok/s |
+| Razonamiento | 58.401 | 58.260 | 141 | 5,36 s | 328 / 18,03 tok/s |
+| Recuerdo entre turnos | 58.776 | 58.729 | 47 | 3,16 s | 60 / 19,59 tok/s |
+| Conversación cercana al límite | **65.300** | 58.836 | 6.464 | 114,79 s | 26 / 18,23 tok/s |
+
+- El último turno terminó con **65.326 tokens totales (~99,7 % de la ventana)**, sin truncamiento registrado.
+  La entrada de **65.537** fue rechazada con **HTTP 400, `exceed_context_size_error`**; no se recortó silenciosamente.
+  Control adicional en otro arranque: después del mismo exceso, **el mismo proceso** respondió un pedido válido,
+  conservando **10.524 tokens de caché**, con sólo 25 nuevos por procesar. No se recargó entre error y recuperación.
+- Pico de VRAM total muestreado en la prueba principal: **7,75 GiB**. Sin fallos Vulkan, resets ni OOM detectados.
+- **Revisión libre, fuera de los campos cerrados:** la explicación mezcla el porcentaje de ocupación: 97,73 %
+  corresponde a 62.000 + 2048 tokens de 5.16, no a los 62.000 de entrada solos. Por eso el resultado no se presenta
+  como «razonamiento perfecto». La rúbrica admite tanto el fragmento `limit reached` del código como el error
+  completo `model limit reached`; esa aclaración quedó guardada antes de recibir la primera respuesta.
+- La marca de inicio también aparece en una respuesta previa: el turno de 65.300 mide continuidad de conversación,
+  no una segunda prueba independiente de búsqueda a distancia completa. No hay control F16 ni comparación con otro
+  modelo: esta prueba no cuantifica pérdida por Q8_0 ni calidad general. La generación corta a temp 0 con JSON
+  tampoco reemplaza la referencia de velocidad normal con muestreo.
+- **Dashboard real:** 387 muestras activas, todas conservando contexto 65.536, incluidas pausas sin logs. La
+  conversación reveló otro caso: `n_tokens` del log cuenta sólo tokens nuevos, mientras el progreso incluye el prefijo
+  reutilizado. Se agregó `/slots` para mostrar **caché y secuencia residente**, sin confundirlos con nuevos tokens.
+  `n_prompt_tokens` de `/slots` es la secuencia residente (incluye la tanda en curso), **no** el total del pedido;
+  durante el prompt ese total sigue siendo estimado a partir del progreso redondeado. La ETA descuenta la caché.
+  Comprobación adicional: 39 muestras con prefijo reutilizado y contexto residente nunca menor que la caché.
+  Pasan **46 tests**, incluido el caso real 58.836 reutilizados + 4416 nuevos y el cálculo de ETA.
+- Artefactos: `/home/gen/llama-panel-results/2026-11-15-64k-quality/`, con rúbrica, corpus, pedidos, respuestas,
+  telemetría, resumen y registros; `cache-recovery/` conserva el control adicional. Base del panel `e224aa5`, fork
+  `9d77a39`; el dashboard se corrigió durante la validación adicional. Servidores apagados, límites restaurados,
+  settings intactos y modo IA conservado activo, como estaba al empezar.
+- Reproducir: `python3 tools/bench/ctx_quality.py --ai-mode --output ~/llama-panel-results/64k-calidad-2`.
+  El script actual incluye la comprobación de recuperación en el mismo proceso y excluye su propio código del
+  corpus para no filtrar la rúbrica. El corpus queda guardado: futuras versiones del proyecto cambian la entrada.
 
 ---
 

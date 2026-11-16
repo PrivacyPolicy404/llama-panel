@@ -113,7 +113,7 @@ class LiveTest(unittest.TestCase):
     def test_incremental_generation_retains_context_and_prompt_speed(self):
         prompt = stats.parse_live(self.LINES[:2], now=102)
         gen = stats.parse_live(self.LINES[2:], now=112, previous=prompt)
-        self.assertEqual((gen["ctx_size"], gen["prompt_tps"], gen["ctx_used"]), (32768, 131.25, 1317))
+        self.assertEqual((gen["ctx_size"], gen["prompt_tps"], gen["ctx_used"]), (32768, 131.25, 3387))
         self.assertEqual(gen["prompt_progress"], 1)
 
     def test_new_task_clears_previous_request_fields(self):
@@ -140,7 +140,8 @@ class LiveTest(unittest.TestCase):
             return "\n".join(f"{t} host llama-server[1]: {line}" for t, line in lines)
         cache = {"t": 0, "data": None, "last_entry": 0}
         with patch.object(stats, "_live", cache), patch.object(stats.time, "time", return_value=102) as clock, \
-                patch.object(stats, "journal", return_value=journal_text(self.LINES[:2])) as read:
+                patch.object(stats, "journal", return_value=journal_text(self.LINES[:2])) as read, \
+                patch.object(stats, "router_models", return_value={}):
             first = stats.live()
             self.assertEqual(first["ctx_size"], 32768)
             clock.return_value = 112
@@ -151,6 +152,20 @@ class LiveTest(unittest.TestCase):
             unchanged = stats.live()
             self.assertTrue(unchanged["stale"])
             self.assertEqual(unchanged["ctx_used"], gen["ctx_used"])
+
+    def test_cached_prompt_uses_slot_total_instead_of_new_tokens_only(self):
+        live = stats.parse_live(self.LINES, now=112)
+        live.update(task_id="7:270", state="prompt", n_gen=None, prompt_tokens=4416, prompt_progress=0.97,
+                    prompt_log_tokens=4416, prompt_log_progress=0.97)
+        slot = {"is_processing": True, "id_task": 270, "n_ctx": 65536, "n_prompt_tokens": 65296,
+                "n_prompt_tokens_processed": 4416, "n_prompt_tokens_cache": 58836, "next_token": [{"n_decoded": 0}]}
+        merged = stats.merge_live_slot(live, slot)
+        self.assertEqual((merged["ctx_used"], merged["prompt_cached"]), (65296, 58836))
+        self.assertEqual(merged["prompt_total"], round(63252 / 0.97))
+        self.assertAlmostEqual(merged["prompt_progress"], 63252 / merged["prompt_total"])
+        self.assertEqual(live["ctx_used"], 3387)  # no mutar el snapshot anterior
+        slot["id_task"] = 271
+        self.assertEqual(stats.merge_live_slot(live, slot), live)
 
     def test_task_numbers_restart_in_a_new_process(self):
         new_proc = [(120.0, "[9] 0.28.3 I slot print_timing: id  0 | task 177 | n_gen =    40, tg =  15.0 t/s, tg_3s =  15.5 t/s")]

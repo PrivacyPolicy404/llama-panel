@@ -375,10 +375,13 @@ def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
     processed = live.get("prompt_tokens")
     generated = live.get("n_gen")
     lines.append(f" tokens   prompt {processed if processed is not None else '--'} · salida {generated if generated is not None else '--'}")
+    approximate = "~" if live.get("state") == "prompt" else ""
+    lines.append(f" reuso    {live.get('prompt_cached', 0)} tokens · prompt total {approximate}{live.get('prompt_total') or '--'}")
     lines.append(f" tiempo   prompt {duration(live.get('prompt_elapsed'))} · salida {duration(live.get('gen_elapsed'))}")
     eta = None
-    if live.get("state") == "prompt" and progress and progress < 1 and live.get("prompt_elapsed") is not None:
-        eta = live["prompt_elapsed"] * (1 / progress - 1)
+    if live.get("state") == "prompt" and live.get("prompt_total") and live.get("prompt_tps"):
+        remaining = max(0, live["prompt_total"] - live.get("prompt_cached", 0) - (processed or 0))
+        eta = remaining / live["prompt_tps"]
     avg = live.get("gen_avg_tps")
     latency = f"{1000 / avg:.1f} ms/tok" if avg else "-- ms/tok"
     lines.append(f" estimado prompt restante ~{duration(eta)}" if eta is not None else f" salida   {latency}")
@@ -388,7 +391,8 @@ def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
     resp = (stats or {}).get("text") or []
     toks = sum(r.get("g_tok") or 0 for r in resp)
     seconds = sum((r.get("g_tok") or 0) / r["g_tps"] for r in resp if r.get("g_tps"))
-    lines.append(f" historial {len(resp)} resp. · {toks} tok · {fmt(toks / seconds if seconds else None)} tok/s")
+    if graph_height > 1:
+        lines.append(f" historial {len(resp)} resp. · {toks} tok · {fmt(toks / seconds if seconds else None)} tok/s")
     age = live.get("age")
     freshness = f"último dato hace {duration(age)}" if age is not None else "sin datos del pedido"
     lines.append(" " + (YELLOW if live.get("stale") else DIM) + freshness + RESET)

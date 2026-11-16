@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from . import config as C
-from .services import run
+from .services import run, router, router_models
 from .text_models import scan_models
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -83,7 +83,8 @@ def parse_live(entries, now=None, previous=None):
     now = time.time() if now is None else now
     empty = {"state": "idle", "n_gen": None, "tps": None, "gen_avg_tps": None,
              "prompt_progress": None, "prompt_tps": None, "prompt_elapsed": None, "gen_elapsed": None,
-             "prompt_tokens": None, "prompt_total": None, "ctx_used": None, "ctx_size": None,
+             "prompt_tokens": None, "prompt_total": None, "prompt_cached": 0, "ctx_used": None, "ctx_size": None,
+             "prompt_log_tokens": None, "prompt_log_progress": None,
              "draft_rate": None, "draft_len": None, "task_id": None, "model_pid": None,
              "t": None, "stale": False, "age": None}
     out = {**empty, **(previous or {})}
@@ -104,8 +105,9 @@ def parse_live(entries, now=None, previous=None):
             task(m[1], m[2])
             n, progress = int(m[3]), float(m[4])
             out.update(state="prompt", prompt_tokens=n, prompt_progress=progress, prompt_tps=float(m[6]),
-                       prompt_elapsed=float(m[5]), prompt_total=round(n / progress) if progress else None,
-                       ctx_used=n, t=ts)
+                       prompt_log_tokens=n, prompt_log_progress=progress,
+                       prompt_elapsed=float(m[5]), prompt_total=round((out["prompt_cached"] + n) / progress) if progress else None,
+                       ctx_used=out["prompt_cached"] + n, t=ts)
         elif (m := NGEN_RE.match(msg)):
             task(m[1], m[2])
             n, avg = int(m[3]), float(m[4])
@@ -113,11 +115,11 @@ def parse_live(entries, now=None, previous=None):
                        gen_elapsed=n / avg if avg else None, t=ts)
             if out["prompt_tokens"] is not None:
                 out["prompt_progress"] = 1.0
-                out["ctx_used"] = out["prompt_tokens"] + n
+                out["ctx_used"] = (out["prompt_total"] or out["prompt_tokens"]) + n
         elif (m := TIMING_RE.match(msg)):
             task(m[1], m[2])
             if m[3] == "prompt eval":
-                out.update(prompt_tps=float(m[6]), prompt_tokens=int(m[5]), prompt_total=int(m[5]),
+                out.update(prompt_tps=float(m[6]), prompt_tokens=int(m[5]), prompt_total=out["prompt_cached"] + int(m[5]),
                            prompt_elapsed=float(m[4]) / 1000, prompt_progress=1.0, t=ts)
             else:
                 out.update(n_gen=int(m[5]), gen_avg_tps=float(m[6]), gen_elapsed=float(m[4]) / 1000, t=ts)
@@ -133,6 +135,33 @@ def parse_live(entries, now=None, previous=None):
     out["age"] = max(0, now - out["t"]) if out["t"] is not None else None
     out["stale"] = out["state"] != "idle" and out["age"] is not None and out["age"] > LIVE_FRESH
     return out
+
+
+def merge_live_slot(live, slot):
+    """El log cuenta tokens nuevos; /slots aporta el prefijo reutilizado y la secuencia residente."""
+    task_id = (live.get("task_id") or "").rsplit(":", 1)[-1]
+    if not slot.get("is_processing") or task_id != str(slot.get("id_task")):
+        return live
+    resident = slot.get("n_prompt_tokens")
+    processed = slot.get("n_prompt_tokens_processed")
+    cached = slot.get("n_prompt_tokens_cache")
+    if resident is None or processed is None or cached is None:
+        return live
+    decoded = slot.get("next_token") or []
+    n_gen = decoded[0].get("n_decoded", 0) if decoded else 0
+    phase = "gen" if n_gen or live["state"] == "gen" else "prompt"
+    # n_prompt_tokens es la secuencia residente, incluida la tanda en curso: no el largo total del pedido.
+    progress = live.get("prompt_log_progress")
+    logged = live.get("prompt_log_tokens")
+    if phase == "gen":
+        total = cached + processed
+    elif progress and logged is not None:
+        total = round((cached + logged) / progress)
+    else:
+        total = None
+    return {**live, "state": phase, "ctx_size": slot.get("n_ctx", live.get("ctx_size")),
+            "prompt_tokens": processed, "prompt_cached": cached, "prompt_total": total,
+            "ctx_used": resident, "prompt_progress": 1.0 if phase == "gen" else min(1, (cached + processed) / total) if total else 0}
 
 
 def parse_img_stats(entries, limit=40):
@@ -203,6 +232,17 @@ def live():
             entries = parse_journal_unix(journal(C.SERVICE, 6000 if _live["data"] is None else 150, "short-unix"))
             new = [(ts, msg) for ts, msg in entries if ts > _live["last_entry"]]
             _live["data"] = parse_live(new, previous=_live["data"])
+            # Sólo consultar slots del modelo cargado; nunca provocar una carga desde la telemetría.
+            for mid, model in router_models().items():
+                if model["status"] != "loaded":
+                    continue
+                try:
+                    from urllib.parse import quote
+                    slots = router("GET", "/slots?model=" + quote(mid, safe=""), timeout=1)
+                    for slot in slots:
+                        _live["data"] = merge_live_slot(_live["data"], slot)
+                except Exception:  # backend apagado o versión sin /slots: conservar los logs
+                    pass
             if new:
                 _live["last_entry"] = new[-1][0]
             _live["t"] = time.time()

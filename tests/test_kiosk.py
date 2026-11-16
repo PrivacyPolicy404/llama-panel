@@ -73,6 +73,13 @@ class Dibujo(unittest.TestCase):
             self.assertIn("Salir del modo IA", lines[-1][0])
             self.assertTrue(any("procesos" in text for text, _ in lines))
 
+    def test_cached_prompt_eta_uses_remaining_new_tokens(self):
+        live = {"state": "prompt", "prompt_tokens": 4416, "prompt_cached": 58836,
+                "prompt_total": 65300, "prompt_progress": 0.97, "prompt_tps": 86.25}
+        text = "\n".join(kiosk.strip_marks(s) for s in kiosk.live_box(live, {}, [], 79))
+        self.assertIn("58836 tokens", text)
+        self.assertIn("restante ~24s", text)  # 2048 nuevos pendientes, sin volver a contar el prefijo
+
 
 if __name__ == "__main__":
     unittest.main()

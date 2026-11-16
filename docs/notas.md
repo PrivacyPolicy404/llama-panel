@@ -168,6 +168,8 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 - `smoke_models.py`: carga cada MoE por el panel y compara contra `baselines.json`.
 - `ctx_stability.py`: por el router, 62K de entrada + 2048 de salida, tres cargas, memoria por proceso y logs.
   `--ai-mode` cierra KDE y lo restaura al terminar; salida en una carpeta nueva fuera de `/tmp`.
+- `ctx_quality.py`: datos verificables del proyecto y marcas nuevas en ~58K tokens, conversación, cache del prompt
+  y límite de contexto. Conserva el estado inicial del modo IA. No mide calidad general ni pérdida frente a F16.
 - `sched_profile.py`: tramos (splits) por token y qué operaciones que no son expertos caen en el CPU.
 - `vk_timings.py`: tiempo de GPU por operación y cuánto queda para CPU + esperas (necesita una libggml-vulkan sin el
   assert del medidor, ver Descubrimientos).
@@ -205,6 +207,11 @@ gráficos de ambas velocidades, tokens, tiempos, estimación restante del prompt
 terminar. CPU muestra temperatura del paquete y del núcleo más caliente (`coretemp`); VRAM muestra usado/libre
 con dos decimales. Validado con replay de los logs reales de 62K y layouts 160×44, 140×44 y 120×36; sin activar
 modo IA para probar el dibujo.
+La conversación posterior (bitácora 5.17) agregó lectura de `/slots`: el contexto residente incluye el prefijo
+reutilizado, aunque el log cuente sólo tokens nuevos. Se muestra el reuso por separado y la ETA lo descuenta.
+El total del prompt durante la lectura es aproximado; `/slots.n_prompt_tokens` describe la secuencia residente,
+no el pedido completo. Recuperación: 23/23 campos en ~58K y conversación hasta 65.300 tokens de entrada, con una
+imprecisión porcentual en la explicación libre. No es una evaluación general de calidad ni un control contra F16.
 
 Después del reinicio con los grupos y `video=HDMI-A-1:1920x1080@60e` (el dummy de Sunshine sin EDID quedaba en 640×480;
 `vdisplay` le agrega el 1440p por xrandr, así que darle un modo en el kernel no la afecta): consola en 160×45, la GPU se

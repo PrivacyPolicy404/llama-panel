@@ -100,6 +100,18 @@ La carpeta de salida debe ser nueva. Conserva respuestas, tokens de entrada, mue
 presets, versiones y registros del router/kernel. Puede tardar más de 15 minutos. La generación forzada
 evalúa estabilidad, no calidad semántica; las velocidades dependen del texto y del contexto ocupado.
 
+Para comprobar recuperación de información y conversación con ~58K tokens del propio proyecto:
+
+```bash
+python3 tools/bench/ctx_quality.py --ai-mode --output ~/llama-panel-results/64k-calidad-1
+```
+
+Guarda las respuestas esperadas antes de inferir, comprueba marcas nuevas distribuidas en el contexto,
+datos del código, varios turnos, reutilización del prompt y una conversación cercana al límite. También
+registra la respuesta del servidor a una entrada que excede la ventana. Requiere servidores apagados;
+conserva el estado inicial del modo IA y los ajustes. Es una evaluación puntual, sin control F16 ni comparación
+entre modelos.
+
 Los modelos de texto se buscan en `LLAMA_MODELS_DIR` y en las carpetas de `LLAMA_EXTRA_MODELS_DIRS` (separadas por `:`, por defecto `~/models-nvme`). Los modelos partidos en shards (`-00001-of-0000N.gguf`) cuentan como uno solo.
 
 Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
