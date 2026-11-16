@@ -969,9 +969,68 @@ en 2 borradores.** Lección: cuando una variante de shader cuesta más de lo que
 `RADV_DEBUG=shaderstats`; en GCN los umbrales son 64 / 84 / 128 VGPRs. Resultados en
 `~/llama-panel-results/2026-11-16-tpge-mtp/kq-cols-*`.
 
+### 5.29 Auditoría de registros de los demás shaders: iq4_xs cruzaba el umbral con 3 columnas (parche 10, 2026-11-16)
+
+**Hipótesis.** Si q3_K tenía un umbral de registros escondido, otros shaders pueden tenerlo. En el perfil por
+operación de 5.24, iq4_xs (10240×2560) pasaba de 150 a 308 µs entre 2 y 3 columnas, y 3 columnas es el lote de
+verificación de MTP 2: el caso diario.
+
+**Método.** `RADV_DEBUG=shaderstats,nocache` con `test-backend-ops perf` para cada tipo que el modelo usa en la GPU,
+1–5 columnas, formas reales.
+
+| VGPRs antes de planificar | 1 | 2 | 3 | 4 | 5 col |
+|---|---|---|---|---|---|
+| iq4_xs original | 60 | 101 | **142** | 183 | 224 |
+| q8_0 | 25 | 36 | 42 | 44 | 46 |
+| q2_0 | 26 | 58 | 66 | 70 | 74 |
+| bf16 | 17 | 23 | 26 | 28 | 30 |
+| iq4_xs nuevo | 60 | 91 | 117 | **143** | 169 |
+
+Solo iq4_xs cruzaba. q8_0 (el rubro más grande de la GPU), q2_0 y bf16 están lejos de cualquier umbral: su costo
+por columna es trabajo real.
+
+**Causa.** Cada hilo procesa un sub-bloque de 32 valores para las 8 filas del grupo (`rm_iq` = 8 en GCN) y mantiene
+vivos los 32 valores de B por columna mientras recorre las filas: 41 registros por columna.
+
+**Variantes probadas (µs, 10240×2560, 3 / 4 columnas; original 283 / 353):**
+
+| Variante | 3 col | 4 col |
+|---|---|---|
+| Menos filas por grupo con el esquema original: 4 / 3 / 2 filas | 424 / 530 / 779 | 557 / 722 / 1023 |
+| Recorrer de a 8 valores de B (bucle de `l` afuera), escala plegada en los pesos | 240 | 312 |
+| Ídem con sumas aparte y la escala al final | 230 | 347 |
+| Ídem con 12 / 16 filas por grupo | 241 / 236 | 291 / 402 |
+| **Dos mitades de 16 valores (adoptada)** | **173** | **262** |
+
+Bajar las filas por grupo es muy malo: el costo crece casi inverso a las filas, porque cada grupo vuelve a leer B.
+Recorrer de a 8 valores entra en los registros pero visita cada fila cuatro veces y es ~20 % más lento de base
+(1 columna: 97 → 119 µs). Las dos mitades entran en 128 registros con 3 columnas y visitan cada fila dos veces.
+
+| µs por corrida (10240×2560) | 1 | 2 | 3 | 4 | 5 col |
+|---|---|---|---|---|---|
+| iq4_xs antes | 97 | 138 | 283 | 353 | 438 |
+| iq4_xs ahora | 96 | 132 | **173** | 262 | 307 |
+
+Una columna sigue con el esquema original (el nuevo da 100 contra 96). `test-backend-ops`: MUL_MAT 2592/2592,
+MUL_MAT_ID 1160/1160.
+
+**Decode, MTP 2, temp 0, brazos alternados (estable con parche 9 / nuevo / estable / nuevo), 8 mediciones por celda:**
+
+| contexto | antes | ahora |
+|---|---|---|
+| 12K | 19.62 | **19.76** (+0.7 %) |
+| 30K | 18.00 | **18.43** (+2.4 %), mismos borradores aceptados (158/111) |
+
+**Conclusión.** Parche 10 adoptado. Test de humo después de los parches 9 y 10: 20.0 tok/s en la respuesta corta
+(una corrida con muestreo; referencia 18.2) y 134 tok/s de prompt largo. Con 4 columnas iq4_xs sigue sobre el umbral
+(143), pero el preset usa 2 borradores. **Trampa de método:** el test de humo descarga Flash-Next al terminar si el
+router arrancó vacío; hay que volver a cargarlo antes de lanzar `sparse_attention.py`, y si el lanzador falla al
+arrancar, `systemctl --user reset-failed tpge-sparse-study` antes de reintentar.
+Resultados en `~/llama-panel-results/2026-11-16-tpge-mtp/iq4xs-cols-*`.
+
 ---
 
-## 6. Los nueve parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
+## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
 ### Parche 1 — `-ot` con buffers de memoria fija (`Vulkan_Host`)
 Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un override a host buffer se ignora; el parche avisa.
@@ -1025,6 +1084,10 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 - Hallazgo y método en 5.28. Las escalas (y en q5_K el mínimo del bloque) se multiplican en los pesos una vez por
   fila; cada columna queda como un producto punto y 4 columnas entran en 128 registros vectoriales.
 - Resultado: 4 columnas −28 % (q3_K) y −24 % (q5_K) en la operación; decode con MTP 2 **+1.1 %** a 12K, +0.3 % a 30K.
+
+### Parche 10 — shader iq4_xs: el sub-bloque en dos mitades con 2+ columnas
+- Hallazgo y método en 5.29. Con 2 o más columnas solo quedan vivos 16 valores de B por columna en vez de 32.
+- Resultado: 3 columnas −39 % en la operación; decode con MTP 2 +0.7 % a 12K y **+2.4 %** a 30K.
 
 ---
 

@@ -1,7 +1,7 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más los 9 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
+el `master` oficial más los 10 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
@@ -96,6 +96,15 @@ vectoriales (147 y 143), y en GCN entra una sola tanda por SIMD en vez de dos: q
 Con 4 columnas: 369 -> 265 µs (q3_K) y 290 -> 221 µs (q5_K); 1 a 3 columnas hasta 7 % más rápido.
 `test-backend-ops` MUL_MAT 2592/2592 y MUL_MAT_ID 1160/1160.
 Flash-Next con 2 borradores MTP: 19.50 -> 19.71 tok/s a 12K y 17.92 -> 17.98 a 30K. Ver bitácora 5.28.
+
+## 10. `llama.cpp-vulkan-iq4xs-matvec-halves.patch`
+
+El mismo umbral del parche 9, pero en el caso de todos los días: el shader iq4_xs mantenía vivos los 32 valores de B
+de su sub-bloque por cada columna (41 registros por columna), y con 3 columnas (el lote de verificación con 2
+borradores MTP) llegaba a 142 registros vectoriales. Con 2 o más columnas ahora hace el sub-bloque en dos mitades
+de 16 valores (117 registros con 3 columnas); una columna sigue con el esquema original, que ahí es algo más rápido.
+10240×2560 con 3 columnas: 283 -> 173 µs. `test-backend-ops` MUL_MAT 2592/2592 y MUL_MAT_ID 1160/1160.
+Flash-Next con 2 borradores MTP: 19.62 -> 19.76 tok/s a 12K y 18.00 -> 18.43 a 30K. Ver bitácora 5.29.
 
 ## Si se propone upstream
 
