@@ -808,8 +808,12 @@ servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `
   aceptación 0.700 → 0.729 a 12K y 0.727 → 0.724 a 30K (sin mejora real), y **18.4 → 14.6–15.4 / 18.2 → 13.8–14.0
   tok/s**: el bloque del borrador tiene 512 expertos que quedan en RAM, y en Q8_0 el CPU lee el doble. VRAM 7.10 →
   7.53 GiB. La cuantización del borrador no limita la aceptación.
-- **Queda abierto:** fusionar la puesta al día con el primer borrador (techo ~2 %); el shader q3_K / q5_K con 4
-  columnas si alguna vez conviene MTP 3; un borrador de mejor calidad con la VRAM libre (más aceptación).
+- **Fusionar la puesta al día con el primer borrador: no rinde.** Prototipo (`LLAMA_MTP_DEFER`): la puesta al día
+  se posterga y entra, solo con los tokens aceptados, en el mismo lote del primer borrador siguiente. Texto y
+  aceptación idénticos a temp 0, pero 19.21 → 19.33 a 12K y 17.59 → 17.65 a 30K (+0.3–0.6 %, dentro del ruido).
+  Para dejarlo firme habría que cuidar el estado guardado del slot; no lo vale. Diff con este prototipo y los
+  instrumentos en `~/llama-panel-results/2026-11-16-tpge-mtp/worktree-instrumentos-y-defer.diff`.
+- **Queda abierto:** el shader q3_K / q5_K con 4 columnas si alguna vez conviene MTP 3.
 
 ---
 
