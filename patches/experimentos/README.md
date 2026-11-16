@@ -9,3 +9,4 @@ No están en el fork; quedan acá por si sirven para otro modelo o placa. Detall
 - `mtp-vocab-subset.diff`: `LLAMA_MTP_VOCAB_K=K` hace que el borrador MTP calcule logits solo para los primeros K ids
   (el resto en -inf), así su matmul de salida lee K filas en vez de 248320. A temp 0: K=65536 acepta igual y da +3 %.
   A temp 0.8 (uso real, borradores probabilísticos): la aceptación cae de ~75 % a ~63 % y la velocidad -6 %.
+  Reemplazado por el parche 8: con los K tokens **más frecuentes** (no los primeros K ids) la aceptación no baja.

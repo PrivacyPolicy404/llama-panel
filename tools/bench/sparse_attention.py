@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--library-dir", type=Path, required=True)
     ap.add_argument("--test-bin", type=Path)
+    ap.add_argument("--server", type=Path, default=SERVER, help="llama-server a usar (por defecto, el estable)")
     ap.add_argument("--ops-perf", action="store_true")
     ap.add_argument("--mode", choices=("ops", "decode"), required=True)
     ap.add_argument("--contexts", type=int, nargs="+", default=[20480, 30720])
@@ -40,9 +41,11 @@ def main():
     ap.add_argument("--arm-env", default="GGML_VK_FA_Q8_SPARSE_RATIO", help="variable de entorno que recibe el valor de cada brazo")
     ap.add_argument("--arm-preset", help="clave del preset del modelo que recibe el valor de cada brazo (en vez de --arm-env)")
     ap.add_argument("--preset", nargs="*", default=[], metavar="CLAVE=VALOR", help="claves del preset para todos los brazos")
+    ap.add_argument("--env", nargs="*", default=[], metavar="CLAVE=VALOR", help="variables de entorno para todos los brazos")
     ap.add_argument("--predict", type=int, default=128)
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--mtp", action="store_true")
+    ap.add_argument("--temperature", type=float, default=0.0, help="con > 0 la semilla cambia por repetición (igual entre brazos)")
     ap.add_argument("--reuse-states", type=Path, help="corrida previa con ctx-N.bin y prompts.json (mismo modo MTP)")
     args = ap.parse_args()
     if any(n < 4096 or n + args.predict + 32 > 65536 for n in args.contexts):
@@ -110,6 +113,7 @@ def main():
             "--property=StandardOutput=append:" + str(out / (label + ".log")),
             "--property=StandardError=inherit", "--setenv=LD_LIBRARY_PATH=" + str(lib),
             "--setenv=GGML_VK_VISIBLE_DEVICES=0", "--setenv=GGML_VK_MAX_NODES_PER_SUBMIT=16", "--setenv=GGML_VK_FIRST_SUBMIT_NODES=2",
+            *["--setenv=" + e for e in args.env],
             *([] if args.arm_preset else ["--setenv=" + args.arm_env + "=" + str(ratio)])]
         if wait:
             cmd.append("--wait")
@@ -120,7 +124,7 @@ def main():
 
     def load(label, ratio, preset):
         print(label + ": cargando", flush=True)
-        launch(label, ratio, SERVER, ["--models-preset", str(preset), "--models-max", "1",
+        launch(label, ratio, args.server, ["--models-preset", str(preset), "--models-max", "1",
             "--host", "127.0.0.1", "--port", "18081", "--slot-save-path", str(out) + "/"])
         end = time.monotonic() + 300
         while True:
@@ -144,9 +148,10 @@ def main():
             time.sleep(1)
         raise TimeoutError(label)
 
-    def completion(prompt, n, cache):
+    def completion(prompt, n, cache, rep=0):
         return call(BASE, "/completion", {"model": MODEL, "prompt": prompt, "id_slot": 0,
-            "temperature": 0, "seed": 1234, "n_predict": n, "ignore_eos": True,
+            "temperature": args.temperature, "seed": 1234 + (rep if args.temperature > 0 else 0),
+            "n_predict": n, "ignore_eos": True,
             "cache_prompt": cache}, timeout=1200)
 
     watcher = threading.Thread(target=monitor, daemon=True)
@@ -217,7 +222,7 @@ def main():
             halt()
 
         for i, ratio in enumerate(args.ratios):
-            label = f"arm-{i}-r{ratio}"
+            label = f"arm-{i}-r{Path(ratio).name}"  # el valor puede ser una ruta
             arm_preset = preset
             if args.arm_preset:
                 cfg.set(MODEL, args.arm_preset, ratio)
@@ -231,7 +236,7 @@ def main():
                     restored = call(BASE, "/slots/0?action=restore&model=" + MODEL,
                         {"model": MODEL, "filename": f"ctx-{n}.bin"}, timeout=120)
                     begin = time.monotonic()
-                    response = completion(prompt, args.predict, True)
+                    response = completion(prompt, args.predict, True, rep)
                     elapsed = time.monotonic() - begin
                     write_json(out / f"{label}-{n}-{rep}.json", response)
                     timings = response["timings"]

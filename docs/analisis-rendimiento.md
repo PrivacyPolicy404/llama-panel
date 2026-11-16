@@ -707,9 +707,73 @@ motor estable con parches 6 y 7. Crudos en `~/llama-panel-results/2026-11-16-tpg
 - **Sin abrir:** la «puesta al día» del contexto del borrador (`process()`, una ejecución del bloque MTP por paso
   además de las 2 de borradores): ~8 ms por paso según 5.9 (17 de borradores + muestreo − 9 de generación).
 
+### 5.23 Borrador MTP con la salida recortada a los tokens más frecuentes (parche 8, 2026-11-16)
+
+**Hipótesis:** en 5.12 recortar la salida del borrador a los primeros K ids ganaba +3 % a temp 0 pero perdía
+aceptación con muestreo, porque en castellano mucha probabilidad cae en ids altos. Si en vez de los primeros K ids se
+toman los K **más frecuentes en el uso real**, la aceptación no debería bajar. (Después encontramos que la idea está
+publicada: FR-Spec, ACL 2025, arXiv 2502.14856.)
+
+**Orden por frecuencia** (`tools/mtp_vocab_order.py`): 13 M de tokens de repos y conversaciones locales,
+documentación del sistema y oraciones de Leipzig (noticias y Wikipedia en castellano e inglés), con peso por corpus.
+Cobertura sobre respuestas guardadas del modelo (no usadas para ordenar):
+
+| K | más frecuentes | primeros K ids |
+|---|---|---|
+| 32768 | 97.7 % | — |
+| 49152 | 98.9 % | — |
+| 65536 | **99.67 %** | 92.9 % |
+
+**Método:** `tools/bench/sparse_attention.py --mode decode --mtp`, estados guardados de 12K y 30K, 128 tokens,
+brazos alternados. Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`hot-temp0-c`, `hot-temp08`, `hot-trunc`,
+`d2t-temp0`). Primero un prototipo (matriz reordenada + variable de entorno), después la versión definitiva.
+
+- **Temp 0, prototipo, 192 tokens** (tok/s; generados/aceptados):
+
+| K | 12K | 30K |
+|---|---|---|
+| 248320 (todo) | 19.15–19.28 (150/116) | 17.58–17.70 (158/111) |
+| **65536** | **19.56–19.57** (150/116) | **17.92–17.94** (158/111) |
+| 49152 | 19.23–19.35 (152/115) | 17.96 (158/111) |
+| 32768 | 19.23–19.24 (154/114) | 17.97–18.05 (158/111) |
+
+  Con 65536 no se pierde ni un borrador aceptado; achicar más no suma y empieza a perder alguno.
+- **Temp 0.8, 5 semillas por brazo** (la prueba que había hundido a 5.12): a 12K el texto y la aceptación son
+  idénticos al control en las 5 semillas, medias 17.60 / 17.81 → 17.98 / 17.99. A 30K, 3 semillas con texto idéntico
+  ganan ~1.6 %; en las otras 2 el texto cambió y aceptó más (77 contra 73, 72 contra 71), medias 17.63 / 17.81 →
+  18.37 / 18.45. **En ninguna semilla bajó la aceptación.**
+- **Sin la cola en -inf** (logits de ancho K, sin rellenar hasta 248320): 12K 19.13 → 19.21, 30K igual. El relleno y
+  la selección de candidatos sobre 248K no cuestan nada medible; no vale la pena una ruta especial.
+- **Versión definitiva (parche 8):** el motor ya tenía la convención `d2t` para los borradores eagle3 y dflash
+  (tensor con los ids de token de cada fila de la salida; los logits se reparten con `set_rows` sobre el vocabulario
+  completo). El parche la habilita en el borrador MTP de qwen4exp. `tools/gguf_mtp_d2t.py` genera el GGUF: deja
+  `output.weight` con las K filas elegidas y agrega `d2t`. Temp 0, original contra `-d2t65k`, mismo texto y misma
+  aceptación (101/76 y 105/74):
+
+| Borrador | 12K | 30K | VRAM máx |
+|---|---|---|---|
+| original | 18.76–18.88 | 17.52–17.61 | 7.34 GiB |
+| **`-d2t65k`** | **19.18–19.25** | **17.84–18.11** | **7.10 GiB** |
+
+  **+2.1 % a 12K, +2.2 % a 30K, −0.24 GiB de VRAM**, borrador 263 MB más chico.
+- **Validación con el motor estable:** test de humo OK (Qwen3.6 29.1 / 230.6; Flash-Next 19.0 / 133.9, VRAM 7.16 GiB).
+  Calidad a 64K con 58K ocupados: **24/24**, generación 18.9–20.7 tok/s (`~/llama-panel-results/2026-11-16-tpge-quality-d2t`).
+- **Por qué no rinde más:** el borrador entero es ~9 ms de un paso de ~133 ms (5.22); recortar su salida saca ~2 ms
+  por borrador. Lo que pesa es verificar (33–37 ms por posición).
+
+**Lectura de afuera que queda como pista** (búsqueda del 2026-11-16, sin probar todavía):
+- *Largo de borrador por umbral* (SpecDec++, arXiv 2405.19715): la política óptima es cortar cuando la probabilidad
+  acumulada de rechazo pasa un umbral. Acá una posición extra rinde si su aceptación supera ~0.76. Primer paso:
+  registrar (posición, probabilidad del borrador, aceptado) y calcular el umbral con datos.
+- *Saltear expertos de peso bajo* (Lu et al., arXiv 2402.14800; MoDES; HOBBIT; en contra, BEAM arXiv 2605.14438): ataca
+  los 17–24 ms de CPU por token. Es aproximado: primero el histograma de pesos del enrutador, después calidad.
+- *Verificación dispersa* (arXiv 2512.21911): abarata atención y expertos solo en las posiciones verificadas.
+- Descartadas por la cuenta: árboles de candidatos (cada posición cuesta 33–37 ms y la segunda alternativa acertaría
+  ~6 %); precargar expertos predichos (20–30 MB por capa contra 16 MiB de L3).
+
 ---
 
-## 6. Los siete parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
+## 6. Los ocho parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
 ### Parche 1 — `-ot` con buffers de memoria fija (`Vulkan_Host`)
 Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un override a host buffer se ignora; el parche avisa.
@@ -753,6 +817,11 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 ### Parche 7 — `GGML_VK_FIRST_SUBMIT_NODES`
 - Hallazgo y método en 5.21. Perilla apagada por defecto; el panel la pone en 2 en el unit del router.
 - Resultado: sin MTP **+2.9 %**, con MTP +0.8–1.4 %, salida idéntica.
+
+### Parche 8 — vocabulario de salida reducido (`d2t`) para el borrador MTP
+- Hallazgo y método en 5.23. Si el GGUF del borrador trae `d2t`, `output.weight` tiene solo esas filas y los logits
+  se reparten sobre el vocabulario completo (convención de eagle3 / dflash). Sin `d2t` no cambia nada.
+- Resultado: **+2 %** con los 65536 tokens más frecuentes, misma aceptación, −0.24 GiB de VRAM.
 
 ---
 
@@ -810,7 +879,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Modelo | Router | Claves |
 |---|---|---|
 | Qwen3.6-35B-A3B | 28.8 gen, 228 prompt largo, VRAM 7.1 | `cpu-moe`, `load-mode = none`, cache 4608 + cpu 0.8 |
-| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 (con 64K Q8_0: 17.4 / 131, VRAM 7.5) | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16, borrador MTP en tandas de 512; modo IA: **64K de contexto con KV en Q8_0** (~3 % más lento) |
+| Flash-Next `-hcq8` | 18.2 gen, 135 prompt largo, VRAM 7.2 (con 64K Q8_0: 17.4 / 131, VRAM 7.5) | parche 1 (44 capas fijas), `lazy-mode`, MTP 2 probabilístico, `parallel = 1`, tandas 2048, memoria de la GPU fija, envíos cada 16, primer envío a los 2 nodos, borrador MTP en tandas de 512 y con la salida recortada a 65536 tokens (`-d2t65k`); modo IA: **64K de contexto con KV en Q8_0** (~3 % más lento) |
 
 ---
 
@@ -824,9 +893,12 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
    (5.21, parche 7); queda pregrabar el tramo siguiente durante las esperas (techo ~3 ms/token).
 5. Solapar CPU y GPU (hoy se turnan): lo único independiente es el experto compartido, techo ~1.5–2 ms/token (5.21).
 6. ~~Atención con contexto largo~~: hecho (5.20, parche 6). Con MTP a 30K: 16.4 → 17.4.
-7. Revisar MTP 3 contra MTP 2 en contexto largo (20K–30K) con los parches 6 y 7.
+7. ~~Revisar MTP 3 contra MTP 2 en contexto largo~~: medido en 5.22, sigue 2 (la brecha bajó a −1.3 / −2.5 %).
 8. ~0.4 GiB libres sin modo IA desde 5.15 (borrador en tandas de 512), sin uso todavía.
-7. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
+9. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
+10. ~~Recortar la salida del borrador MTP~~: hecho (5.23, parche 8), +2 %.
+11. Largo de borrador por umbral de confianza, saltear expertos de peso bajo y verificación dispersa: pistas de 5.23.
+12. Fusionar la «puesta al día» del borrador (`process()`) con el primer borrador: una ejecución menos por paso (~1.5 %).
 
 ## 11. Reproducir las mediciones clave
 

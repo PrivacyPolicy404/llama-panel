@@ -1,7 +1,7 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más los 7 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
+el `master` oficial más los 8 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
@@ -75,6 +75,17 @@ Agrega casos Q8_0 a `test-backend-ops` (1 y 3 consultas, selección 2051, caché
 `GGML_VK_MAX_NODES_PER_SUBMIT` como siempre). Con los expertos en el CPU hay ~49 tramos de GPU por token y en cada uno
 la GPU esperaba a que se grabaran 16 nodos. Apagada por defecto; el panel la pone en 2 en el unit del router.
 Sin MTP 14.70 -> 15.13 tok/s (+2.9 %), con MTP +0.8–1.4 %, salida idéntica.
+
+## 8. `llama.cpp-qwen4exp-mtp-d2t.patch`
+
+El borrador MTP gasta más de la mitad de su tiempo en la proyección de salida (248320 filas), y casi todos los tokens
+que propone salen de una parte chica del vocabulario. Si el GGUF del borrador trae un tensor `d2t` (I64, K ids de
+token), `output.weight` se carga con K filas y los logits se reparten sobre el vocabulario completo con el resto en
+-inf: la misma convención que el motor ya usa en eagle3 y dflash (la idea es la de FR-Spec, arXiv 2502.14856).
+El modelo sigue verificando contra el vocabulario entero, así que la distribución de salida no cambia.
+El GGUF se genera con `tools/mtp_vocab_order.py` (orden por frecuencia) y `tools/gguf_mtp_d2t.py` (recorte).
+Con los 65536 tokens más frecuentes: 18.8 -> 19.2 tok/s a 12K y 17.6 -> 18.0 a 30K, mismos borradores aceptados,
+VRAM 7.34 -> 7.10 GiB, borrador 263 MB más chico.
 
 ## Si se propone upstream
 

@@ -68,7 +68,9 @@ no-host = 1                  # por defecto nada fijo...
 override-tensor = blk\.([0-9]|[1-3][0-9]|4[0-3])\.ffn_.*_exps=Vulkan_Host,ffn_.*_exps=CPU
                              # ...y se fijan solo las capas 0-43 (29.4 GiB de GTT). REQUIERE EL PARCHE (patches/)
 spec-type = draft-mtp
-spec-draft-model = ~/models-nvme/qwen3.8-flash-next/mtp-Qwen3.8-Flash-Next-Q4_0.gguf
+spec-draft-model = ~/models-nvme/qwen3.8-flash-next/mtp-Qwen3.8-Flash-Next-Q4_0-d2t65k.gguf
+                             # borrador con la salida recortada a los 65536 tokens más frecuentes (parche 8,
+                             # tools/gguf_mtp_d2t.py): +2 %, -0.24 GiB de VRAM, misma aceptación
 spec-draft-n-max = 2         # borradores de 2 tokens: +30% de generación (3 y 4 rinden menos)
 parallel = 1                 # IMPRESCINDIBLE: con 4 slots (default del router) rinde la mitad y el GTT llega a 30 GiB
 ubatch-size = 2048           # entra gracias a la VRAM que libera hc en Q8_0 (con el original deja la VRAM en 7.8/8)
@@ -159,10 +161,11 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 
 ## llama.cpp: fork y parches
 
-- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 7 parches + notas en el README.
+- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 8 parches + notas en el README.
 - Clon superficial en `~/llama.cpp`; `origin` = fork, `upstream` = oficial (push deshabilitado).
 - Parches (ver `patches/README.md`): `-ot` con `Vulkan_Host`; lightning indexer fp32 en Vulkan; `llama-quantize COPY --tensor-type`;
-  `multi_add` en AMD; kernel Q2_0 AVX2 del CPU (expertos de Flash-Next, +12 % en generación).
+  `multi_add` en AMD; kernel Q2_0 AVX2 del CPU (expertos de Flash-Next, +12 % en generación); atención dispersa desde 4× en GCN;
+  `GGML_VK_FIRST_SUBMIT_NODES`; vocabulario de salida reducido (`d2t`) para el borrador MTP.
 - Actualizar: skill `llama-cpp-update` / `scripts/update-llama.sh` (con `--check` solo informa). La versión queda fija hasta correrlo.
 - Al 2026-11-14: base `9183a55`; había 33 commits nuevos en el oficial y ninguno mejoraba algo en esta máquina.
 

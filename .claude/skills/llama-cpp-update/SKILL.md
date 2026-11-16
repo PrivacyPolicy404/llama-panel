@@ -42,7 +42,7 @@ Tabla corta: commit, qué hace, si le sirve y por qué. Terminar con una recomen
 
 1. Confirmar que no esté usando los modelos (el script reinicia el router si está encendido).
 2. `~/llama-panel/scripts/update-llama.sh`
-   - Rebase de la rama `ot-host-buffers` (7 parches + commits de notas del README del fork) sobre `upstream/master`, compila, verifica, sube al fork.
+   - Rebase de la rama `ot-host-buffers` (8 parches + commits de notas del README del fork) sobre `upstream/master`, compila, verifica, sube al fork.
    - Si algún parche no aplica limpio, el script no cambia nada. Adaptarlo a mano (detalle en `patches/README.md`):
      1. `-ot` con host buffers: `common/arg.cpp` y `tools/llama-bench/llama-bench.cpp` (agregar `ggml_backend_dev_host_buffer_type` a la lista), `src/llama-model-loader.cpp` (aviso cuando un override explícito a host buffer se ignora por mmap).
      2. Lightning indexer fp32: `vulkan-shaders/lightning_indexer.comp` (`LI_VEC4` según `FLOAT16`), `vulkan-shaders-gen.cpp` (variante `_fp32`), `ggml-vulkan.cpp` (elegir la variante si `!device->fp16` y no exigir fp16 en `supports_op`).
@@ -51,6 +51,10 @@ Tabla corta: commit, qué hace, si le sirve y por qué. Terminar con una recomen
      5. Kernel Q2_0 del CPU: `ggml-cpu/arch/x86/quants.c` (`ggml_q2_0_prep_q8_0`, `ggml_vec_dot_q2_0_prep`), `ggml-cpu/quants.h`
         (declaraciones) y el camino rápido al principio de `ggml_compute_forward_mul_mat_id_one_chunk` en `ggml-cpu/ggml-cpu.c`.
         Verificar con `test-backend-ops -o MUL_MAT_ID -b Vulkan0` (compara contra el CPU: todos los `type_a=q2_0` OK).
+     6. Atención dispersa en GCN: `ggml-vulkan.cpp`, el `min_ratio` de la ruta dispersa de flash attention (`gcn_q8`).
+     7. `GGML_VK_FIRST_SUBMIT_NODES`: `ggml-vulkan.cpp` (lectura de la variable y `nodes_per_submit` en el bucle del grafo).
+     8. Borrador MTP con vocabulario reducido: `src/models/qwen4exp.cpp` (carga de `d2t` y `qwen4exp_d2t_scatter`).
+        Si cambia, el borrador `-d2t65k` no carga: el test de humo de Flash-Next lo detecta.
    - Si choca una nota del README del fork, rehacerla arriba de todo del README nuevo.
 3. Volver a exportar los parches al repo del panel y commitear (buscar cada hash con `git log --oneline`):
    `git -C ~/llama.cpp format-patch -1 --stdout <hash> > ~/llama-panel/patches/<nombre>.patch`
