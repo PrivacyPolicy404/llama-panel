@@ -1,7 +1,7 @@
 # Parches locales de llama.cpp
 
 El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
-el `master` oficial más los 5 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
+el `master` oficial más los 7 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
 
 - `origin` = el fork (ahí se sube la rama)
 - `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
@@ -60,6 +60,21 @@ de 6 instrucciones), calcula `sum(y)` y las escalas una sola vez, y hace prefetc
 Microbenchmark: 5.1 -> 11.2 GB/s por hilo; 8 hilos desde la RAM 33 -> 40 GB/s (el techo de esta máquina).
 Flash-Next sin MTP 13.5 -> 15.2 tok/s; **por el router 15.7 -> 17.6**. El prompt no cambia (con tandas grandes los
 expertos se calculan en la GPU). `test-backend-ops -o MUL_MAT_ID -b Vulkan0`: todos los casos `q2_0` OK.
+
+## 6. `llama.cpp-vulkan-sparse-attn-gcn.patch`
+
+La atención de Flash-Next elige ~2048 celdas por paso. La ruta dispersa de Vulkan (junta solo esas celdas) se activaba
+con K/V cuantizadas recién cuando la caché era 16× la selección, un empate medido en RDNA3/RDNA4. En la RX 580 la ruta
+densa es más lenta y la dispersa ya gana a 4×: el parche baja el umbral solo en `AMD_GCN` con K/V Q8_0.
+Efecto: la ruta dispersa se usa desde ~8K de contexto en vez de ~32K. Con MTP: 20K 17.1 -> 18.3 tok/s, 30K 16.4 -> 17.4.
+Agrega casos Q8_0 a `test-backend-ops` (1 y 3 consultas, selección 2051, caché de 8K a 64K): 9/9 OK.
+
+## 7. `llama.cpp-vulkan-first-submit-nodes.patch`
+
+`GGML_VK_FIRST_SUBMIT_NODES=N`: el primer lote de cada grafo se envía a la GPU a los N nodos (después, cada
+`GGML_VK_MAX_NODES_PER_SUBMIT` como siempre). Con los expertos en el CPU hay ~49 tramos de GPU por token y en cada uno
+la GPU esperaba a que se grabaran 16 nodos. Apagada por defecto; el panel la pone en 2 en el unit del router.
+Sin MTP 14.70 -> 15.13 tok/s (+2.9 %), con MTP +0.8–1.4 %, salida idéntica.
 
 ## Si se propone upstream
 

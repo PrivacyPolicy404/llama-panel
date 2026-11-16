@@ -541,7 +541,148 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 
 ---
 
-## 6. Los cinco parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
+### 5.19 Próximos candidatos: revisión de Strata y del fork (2026-11-15)
+
+**Revisión estática, sin nuevas mediciones ni cambios de motor/configuración.** Fork `9d77a39`; Strata
+[`baf1636`](https://github.com/Niko1221/Strata/tree/baf16363b4403ef0ed4f538f5d5ed11c43fb9535), clonado para lectura
+en `/home/gen/strata-review`. Strata es MIT y no tiene backend Vulkan para Polaris. Sí se pueden adaptar ideas
+CPU y de planificación; no corresponde descartar todo por depender de CUDA/HIP en su implementación actual.
+
+**Primer experimento propuesto: calibrar la atención dispersa Q8 para Polaris.** En `ggml-vulkan.cpp:8596–8613`,
+la ruta sparse compacta las posiciones finitas de la máscara y consulta sólo esas posiciones de K/V. Con KV
+cuantizada exige `KV >= max(4096, 16*n_kv_max)`; el comentario justifica ese factor 16 con RDNA3/RDNA4. La RX 580
+no es ninguna de ellas. `qwen4exp.cpp:995` ya transmite el presupuesto seleccionado como `n_kv_max`, y
+`llama-graph.cpp:3064` lo incorpora a flash attention. Hay más condiciones de elegibilidad: no basta el umbral.
+Strata también tiene atención directa sobre celdas seleccionadas, sin reunir primero una copia de K/V
+([contrato del kernel](https://github.com/Niko1221/Strata/blob/baf16363b4403ef0ed4f538f5d5ed11c43fb9535/include/strata/kernels/qsa_decode_attn.hpp)).
+No sería una función nueva: habría que registrar qué ruta usa realmente cada caso y comparar, con una variante
+aislada, factores 16/8/4 en contextos cortos, intermedios y largos. Primero temp 0 sin MTP; luego verificación
+de tres tokens y MTP real. Medir latencia completa, calidad y memoria, no sólo el shader. No hay ganancia
+demostrada ni se confirmó todavía la ruta elegida en las solicitudes actuales.
+
+**Segundo candidato acotado: Q2_0 CPU para varios tokens del mismo experto.** Strata carga/desempaqueta el
+bloque de pesos fuera del bucle de tokens (`row_multi<NT>` y `row_bp_acc<NT>` en
+[sus kernels AVX2](https://github.com/Niko1221/Strata/blob/baf16363b4403ef0ed4f538f5d5ed11c43fb9535/src/kernels/cpu/q2_avx2.cpp)).
+Nuestro `ggml-cpu.c:1523–1553` prepara activaciones por columna, pero llama al producto punto por separado para
+cada columna/fila. El camino tiled genérico no incluye Q2_0 (`tiled/tiled.cpp:615`). La adaptación debe conservar
+nuestro prefetch y preparación, compartir el desempaquetado para 2–4 columnas y mantener el caso de una columna.
+Contar primero cuántas columnas usa cada experto durante MTP y dos slots. **No asumir ahorro proporcional de
+RAM:** los bloques de 16 filas actuales ya pueden reutilizar pesos desde caché del CPU. La ganancia potencial
+es también de instrucciones/cargas; si los expertos apenas se repiten, será acotada. La variante bitplane de
+Strata cambia el orden de suma flotante: no copiarla confundiendo esa diferencia con el agrupamiento de tokens.
+
+**Cambio arquitectónico: solapar ramas independientes.** `build_layer_ffn` construye primero los expertos
+ruteados y después el experto compartido, que usa la misma entrada. Estudiar si ese trabajo de GPU puede correr
+mientras el CPU resuelve los ruteados. No se pueden solapar capas arbitrariamente: la siguiente necesita la
+salida de la anterior. Además el scheduler reutiliza buffers entre splits; quitar esperas sin cambiar sus
+vidas útiles es incorrecto (`ggml-backend.cpp:2220`). Strata usa otra stream para la rama compartida, pero sus
+[fuentes](https://github.com/Niko1221/Strata/blob/baf16363b4403ef0ed4f538f5d5ed11c43fb9535/src/core/verify.cpp#L347)
+documentan regresiones fuertes en algunas Radeon HIP. Es un candidato de mayor alcance, no una mejora portátil
+garantizada. Perfilar la rama compartida antes de rediseñar el scheduler.
+
+**Otros candidatos y límites:**
+- Strata captura/reproduce grafos ([implementación](https://github.com/Niko1221/Strata/blob/baf16363b4403ef0ed4f538f5d5ed11c43fb9535/src/core/graph.cpp));
+  Vulkan vuelve a grabar los comandos por evaluación. Reutilizar command buffers grabados exigiría manejar
+  direcciones, formas, constantes e invalidación. El perfil histórico con MTP atribuía ~2.4 ms/token a grabación:
+  es un techo orientativo de ese componente, no una promesa actual de rendimiento.
+- Para Cline, medir por separado restaurar/guardar checkpoints y procesar tokens nuevos. Strata recicla y
+  prepara buffers host (`STRATA_CKPT_POOL_READY`); su staging asíncrono en VRAM necesita margen que aquí escasea.
+  Una continuación lenta no demuestra por sí sola que el culpable sea el checkpoint.
+- Ya tenemos copia selectiva de expertos (`llama_context::sched_copy_experts`) y prefetch del scheduler;
+  el routed streaming de Strata no se puede contar entero como una capacidad ausente. Los kernels basados en
+  tensor cores/TF32 no se trasladan directamente a Polaris. Más borradores, expert cache y ngram básico ya se
+  probaron: ver 5.4 y 5.9–5.12 antes de repetirlos.
+
+---
+
+### 5.20 Atención dispersa desde 4× en Polaris (parche 6, 2026-11-16)
+
+**Hipótesis (5.19):** el umbral 16× de la ruta dispersa con KV cuantizada se midió en RDNA3/RDNA4; en la RX 580 la
+ruta densa es más lenta y el empate debería estar más abajo. Con KV Q8_0 y ~2051 celdas seleccionadas, hasta ~32K de
+contexto el modelo recorría toda la caché.
+
+**Método:** `tools/bench/sparse_attention.py`. Biblioteca Vulkan experimental sola en `LD_LIBRARY_PATH` (servidor y
+resto estables), router aparte en :18081, temp 0. El contexto se procesa una vez, se guarda el slot y cada medición
+restaura **el mismo estado** (el servidor reevalúa los últimos 4 tokens); brazos alternados, 1 calentamiento + 2–3
+medidas. Resultados crudos en `~/llama-panel-results/2026-11-15-tpge-sparse/`.
+
+**Operación aislada** (`test-backend-ops perf`, µs, selección 2051, 3 consultas = paso con MTP 2):
+
+| KV | densa | dispersa |
+|---|---|---|
+| 8K | 636 | — |
+| 16K | 1155 | 439 |
+| 32K | 2081 | 458 |
+| 64K | — | 497 |
+
+Con 1 consulta: 16K densa 445, dispersa 196. Corrección contra el CPU: 9/9 con ratios 16, 8 y 4.
+
+**De punta a punta, sin MTP** (tok/s; actual = 16×):
+
+| Contexto | 16× | 4× | 3× |
+|---|---|---|---|
+| 8K | 14.37–14.46 | 14.76 / 14.77 | 14.56 / 14.61 |
+| 12K | 14.28–14.38 | 14.49 / 14.54 | 14.68 / 14.73 |
+| 16K | 14.04–14.37 | 14.42 / 14.48 | 14.24 / 14.40 |
+| 20K | 14.00–14.19 | 14.33 / 14.51 (8×: 14.38 / 14.57) | |
+| 30K | 13.66–13.76 | 14.18 / 14.29 (8×: 14.23 / 14.32) | |
+| 60K (control, misma ruta) | 13.78–13.91 | 13.96 / 13.97 | 13.67 / 13.88 |
+
+**Con MTP 2** (192 tokens, dos brazos de cada uno): 12K 18.84–19.04 → 18.93–18.97 (igual); **20K 17.14 → 18.31
+(+6.8 %)**; **30K 16.43 → 17.44 (+6.1 %)**. GTT máx 29.5 GiB, VRAM máx 7.57, sin eventos de kernel.
+
+**Conclusiones:**
+- La dispersa no pierde desde 8K. 3× y 4× no se distinguen (el control de 60K da ±0.1 tok/s entre cargas): queda **4×**.
+- El texto a temp 0 cambia entre rutas (otro orden de suma), como ya pasaba al cruzar 32K; ambas salidas coherentes.
+- La operación mejora 2.6–4.5× pero el total solo 3–7 %: sin MTP el contexto largo cuesta ~5.5 ms/token a 20K y la
+  atención dispersa recupera ~2.1. Lo que frena sigue siendo expertos + cadena GPU↔CPU.
+- Parche 6: en `AMD_GCN` con K/V Q8_0 el umbral es 4×; el resto de las GPUs no cambia. La biblioteca final dio los
+  mismos hashes y velocidades que el ratio 4 experimental.
+- Trampas del lanzador: en modo router los POST llevan `"model"` en el cuerpo (no en la query) y, tras restaurar un
+  slot, `prompt_n` es 4, no 0.
+
+### 5.21 Primer envío de cada tramo a los 2 nodos (parche 7, 2026-11-16)
+
+**Hipótesis:** de los 5.7 ms/token de grabar/enviar comandos (5.8), parte ocurre con la GPU parada: al empezar cada uno
+de los 49 tramos, la GPU espera a que se graben 16 nodos. Mandar un primer lote chico la hace arrancar antes.
+
+**Método:** perilla `GGML_VK_FIRST_SUBMIT_NODES` (primer envío de cada grafo a los N nodos; después cada
+`GGML_VK_MAX_NODES_PER_SUBMIT`). Mismo lanzador (`--arm-env`), 8K, temp 0, 3 medidas por brazo. **Texto idéntico
+en todos los brazos** (no cambia ningún cálculo).
+
+| Primer envío | tok/s sin MTP |
+|---|---|
+| 16 (actual) | 14.52–14.80 (4 brazos, media 14.67) |
+| 8 | 14.85–14.89 |
+| 4 | 14.85–14.94 |
+| 3 | 14.96–14.99 |
+| **2** | **14.97–15.19** (5 brazos, media 15.09: **+2.9 %**) |
+| 1 | 14.83–15.07 |
+| rampa 2→4→8→16 | 14.71–14.87 |
+| rampa 4→8→16 | 14.69–14.91 |
+
+Con MTP 2: 12K 18.88 → **19.14** (+1.4 %); 30K 17.41 → **17.54** (+0.8 %). Con MTP hay menos tramos por token y
+la ganancia baja. Las rampas crecientes pierden: cada envío extra cuesta CPU.
+
+**Queda:** `GGML_VK_FIRST_SUBMIT_NODES=2` en el unit del router (`install.py`).
+
+**Validación del motor con los parches 6 y 7** (build estable, por el router, modo IA 64K): `smoke_models.py` OK,
+Qwen3.6 29.2 tok/s / 230 prompt largo (referencia 28.8 / 227.6), Flash-Next 17.6 / 134.1 con MTP muestreado
+(antes 17.4 / 131 en esa configuración).
+
+**Estado de los candidatos de 5.19 tras revisar datos existentes:**
+- *Q2_0 multi-columna:* **descartado sin implementar.** Con MTP se leen ~1.8 GB de expertos por paso = 3 × los
+  ~600 MiB de un token: las columnas casi no comparten experto y esa lectura ya está en el techo de la RAM (5.9).
+- *Solapar el experto compartido:* techo bajo. Sus pesos suman 143 MiB en 48 capas (parte densa: 3.8 GiB): como
+  mucho ~1.5–2 ms/token, tocando el scheduler. No hay otra rama independiente: cada capa es una cadena.
+- *Esperas a la GPU:* el backend ya espera girando al final de cada tramo; no hay latencia evitable ahí.
+- *Pendiente con techo real:* pregrabar los comandos del tramo siguiente mientras el CPU espera a la GPU o calcula
+  expertos (dependen de formas y buffers, no de datos). Techo ~3 ms/token; refactorización del backend Vulkan.
+- *Revisar MTP 3 en contexto largo:* la consulta extra ahora es casi gratis en la atención; el costo de CPU no cambió.
+
+---
+
+## 6. Los siete parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
 ### Parche 1 — `-ot` con buffers de memoria fija (`Vulkan_Host`)
 Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un override a host buffer se ignora; el parche avisa.
@@ -577,6 +718,14 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 - Hallazgo y método en 5.8: los expertos tardaban 22–24 ms/token limitados por el cálculo (3.8 GB/s por hilo).
 - Parche: activaciones reacomodadas una vez por columna + prefetch 1 KiB. Solo cambia `MUL_MAT_ID` con pesos Q2_0 en x86 AVX2.
 - Resultado: sin MTP 13.5 → **15.2** (+12.5 %); router 15.7 → **17.6**. Prompt igual.
+
+### Parche 6 — atención dispersa desde 4× en GCN con K/V Q8_0
+- Hallazgo y método en 5.20. Cambia solo el umbral de la ruta dispersa en `AMD_GCN` con K/V Q8_0 (16× → 4×).
+- Resultado: con MTP **+6.8 % a 20K y +6.1 % a 30K**; sin MTP +1.5–4 % desde 8K. Sobre 32K no cambia nada.
+
+### Parche 7 — `GGML_VK_FIRST_SUBMIT_NODES`
+- Hallazgo y método en 5.21. Perilla apagada por defecto; el panel la pone en 2 en el unit del router.
+- Resultado: sin MTP **+2.9 %**, con MTP +0.8–1.4 %, salida idéntica.
 
 ---
 
@@ -644,9 +793,11 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 2. ~~Expertos en el CPU~~: hecho (5.8, parche 5). Ahora están en el techo de la RAM (~40 GB/s).
 3. ~~La GPU, operación por operación~~: medido en 5.9. Las mejoras de shaders sueltos no llegan al total; la
    memoria fija sí (+2–3 %). Queda entender por qué el tramo de GPU no baja cuando baja una operación.
-4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms).
-5. Solapar CPU y GPU (hoy se turnan): cambio grande en el scheduler.
-6. Atención con contexto largo (lo que más crece con los 64K: gen 20 → 16.5 con 30K de contexto).
+4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms). Primer paso hecho
+   (5.21, parche 7); queda pregrabar el tramo siguiente durante las esperas (techo ~3 ms/token).
+5. Solapar CPU y GPU (hoy se turnan): lo único independiente es el experto compartido, techo ~1.5–2 ms/token (5.21).
+6. ~~Atención con contexto largo~~: hecho (5.20, parche 6). Con MTP a 30K: 16.4 → 17.4.
+7. Revisar MTP 3 contra MTP 2 en contexto largo (20K–30K) con los parches 6 y 7.
 8. ~0.4 GiB libres sin modo IA desde 5.15 (borrador en tandas de 512), sin uso todavía.
 7. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 

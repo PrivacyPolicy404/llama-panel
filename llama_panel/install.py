@@ -27,7 +27,10 @@ def units():
             "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n"
             # mandar trabajo a la GPU cada 16 nodos (no 100): con los MoE cada tramo de GPU tiene ~53 nodos y la GPU
             # esperaba a que se grabara el 80 % antes de arrancar. Flash-Next con MTP +1.4 % (bitácora 5.10)
-            "Environment=GGML_VK_MAX_NODES_PER_SUBMIT=16\n" + GPU_MCLK +
+            "Environment=GGML_VK_MAX_NODES_PER_SUBMIT=16\n"
+            # y el primer envío de cada tramo a los 2 nodos (parche 7): la GPU no espera a que se graben 16.
+            # Flash-Next sin MTP +2.9 %, con MTP +0.8–1.4 % (bitácora 5.21)
+            "Environment=GGML_VK_FIRST_SUBMIT_NODES=2\n" + GPU_MCLK +
             f"ExecStart={C.LLAMA_SERVER} --models-preset {C.PRESET_FILE} --models-max 1 "
             f"--host 0.0.0.0 --port {C.CHAT_PORT}\n"
             "Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"

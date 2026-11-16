@@ -3,6 +3,14 @@
 Contexto acumulado para no tener que redescubrirlo. Primera versión: 2026-11-14.
 La bitácora detallada de cada experimento (método y números) está en `analisis-rendimiento.md`.
 
+## Identidad del proyecto
+
+- Nombre elegido con el usuario: **The Poor GPU Engine (TPGE)**.
+- Lema: **«Presupuesto arqueológico. Contexto de 64K.»**
+- El motor sigue siendo nuestro fork de llama.cpp. Si adaptamos ideas o código de Strata, documentar su origen;
+  al incorporar código, conservar los avisos de licencia y los créditos correspondientes. La revisión de 5.19
+  todavía no incorpora código de Strata.
+
 ## La máquina
 
 | | |
@@ -102,6 +110,10 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
   la memoria en 2000 MHz al arrancar y la devuelven a `auto` al parar. Flash-Next con MTP +2–3 %. (Instalado el 2026-11-15.)
 - **RAM en XMP perfil 1 (DDR4-3200)** desde el 2026-11-15: 43.5 GB/s. **Sin overclock de VRAM**: el SMU de Polaris falla con la tabla modificada (cuelgue, memoria clavada en 300 MHz; bitácora 5.13).
 - **`GGML_VK_MAX_NODES_PER_SUBMIT=16`** en el unit del router: la GPU arranca antes en cada tramo. +1.4 % con MTP.
+- **`GGML_VK_FIRST_SUBMIT_NODES=2`** (parche 7) en el unit del router: el primer lote de cada tramo sale a los 2 nodos.
+  Sin MTP +2.9 %, con MTP +0.8–1.4 %, salida idéntica (bitácora 5.21).
+- **Atención dispersa desde 4× (parche 6):** con KV Q8_0 la ruta dispersa ahora se usa desde ~8K de contexto (antes
+  desde ~32K). Con MTP +6–7 % entre 20K y 30K; el texto a temp 0 cambia respecto del motor anterior (bitácora 5.20).
 - **Expertos en el CPU (parche 5):** el kernel Q2_0 viejo era el límite (3.8 GB/s por hilo, la RAM da 40). Con el nuevo
   Flash-Next pasa a 15.2 tok/s sin MTP y **17.6 por el router**. Detalle en `analisis-rendimiento.md` 5.8.
 - El lightning indexer crece con el contexto (0.27 ms/token a 136 tokens, 0.74 a 19K) pero sigue siendo <1 % del total;
@@ -136,8 +148,10 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 - El router descarga de forma asíncrona: cargar otro modelo enseguida da `model limit reached`. El panel descarga los
   otros y reintenta (`actions._load_with_retry`).
 - `mtp-q2_0.gguf` del repo de SC117 es formato de Strata (`qwen4exp-mtp`), llama.cpp no lo carga. Usar el `mtp-*-Q4_0.gguf`.
-- **Strata** (github.com/Niko1221/Strata, MIT) no corre en la RX 580: necesita CUDA (RTX 20+) o HIP/ROCm (RDNA2+);
-  Polaris (gfx803) quedó fuera de ROCm. Sus ideas ya están casi todas en llama.cpp; sus kernels propios son CUDA/HIP.
+- **Strata** (github.com/Niko1221/Strata, MIT) no tiene backend Vulkan para la RX 580. Tiene rutas CUDA/HIP/SYCL/Metal,
+  pero eso no habilita Polaris. No descartar sus ideas por el backend: revisión de fuentes en bitácora 5.19.
+  De esa revisión salió el parche 6 (umbral de atención dispersa con KV Q8, 5.20). El kernel Q2_0 multi-token quedó
+  descartado (los tokens de un paso no comparten expertos) y solapar ramas tiene techo bajo (5.21).
 - La RX 580 **no tiene `shaderFloat16`** (sí lectura/escritura de 16 bits). Operaciones de Vulkan que exigen fp16 caen al CPU:
   revisar con `tools/bench/sched_profile.py` qué corre en el CPU además de los expertos.
 - `GGML_VK_PERF_LOGGER` aborta (`GGML_ASSERT(ctx->compute_ctx.expired())`) en modelos que alternan CPU/GPU; para medir se
@@ -145,7 +159,7 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 
 ## llama.cpp: fork y parches
 
-- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 5 parches + notas en el README.
+- Fuente: fork público `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers` = oficial + 7 parches + notas en el README.
 - Clon superficial en `~/llama.cpp`; `origin` = fork, `upstream` = oficial (push deshabilitado).
 - Parches (ver `patches/README.md`): `-ot` con `Vulkan_Host`; lightning indexer fp32 en Vulkan; `llama-quantize COPY --tensor-type`;
   `multi_add` en AMD; kernel Q2_0 AVX2 del CPU (expertos de Flash-Next, +12 % en generación).

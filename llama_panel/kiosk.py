@@ -306,10 +306,15 @@ def external_runs(cpu):
     return out
 
 
+def cpu_txt(p):
+    """Uso de CPU de un proceso: porcentaje estilo top (100 % = un hilo) y su equivalente en núcleos."""
+    return f"{p['cpu']:.0f}% · {p['cpu'] / 100:.1f} núcl."
+
+
 def external_lines(cpu, w):
     out = []
     for p in external_runs(cpu):
-        out.append(f" {YELLOW}◆ prueba fuera del panel{RESET} · {p['name']} · {p['cpu']:.0f}% cpu")
+        out.append(f" {YELLOW}◆ prueba fuera del panel{RESET} · {p['name']} · cpu {cpu_txt(p)}")
         out.append(f"   {(p.get('model') or '?')[:w - 4]}")
     return out
 
@@ -401,9 +406,9 @@ def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
 
 def procs_box(cpu, width, max_rows=6):
     w = width - 2
-    lines = [f" {'proceso':<14}{'pid':>8}{'cpu':>8}{'hilos':>7}{'ram':>9}"]
+    lines = [f" {'proceso':<14}{'pid':>8}{'cpu':>18}{'hilos':>7}{'ram':>9}"]
     for p in (cpu.get("procs") or [])[:max_rows]:
-        lines.append(f" {p['name']:<14}{p['pid']:>8}{p['cpu']:>7.0f}%{p['threads']:>7}{p['rss'] / 2**30:>8.1f}G")
+        lines.append(f" {p['name']:<14}{p['pid']:>8}{cpu_txt(p):>18}{p['threads']:>7}{p['rss'] / 2**30:>8.1f}G")
     if len(lines) == 1:
         lines.append(" (sin modelos corriendo)")
     return box("procesos", lines, width)
@@ -452,7 +457,7 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
         mod.append(f" última {r['g_tps']:.1f} tok/s · prompt {r['p_tps']:.0f} · {ago(r['t'], now)}")
         mod += [" " + x for x in graph([x["g_tps"] for x in resp], w - 2, max(1, gh - 1), 0)]
 
-    procs = [f" {p['name'][:12]:<12}{p['cpu']:>6.0f}%{p['threads']:>4} hilos{p['rss'] / 2**30:>6.1f}G"
+    procs = [f" {p['name'][:12]:<12}{cpu_txt(p):>17}{p['threads']:>4} hilos{p['rss'] / 2**30:>6.1f}G"
              for p in (cpu.get("procs") or [])[:3]] or [" (sin modelos corriendo)"]
     return [box("gpu", gpu, width), box("cpu · memoria", cpu_l, width), box("modelos", mod, width), box("procesos", procs, width)]
 

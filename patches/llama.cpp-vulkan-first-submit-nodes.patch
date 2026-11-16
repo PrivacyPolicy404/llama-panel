@@ -1,0 +1,68 @@
+From 1de89f65654a31e8cc21aa94cbcd6a6349662d56 Mon Sep 17 00:00:00 2001
+From: Namiak <23253744+PrivacyPolicy404@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 01:07:51 -0300
+Subject: [PATCH] vulkan : GGML_VK_FIRST_SUBMIT_NODES, submit the first batch
+ of a graph early
+
+With MoE experts on the CPU each token is ~49 short GPU segments, and the GPU
+sits idle while the first batch of every segment is recorded. Submitting the
+first batch after 2 nodes (then every GGML_VK_MAX_NODES_PER_SUBMIT as before)
+starts the GPU sooner. Off by default (0).
+
+RX 580, Qwen3.8-Flash-Next, temp 0, alternated arms, identical output:
+without MTP 14.70 -> 15.13 tok/s (1 node: 14.95, 4: 14.89, 8: 14.87;
+doubling ramps 2-4-8-16 lose: 14.78); with MTP 18.88 -> 19.14 at 12K
+and 17.41 -> 17.54 at 30K.
+
+Written with AI assistance (Claude).
+---
+ ggml/src/ggml-vulkan/ggml-vulkan-types.h |  1 +
+ ggml/src/ggml-vulkan/ggml-vulkan.cpp     | 13 ++++++++++++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan-types.h b/ggml/src/ggml-vulkan/ggml-vulkan-types.h
+index e72afc6..07122fa 100644
+--- a/ggml/src/ggml-vulkan/ggml-vulkan-types.h
++++ b/ggml/src/ggml-vulkan/ggml-vulkan-types.h
+@@ -740,6 +740,7 @@ struct vk_device_struct {
+     bool add_rms_fusion;
+     uint32_t partials_binding_alignment;
+     uint32_t max_nodes_per_submit;
++    uint32_t first_submit_nodes;
+ 
+     bool shader_64b_indexing;
+ 
+diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+index d4c9bc2..37b159f 100644
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -4533,6 +4533,14 @@ vk_device ggml_vk_get_device(size_t idx) {
+             device->max_nodes_per_submit = std::max(max_nodes_per_submit, 1u);
+         }
+ 
++        // Optionally submit the first batch of each graph after only a few nodes, so the GPU starts working
++        // while the rest is recorded. Helps graphs split into many short GPU segments (MoE experts on the CPU).
++        device->first_submit_nodes = 0;
++        const char* GGML_VK_FIRST_SUBMIT_NODES = getenv("GGML_VK_FIRST_SUBMIT_NODES");
++        if (GGML_VK_FIRST_SUBMIT_NODES != nullptr) {
++            device->first_submit_nodes = std::stoul(GGML_VK_FIRST_SUBMIT_NODES);
++        }
++
+         const bool force_disable_f16 = getenv("GGML_VK_DISABLE_F16") != nullptr;
+ 
+         device->fp16 = !force_disable_f16 && fp16_storage && fp16_compute;
+@@ -15215,7 +15223,10 @@ static ggml_status ggml_backend_vk_graph_compute(ggml_backend_t backend, ggml_cg
+ 
+         // Signal the almost_ready fence when the graph is mostly complete (< 20% remaining)
+         bool almost_ready = (cgraph->n_nodes - i) < cgraph->n_nodes / 5;
+-        bool submit = (submitted_nodes >= ctx->device->max_nodes_per_submit) ||
++        const uint32_t nodes_per_submit = (submit_count == 0 && ctx->device->first_submit_nodes != 0)
++            ? std::min(ctx->device->first_submit_nodes, ctx->device->max_nodes_per_submit)
++            : ctx->device->max_nodes_per_submit;
++        bool submit = (submitted_nodes >= nodes_per_submit) ||
+                       (flops_per_submit != 0 && batch_flops >= flops_per_submit) ||
+                       (i + ctx->num_additional_fused_ops >= last_node) ||
+                       (almost_ready && !ctx->almost_ready_fence_pending);
+-- 
+2.43.0
+
