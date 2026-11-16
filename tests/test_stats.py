@@ -1,5 +1,6 @@
 """Parseo de logs de llama-server y KoboldCpp (lineas reales de journalctl)."""
 import unittest
+from unittest.mock import patch
 
 from llama_panel import stats
 
@@ -83,6 +84,7 @@ class LiveTest(unittest.TestCase):
         live = stats.parse_live(self.LINES, now=112.0)
         self.assertEqual(live["state"], "gen")
         self.assertEqual((live["n_gen"], live["tps"], live["ctx_size"]), (101, 17.13, 32768))
+        self.assertEqual(live["gen_avg_tps"], 16.96)
 
     def test_prompt_progress(self):
         live = stats.parse_live(self.LINES[:2], now=102.0)
@@ -94,7 +96,61 @@ class LiveTest(unittest.TestCase):
         live = stats.parse_live(self.LINES + self.END, now=113.0)
         self.assertEqual(live["state"], "idle")
         self.assertEqual((live["ctx_used"], live["draft_rate"], live["draft_len"]), (3307, 0.69444, 2.39))
-        self.assertEqual(stats.parse_live(self.LINES, now=200.0)["state"], "idle")  # sin novedades hace rato
+        stale = stats.parse_live(self.LINES, now=200.0)
+        self.assertEqual(stale["state"], "gen")
+        self.assertTrue(stale["stale"])  # falta de logs no es fin de tarea
+
+    def test_long_prefill_keeps_bars_between_slow_batches(self):
+        first = stats.parse_live(self.LINES[:2], now=102)
+        gap = stats.parse_live([], now=125, previous=first)
+        self.assertEqual((gap["state"], gap["prompt_tokens"], gap["ctx_size"]), ("prompt", 1216, 32768))
+        self.assertTrue(gap["stale"])
+        next_batch = [(126, self.LINES[1][1].replace("1216", "2048").replace("0.37", "0.62"))]
+        resumed = stats.parse_live(next_batch, now=127, previous=gap)
+        self.assertFalse(resumed["stale"])
+        self.assertEqual(resumed["ctx_used"], 2048)
+
+    def test_incremental_generation_retains_context_and_prompt_speed(self):
+        prompt = stats.parse_live(self.LINES[:2], now=102)
+        gen = stats.parse_live(self.LINES[2:], now=112, previous=prompt)
+        self.assertEqual((gen["ctx_size"], gen["prompt_tps"], gen["ctx_used"]), (32768, 131.25, 1317))
+        self.assertEqual(gen["prompt_progress"], 1)
+
+    def test_new_task_clears_previous_request_fields(self):
+        old = stats.parse_live(self.LINES + self.END, now=113)
+        new = stats.parse_live([(120, "[7] srv launch_slot_: id 0 | task 200 | processing task, is_child = 0")],
+                               now=121, previous=old)
+        self.assertEqual((new["ctx_size"], new["ctx_used"], new["prompt_progress"]), (32768, 0, 0))
+        self.assertIsNone(new["gen_avg_tps"])
+        self.assertIsNone(new["prompt_tps"])
+
+    def test_unload_discards_context_and_inflight_state(self):
+        old = stats.parse_live(self.LINES, now=112)
+        gone = stats.parse_live([(120, "srv run: instance name=model exited with status 1")], now=121, previous=old)
+        self.assertEqual(gone["state"], "idle")
+        self.assertIsNone(gone["ctx_size"])
+
+    def test_final_timings_without_periodic_generation_log(self):
+        entries = stats.parse_journal_unix(ROUTER_LOG)
+        done = stats.parse_live(entries[:5], now=1794625301)
+        self.assertEqual((done["prompt_tps"], done["gen_avg_tps"], done["n_gen"]), (179.43, 23.24, 184))
+
+    def test_polling_window_can_drop_initial_context_line(self):
+        def journal_text(lines):
+            return "\n".join(f"{t} host llama-server[1]: {line}" for t, line in lines)
+        cache = {"t": 0, "data": None, "last_entry": 0}
+        with patch.object(stats, "_live", cache), patch.object(stats.time, "time", return_value=102) as clock, \
+                patch.object(stats, "journal", return_value=journal_text(self.LINES[:2])) as read:
+            first = stats.live()
+            self.assertEqual(first["ctx_size"], 32768)
+            clock.return_value = 112
+            read.return_value = journal_text(self.LINES[2:])
+            gen = stats.live()
+            self.assertEqual((gen["ctx_size"], gen["prompt_tps"], gen["gen_avg_tps"]), (32768, 131.25, 16.96))
+            clock.return_value = 125
+            unchanged = stats.live()
+            self.assertTrue(unchanged["stale"])
+            self.assertEqual(unchanged["ctx_used"], gen["ctx_used"])
 
     def test_task_numbers_restart_in_a_new_process(self):
         new_proc = [(120.0, "[9] 0.28.3 I slot print_timing: id  0 | task 177 | n_gen =    40, tg =  15.0 t/s, tg_3s =  15.5 t/s")]

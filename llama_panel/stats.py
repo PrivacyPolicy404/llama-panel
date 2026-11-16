@@ -4,6 +4,7 @@ Las funciones parse_* son puras (reciben lineas) para poder testearlas sin journ
 """
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -29,7 +30,7 @@ PROMPT_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| prompt processing, n_tokens 
 RELEASE_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| stop processing: n_tokens = (\d+)")
 NCTX_RE = re.compile(r"^\[(\d+)\].*n_ctx_slot = (\d+)")
 DRAFT_LEN_RE = re.compile(r"mean len = +([\d.]+)")
-LIVE_FRESH = 8  # segundos sin novedades -> ya no esta trabajando
+LIVE_FRESH = 8  # segundos sin novedades -> señalar dato atrasado, conservando la fase y las barras
 LIVE_CACHE = 1.5
 
 
@@ -74,36 +75,63 @@ def parse_text_stats(entries, path_to_id=None, limit=60):
     return [r for r in reqs.values() if r["g_tps"] is not None][-limit:]
 
 
-def parse_live(entries, now=None):
-    """[(ts, msg)] recientes del router -> que esta haciendo ahora (para el dashboard).
+LAUNCH_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| processing task")
 
-    state: "idle" | "prompt" (procesando el prompt) | "gen" (generando). Ademas: progreso, tok/s de los ultimos 3 s,
-    contexto usado/tamano y la aceptacion del MTP de la ultima respuesta que lo uso."""
-    now = now or time.time()
-    out = {"state": "idle", "n_gen": None, "tps": None, "prompt_progress": None, "prompt_tps": None,
-           "prompt_tokens": None, "ctx_used": None, "ctx_size": None, "draft_rate": None, "draft_len": None, "t": None}
-    task, last_ts, released = None, None, set()
+
+def parse_live(entries, now=None, previous=None):
+    """Estado incremental. Una tanda larga sin logs no significa que el pedido terminó."""
+    now = time.time() if now is None else now
+    empty = {"state": "idle", "n_gen": None, "tps": None, "gen_avg_tps": None,
+             "prompt_progress": None, "prompt_tps": None, "prompt_elapsed": None, "gen_elapsed": None,
+             "prompt_tokens": None, "prompt_total": None, "ctx_used": None, "ctx_size": None,
+             "draft_rate": None, "draft_len": None, "task_id": None, "model_pid": None,
+             "t": None, "stale": False, "age": None}
+    out = {**empty, **(previous or {})}
+
+    def task(pid, tid):
+        key = f"{pid}:{tid}"
+        if key != out["task_id"]:
+            size = out["ctx_size"] if out["model_pid"] in (None, pid) else None
+            out.update(empty, ctx_size=size, task_id=key, model_pid=pid)
+
     for ts, msg in entries:
         if (m := NCTX_RE.match(msg)):
-            out["ctx_size"] = int(m[2])
+            out.update(empty, ctx_size=int(m[2]), model_pid=m[1])
+        elif (m := LAUNCH_RE.match(msg)):
+            task(m[1], m[2])
+            out.update(state="prompt", prompt_progress=0.0, prompt_tokens=0, ctx_used=0, t=ts)
         elif (m := PROMPT_RE.match(msg)):
-            task, last_ts = (m[1], m[2]), ts  # el numero de tarea se reinicia en cada proceso: va con el pid
-            out.update(state="prompt", prompt_tokens=int(m[3]), prompt_progress=float(m[4]), prompt_tps=float(m[6]),
-                       n_gen=None, tps=None)
+            task(m[1], m[2])
+            n, progress = int(m[3]), float(m[4])
+            out.update(state="prompt", prompt_tokens=n, prompt_progress=progress, prompt_tps=float(m[6]),
+                       prompt_elapsed=float(m[5]), prompt_total=round(n / progress) if progress else None,
+                       ctx_used=n, t=ts)
         elif (m := NGEN_RE.match(msg)):
-            task, last_ts = (m[1], m[2]), ts
-            out.update(state="gen", n_gen=int(m[3]), tps=float(m[5]))
+            task(m[1], m[2])
+            n, avg = int(m[3]), float(m[4])
+            out.update(state="gen", n_gen=n, tps=float(m[5]), gen_avg_tps=avg,
+                       gen_elapsed=n / avg if avg else None, t=ts)
+            if out["prompt_tokens"] is not None:
+                out["prompt_progress"] = 1.0
+                out["ctx_used"] = out["prompt_tokens"] + n
+        elif (m := TIMING_RE.match(msg)):
+            task(m[1], m[2])
+            if m[3] == "prompt eval":
+                out.update(prompt_tps=float(m[6]), prompt_tokens=int(m[5]), prompt_total=int(m[5]),
+                           prompt_elapsed=float(m[4]) / 1000, prompt_progress=1.0, t=ts)
+            else:
+                out.update(n_gen=int(m[5]), gen_avg_tps=float(m[6]), gen_elapsed=float(m[4]) / 1000, t=ts)
         elif (m := DRAFT_RE.match(msg)):
-            out["draft_rate"] = float(m[3])
-            dl = DRAFT_LEN_RE.search(msg)
-            out["draft_len"] = float(dl[1]) if dl else None
+            if out["task_id"] == f"{m[1]}:{m[2]}":
+                dl = DRAFT_LEN_RE.search(msg)
+                out.update(draft_rate=float(m[3]), draft_len=float(dl[1]) if dl else None)
         elif (m := RELEASE_RE.match(msg)):
-            released.add((m[1], m[2]))
-            out["ctx_used"] = int(m[3])
-            last_ts = ts
-    out["t"] = last_ts
-    if task is None or task in released or last_ts is None or now - last_ts > LIVE_FRESH:
-        out["state"] = "idle"
+            if out["task_id"] == f"{m[1]}:{m[2]}":
+                out.update(state="idle", ctx_used=int(m[3]), t=ts)
+        elif "Stopped llama-router.service" in msg or re.search(r"instance name=.* exited with status", msg):
+            out.update(empty)
+    out["age"] = max(0, now - out["t"]) if out["t"] is not None else None
+    out["stale"] = out["state"] != "idle" and out["age"] is not None and out["age"] > LIVE_FRESH
     return out
 
 
@@ -165,14 +193,20 @@ def stats():
     return _cache["data"]
 
 
-_live = {"t": 0, "data": None}
+_live = {"t": 0, "data": None, "last_entry": 0}
+_live_lock = threading.Lock()
 
 
 def live():
-    if time.time() - _live["t"] > LIVE_CACHE:
-        _live["data"] = parse_live(parse_journal_unix(journal(C.SERVICE, 150, "short-unix")))
-        _live["t"] = time.time()
-    return _live["data"]
+    with _live_lock:
+        if time.time() - _live["t"] > LIVE_CACHE:
+            entries = parse_journal_unix(journal(C.SERVICE, 6000 if _live["data"] is None else 150, "short-unix"))
+            new = [(ts, msg) for ts, msg in entries if ts > _live["last_entry"]]
+            _live["data"] = parse_live(new, previous=_live["data"])
+            if new:
+                _live["last_entry"] = new[-1][0]
+            _live["t"] = time.time()
+        return _live["data"]
 
 
 def logs(which, n=300):

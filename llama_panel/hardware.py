@@ -28,6 +28,28 @@ def _gpu_dir():
 GPU_DIR = _gpu_dir()
 HWMON = next(iter(sorted(glob.glob(f"{GPU_DIR}/hwmon/hwmon*"))), None) if GPU_DIR else None
 
+
+def cpu_temperatures(root=Path("/sys/class/hwmon")):
+    """coretemp/k10temp: temperatura del paquete y máximo de los núcleos disponibles."""
+    package, cores = [], []
+    for dev in Path(root).glob("hwmon*"):
+        try:
+            if (dev / "name").read_text().strip() not in ("coretemp", "k10temp"):
+                continue
+            for label_file in dev.glob("temp*_label"):
+                label = label_file.read_text().strip()
+                value = _read(label_file.with_name(label_file.name.replace("_label", "_input")))
+                if value is None:
+                    continue
+                if label.startswith("Package") or label in ("Tctl", "Tdie"):
+                    package.append(value / 1000)
+                elif label.startswith("Core"):
+                    cores.append(value / 1000)
+        except OSError:
+            continue
+    return {"cpu_temp": max(package or cores) if package or cores else None,
+            "cpu_core_temp_max": max(cores) if cores else None}
+
 # gpu_busy_percent es instantaneo y la GPU trabaja a rafagas (los MoE la alternan con el CPU en cada capa):
 # una lectura cada INTERVAL es casi ruido. Este hilo lo lee cada FAST_INTERVAL y sample() usa el promedio.
 FAST_INTERVAL = 0.1
@@ -77,6 +99,7 @@ def _mclk():
 
 def sample():
     s = {"t": round(time.time(), 1)}
+    s.update(cpu_temperatures())
     if GPU_DIR:
         used, total = _read(f"{GPU_DIR}/mem_info_vram_used"), _read(f"{GPU_DIR}/mem_info_vram_total")
         if used is not None and total:

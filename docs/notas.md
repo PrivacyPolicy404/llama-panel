@@ -197,6 +197,15 @@ Lecciones de la primera prueba (2026-11-15):
   Arreglo de fondo: `video=HDMI-A-1:d` en la línea del kernel (GRUB), si eso que está en HDMI-A-1 no hace falta sin escritorio.
 - El dashboard se recarga solo cuando cambia `kiosk.py`.
 
+Dashboard (2026-11-15): «en vivo» conserva las barras de prompt/contexto entre tandas y al terminar el pedido.
+El estado se acumula entre lecturas del journal: ocho segundos sin logs señalan un dato atrasado, no el fin de la
+tarea (una tanda larga puede tardar más de veinte). Al iniciar otro pedido se limpian sus métricas; al descargar
+el modelo se limpia el contexto. Se muestran media de prompt, media de generación y últimos 3 s por separado,
+gráficos de ambas velocidades, tokens, tiempos, estimación restante del prompt y ms/token. MTP se informa al
+terminar. CPU muestra temperatura del paquete y del núcleo más caliente (`coretemp`); VRAM muestra usado/libre
+con dos decimales. Validado con replay de los logs reales de 62K y layouts 160×44, 140×44 y 120×36; sin activar
+modo IA para probar el dibujo.
+
 Después del reinicio con los grupos y `video=HDMI-A-1:1920x1080@60e` (el dummy de Sunshine sin EDID quedaba en 640×480;
 `vdisplay` le agrega el 1440p por xrandr, así que darle un modo en el kernel no la afecta): consola en 160×45, la GPU se
 ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.

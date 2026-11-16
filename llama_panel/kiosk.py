@@ -223,11 +223,12 @@ def ago(t, now):
 def gpu_box(hw, samples, width):
     w = width - 2
     gw = w - 15  # " LABEL " (6) + grafico + " " + valor (8)
-    bw = w - 30
+    bw = max(4, w - 42)
     vt = hw.get("vram_total") or 8
     # con Flash-Next la VRAM y la memoria fija (GTT) van casi llenas a proposito: rojo solo al borde
-    lines = [f" VRAM {bar(hw.get('vram_used'), vt, bw, 0.92, 0.98)} {hw.get('vram_used') or 0:4.1f}/{vt:.0f}G",
-             f" GTT  {bar(hw.get('gtt_used'), 31, bw, 0.97, 0.995)} {hw.get('gtt_used') or 0:4.1f}/31G"]
+    used = hw.get("vram_used") or 0
+    lines = [f" VRAM {bar(used, vt, bw, 0.92, 0.98)} {used:.2f}/{vt:.0f}G · libre {max(0, vt - used):.2f}G",
+             f" GTT  {bar(hw.get('gtt_used'), 31, bw, 0.97, 0.995)} {hw.get('gtt_used') or 0:5.2f}/31G"]
     gpu = [s.get("gpu") for s in samples]
     rows = graph(gpu, gw, 4, 0, 100, color="level")
     peak = hw.get("gpu_max")
@@ -273,6 +274,10 @@ def cpu_box(cpu, hw, width):
             if j < len(cores):
                 cells.append(f" {j:>2} {bar(cores[j], 100, cw)} {cores[j]:3.0f}%")
         lines.append(" ".join(cells))
+    temp = hw.get("cpu_temp")
+    peak = hw.get("cpu_core_temp_max")
+    lines.append(f" TEMP {temp:.0f} °C · núcleo más caliente {peak:.0f} °C" if temp is not None and peak is not None
+                 else f" TEMP {temp:.0f} °C" if temp is not None else " TEMP sensor no disponible")
     lines.append(f" carga {hw.get('load', 0):.2f} · {len(cores)} hilos")
     return box("cpu · i7-10700", lines, width)
 
@@ -339,49 +344,61 @@ LIVE_ICON = {"gen": ("●", "generando"), "prompt": ("◐", "procesando el promp
 
 
 def live_status(live):
-    icon, label = LIVE_ICON.get((live or {}).get("state"), LIVE_ICON["idle"])
-    if live and live.get("state") == "gen":
-        return f"{icon} {label} · {live['tps']:.1f} tok/s · {live['n_gen']} tokens"
-    if live and live.get("state") == "prompt":
-        return f"{icon} {label} {live['prompt_progress'] * 100:.0f} % · {live['prompt_tps']:.0f} tok/s"
+    live = live or {}
+    icon, label = LIVE_ICON.get(live.get("state"), LIVE_ICON["idle"])
     return f"{icon} {label}"
 
 
-def live_box(live, stats, tps_hist, width):
-    """Lo que esta haciendo el modelo de texto ahora: estado, tok/s en vivo, contexto, MTP y la sesion."""
+def duration(seconds):
+    if seconds is None:
+        return "--"
+    seconds = max(0, round(seconds))
+    return f"{seconds // 60}m{seconds % 60:02d}s" if seconds >= 60 else f"{seconds}s"
+
+
+def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
+    """Filas fijas: no desplazar las barras al cambiar de fase o al esperar un log."""
     w = width - 2
     live = live or {}
+    fmt = lambda value: "--" if value is None else f"{value:.1f}"
     lines = [" " + live_status(live)]
-    rows = graph(list(tps_hist or []), w - 10, 3, 0, color=GREEN)
-    top = max([v for v in (tps_hist or []) if v] or [0])
-    lines += [f" {(f'{top:.0f}' if i == 0 and top else ''):>4} {r}" for i, r in enumerate(rows)]
-    lines.append(f" {'':>4} tok/s en vivo")
-    if live.get("state") == "prompt" and live.get("prompt_progress") is not None:
-        lines.append(f" prompt   {bar(live['prompt_progress'] * 100, 100, w - 28)} {live['prompt_progress'] * 100:5.0f} %")
-    if live.get("ctx_size"):
-        used = live.get("ctx_used") or 0
-        if live.get("state") in ("prompt", "gen") and live.get("prompt_tokens"):
-            used = live["prompt_tokens"] + (live.get("n_gen") or 0 if live["state"] == "gen" else 0)
-        lines.append(f" contexto {bar(used, live['ctx_size'], w - 28)} {used:>6}/{live['ctx_size']}")
+    lines.append(f" prompt   media {fmt(live.get('prompt_tps'))} tok/s")
+    lines += ["      " + row for row in graph(list(prompt_hist or []), w - 8, graph_height, 0, color=CYAN)]
+    lines.append(f" salida   media {fmt(live.get('gen_avg_tps'))} · 3 s {fmt(live.get('tps'))} tok/s")
+    lines += ["      " + row for row in graph(list(tps_hist or []), w - 8, graph_height, 0, color=GREEN)]
+    progress = live.get("prompt_progress")
+    pct = f"{progress * 100:5.0f} %" if progress is not None else "   -- %"
+    lines.append(f" prompt   {bar(progress, 1, max(1, w - 28))} {pct}")
+    size, used = live.get("ctx_size"), live.get("ctx_used")
+    ctx = f"{used if used is not None else 0:>6}/{size}" if size else "    --/--"
+    lines.append(f" contexto {bar(used, size, max(1, w - 28))} {ctx}")
+    processed = live.get("prompt_tokens")
+    generated = live.get("n_gen")
+    lines.append(f" tokens   prompt {processed if processed is not None else '--'} · salida {generated if generated is not None else '--'}")
+    lines.append(f" tiempo   prompt {duration(live.get('prompt_elapsed'))} · salida {duration(live.get('gen_elapsed'))}")
+    eta = None
+    if live.get("state") == "prompt" and progress and progress < 1 and live.get("prompt_elapsed") is not None:
+        eta = live["prompt_elapsed"] * (1 / progress - 1)
+    avg = live.get("gen_avg_tps")
+    latency = f"{1000 / avg:.1f} ms/tok" if avg else "-- ms/tok"
+    lines.append(f" estimado prompt restante ~{duration(eta)}" if eta is not None else f" salida   {latency}")
+    rate = live.get("draft_rate")
+    mtp = f"{rate * 100:.1f} % · {fmt(live.get('draft_len'))} tok/paso" if rate is not None else "-- (se informa al finalizar)"
+    lines.append(f" MTP últ. {mtp}")
     resp = (stats or {}).get("text") or []
-    if live.get("draft_rate") is not None:
-        extra = f" · {live['draft_len']:.1f} tokens por paso" if live.get("draft_len") else ""
-        lines.append(f" MTP      acierta {live['draft_rate'] * 100:.0f} %{extra}")
-        rates = [r["draft"]["rate"] * 100 for r in resp if r.get("draft")][-(w - 10):]
-        if len(rates) > 1:
-            lines.append(f" {'':>4} {graph(rates, w - 10, 1, 0, 100, color='level')[0]}")
-            lines.append(f" {'':>4} aciertos del MTP por respuesta (0-100 %)")
-    if resp:
-        toks = sum(r.get("g_tok") or 0 for r in resp)
-        avg = sum(r["g_tps"] for r in resp) / len(resp)
-        lines.append(f" últimas  {len(resp)} respuestas · {toks} tokens · {avg:.1f} tok/s promedio")
+    toks = sum(r.get("g_tok") or 0 for r in resp)
+    seconds = sum((r.get("g_tok") or 0) / r["g_tps"] for r in resp if r.get("g_tps"))
+    lines.append(f" historial {len(resp)} resp. · {toks} tok · {fmt(toks / seconds if seconds else None)} tok/s")
+    age = live.get("age")
+    freshness = f"último dato hace {duration(age)}" if age is not None else "sin datos del pedido"
+    lines.append(" " + (YELLOW if live.get("stale") else DIM) + freshness + RESET)
     return box("en vivo", lines, width)
 
 
-def procs_box(cpu, width):
+def procs_box(cpu, width, max_rows=6):
     w = width - 2
     lines = [f" {'proceso':<14}{'pid':>8}{'cpu':>8}{'hilos':>7}{'ram':>9}"]
-    for p in (cpu.get("procs") or [])[:6]:
+    for p in (cpu.get("procs") or [])[:max_rows]:
         lines.append(f" {p['name']:<14}{p['pid']:>8}{p['cpu']:>7.0f}%{p['threads']:>7}{p['rss'] / 2**30:>8.1f}G")
     if len(lines) == 1:
         lines.append(" (sin modelos corriendo)")
@@ -406,6 +423,8 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     if cores:  # una columna por hilo, separadas por espacios
         rows = graph(cores, len(cores), max(1, gh - 1), 0, 100)
         cpu_l += [(" hilos " if i == 0 else "       ") + " ".join(r) for i, r in enumerate(rows)]
+    if hw.get("cpu_temp") is not None:
+        cpu_l.append(f" CPU {hw['cpu_temp']:.0f} °C")
     cpu_l.append(f" {len(cores)} hilos · carga {hw.get('load', 0):.1f} · RAM {hw.get('ram_used', 0):.1f}/{hw.get('ram_total', 0):.0f}G · GTT {hw.get('gtt_used', 0):.1f}/31G")
 
     svc = state["svc"]
@@ -434,7 +453,7 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     return [box("gpu", gpu, width), box("cpu · memoria", cpu_l, width), box("modelos", mod, width), box("procesos", procs, width)]
 
 
-def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, tps_hist=None):
+def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, tps_hist=None, prompt_hist=None):
     """Devuelve las lineas del dashboard como [(texto, estilo)]; estilo en {"", "title", "dim", "good", "warn", "bad"}.
     Con 120x36 o mas usa dos columnas; si no, una columna compacta que se achica hasta entrar en la altura."""
     now = now or time.time()
@@ -464,8 +483,10 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
     left_w = width // 2
     right_w = width - left_w - 1
     top = side_by_side(gpu_box(hw, samples, left_w), cpu_box(cpu, hw, right_w))
+    live_panel = live_box(live, stats, tps_hist, right_w, prompt_hist, graph_height=2 if height >= 40 else 1)
+    proc_rows = max(1, min(6, height - len(top) - len(live_panel) - 5))
     bottom = side_by_side(mem_box(hw, left_w) + models_box(state, stats, left_w, now, cpu),
-                          live_box(live, stats, tps_hist, right_w) + procs_box(cpu, right_w))
+                          live_panel + procs_box(cpu, right_w, proc_rows))
     for l in top + bottom:
         out.append((l, ""))
     out.append((" Escritorio apagado para dejarle la GPU a los modelos · para volver: «Salir del modo IA» en el panel", "dim"))
@@ -517,6 +538,8 @@ def run_curses():
         sampler.sample()
         cached, last_fetch, started = (None, None, None), 0, time.time()
         live, tps_hist = None, collections.deque(maxlen=240)
+        prompt_hist = collections.deque(maxlen=240)
+        last_live_sample = None
         while True:
             if source_changed(started):  # codigo nuevo: reiniciar el proceso con la version actual
                 curses.endwin()
@@ -524,12 +547,21 @@ def run_curses():
             if time.time() - last_fetch > 1.8:
                 state, stats, hist = snapshot()
                 cached, last_fetch = (state, stats if stats is not None else cached[1], hist), time.time()
-                live = fetch_live()
-                tps_hist.append(live["tps"] if live and live.get("state") == "gen" else 0)
+                update = fetch_live()
+                if update is not None:
+                    live = update
+                elif live:
+                    live = {**live, "stale": True, "age": time.time() - live["t"] if live.get("t") else None}
+                if live and live.get("t") != last_live_sample:
+                    last_live_sample = live.get("t")
+                    if live.get("state") == "gen":
+                        tps_hist.append(live.get("tps"))
+                    elif live.get("state") == "prompt":
+                        prompt_hist.append(live.get("prompt_tps"))
             cpu = sampler.sample()
             h, w = scr.getmaxyx()
             scr.erase()
-            for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist)):
+            for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist, prompt_hist=prompt_hist)):
                 base = styles.get(style, curses.A_NORMAL)
                 attr, x, seg = base, 0, []
                 try:
@@ -592,7 +624,8 @@ if __name__ == "__main__":
         live = fetch_live()
         tty = sys.stdout.isatty()
         for text, _ in render(*snapshot(), sampler.sample(), width=w, height=h, live=live,
-                              tps_hist=[live["tps"]] if live and live.get("state") == "gen" else []):
+                              tps_hist=[live["tps"]] if live and live.get("state") == "gen" else [],
+                              prompt_hist=[live["prompt_tps"]] if live and live.get("prompt_tps") is not None else []):
             print("".join(ANSI.get(c, c) for c in text) + ANSI[RESET] if tty else strip_marks(text))
     else:
         import signal
