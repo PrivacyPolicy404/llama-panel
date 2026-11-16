@@ -106,6 +106,12 @@ de 16 valores (117 registros con 3 columnas); una columna sigue con el esquema o
 10240×2560 con 3 columnas: 283 -> 173 µs. `test-backend-ops` MUL_MAT 2592/2592 y MUL_MAT_ID 1160/1160.
 Flash-Next con 2 borradores MTP: 19.62 -> 19.76 tok/s a 12K y 18.00 -> 18.43 a 30K. Ver bitácora 5.29.
 
+## Además de los parches
+
+La rama del fork lleva también commits que no son parches del motor: las notas del README, `docs/rx580.md`
+(montaje, opciones, qué cambia cada parche y cómo reproducir los números) y `scripts/mtp-d2t/` (versiones en inglés y
+sin rutas locales de `tools/mtp_vocab_order.py` y `tools/gguf_mtp_d2t.py`, para que el fork no dependa de este repo).
+
 ## Si se propone upstream
 
 Las reglas de llama.cpp (`CONTRIBUTING.md`, `AGENTS.md`) piden abrir primero un issue, declarar el uso de IA,
