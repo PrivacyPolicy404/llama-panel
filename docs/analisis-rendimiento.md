@@ -844,6 +844,30 @@ hilo mientras el CPU está con los expertos. Realista ≤1.5 % a cambio de reesc
 `GGML_VK_MAX_NODES_PER_SUBMIT` ya estaba ajustado (5.8, 5.21). Dato que queda: con MTP la GPU está ocupada 28 de los
 52 ms por token; el resto es CPU (expertos, muestreo, borrador).
 
+### 5.26 Verificación dispersa (arXiv 2512.21911): saltear expertos en las posiciones de borrador (2026-11-16)
+
+**El paper** (Wang et al., dic. 2025) abarata la verificación del decodificado especulativo con tres recortes
+aproximados y sin entrenamiento: atención dispersa (ya la tenemos, parche 6), canales de la FFN con activación chica
+(no ahorra lectura de RAM con pesos por filas) y **saltear los expertos de menor peso** (hasta 3 de 8 en DeepSeek-R1).
+No reporta velocidades, solo calidad sobre 100 muestras por tarea, y la aceptación baja apenas.
+
+**Prototipo** (`TPGE_MOE_SKIP=n`, solo worktree, en `ggml_compute_forward_mul_mat_id`): en lotes de 2–4 posiciones,
+las posiciones ≥ 1 (los borradores) no calculan sus n expertos de menor peso. Temp 0, MTP 2, 192 tokens, un prompt
+por contexto, brazos alternados. Crudos en `moe-skip`.
+
+| Salteados | 12K tok/s | aceptados/borradores | ms por paso | 30K tok/s | aceptados/borradores | ms por paso |
+|---|---|---|---|---|---|---|
+| 0 | 19.44–19.60 | 116/150 | 129.6 | 17.86–17.97 | 111/158 | 132.5 |
+| 1 | 19.33–19.43 | 113/154 | 125.5 | 18.83–18.84 | 113/154 | 129.0 |
+| 2 | 17.27–17.34 | 102/177 | 123.0 | 17.92–17.94 | 108/164 | 127.5 |
+| 3 | 17.81–17.96 | 103/174 | 124.6 | 18.73–18.85 | 110/160 | 124.6 |
+
+**Conclusión:** el paso se abarata ~3 % por experto salteado, pero el texto cambia y la aceptación se mueve más que
+eso (12K con 2: −12 % de aceptados). Con 1 salteado: −0.5 % a 12K y +5 % a 30K, que con un prompt por contexto es
+suerte de trayectoria. Además las posiciones aceptadas quedan en la caché KV calculadas con 7 de 8 expertos. Coincide
+con 5.24 (pesos planos: no hay expertos de relleno). **No se adopta**; para afirmar algo haría falta medir muchos
+prompts y calidad, por un techo de ~2–3 %.
+
 ---
 
 ## 6. Los ocho parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
