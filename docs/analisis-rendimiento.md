@@ -41,6 +41,7 @@ Herramientas (todas en `tools/bench/`, con instrucciones en su encabezado):
 | `gpu_mem_watch.sh` | VRAM y GTT del `llama-server` según el kernel (fdinfo): muestra lo que pidió como VRAM y terminó en GTT |
 | `ctx_stability.py` | Ventana de 64K por el router: entrada de 62K, salida de 2048, tres cargas y muestras DRM con fecha/fase; restaura escritorio y límites |
 | `ctx_quality.py` | Recuperación en ~58K tokens del proyecto, conversación con caché, cercanía al límite y rechazo del exceso; guarda rúbrica y respuestas |
+| `parallel_test.py` | Uno/dos slots: pedido individual, dos trabajos en serie/concurrentes y continuación de conversaciones con caché |
 
 Reglas que salieron de errores reales:
 
@@ -486,6 +487,57 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 - Reproducir: `python3 tools/bench/ctx_quality.py --ai-mode --output ~/llama-panel-results/64k-calidad-2`.
   El script actual incluye la comprobación de recuperación en el mismo proceso y excluye su propio código del
   corpus para no filtrar la rúbrica. El corpus queda guardado: futuras versiones del proyecto cambian la entrada.
+
+---
+
+### 5.18 Dos slots para subagentes: velocidad y contexto (2026-11-15)
+
+- Objetivo: medir `parallel = 2` para Cline, distinguiendo costo de reservar otro slot, velocidad por respuesta
+  y tiempo total de dos trabajos. Configuración actual de modo IA copiada del preset, MTP 2, tandas 2048/512,
+  KV Q8_0, 44 capas fijas, reloj de memoria 2000 MHz y envíos cada 16 nodos. Sin cambiar binarios ni settings.
+- Router aislado en :18081, mismos presets salvo `parallel`, límite de 58 GiB sin swap. 64K totales:
+  **un slot de 65536, o dos de 32768**. Dos fragmentos distintos de código (1587 y 1421 tokens de entrada),
+  salida forzada de 256 tokens por trabajo, temperatura 0, semilla 1234. Sin reuso en las rondas iniciales.
+
+| Medida | `parallel = 1` | `parallel = 2` |
+|---|---:|---:|
+| Un pedido activo, gen media | **18,30 tok/s** | **18,57 tok/s** |
+| Dos trabajos nuevos, tiempo total | **52,32 s** | **55,09 s** |
+| Generación A/B mientras ambos están activos | 18,4–18,6 / 20,1–20,3 tok/s (serie) | **10,3 / 11,3 tok/s** |
+| Dos continuaciones con caché, tiempo total | **29,90 s** | **25,59 s** |
+| Contexto por slot | **65536** | **32768** |
+| Pico de VRAM total, prompts cortos | **7,393 GiB** | **7,613 GiB** |
+| Pico de GTT del proceso | **29,447 GiB** | **29,447 GiB** |
+
+- Reservar dos slots sin competencia **no golpeó la velocidad individual**. Con ambos activos, la velocidad por
+  respuesta cae casi a la mitad. Dos trabajos nuevos tardaron **5,28 % más** en paralelo: prefill incluido, no ganó
+  el conjunto. Repeticiones válidas: p1 52,324 / 52,406 / 52,235 s; p2 55,071 / 55,099 s.
+- Piloto con continuación: **14,42 % menos tiempo** en paralelo (dos respuestas de 256 tokens, sólo 16 tokens
+  nuevos de prompt cada una). Pero **un solo slot también reutilizó ambas conversaciones**: cache_n 1842/1676,
+  igual que con dos slots. El default `cache-ram = 8192 MiB` / `cache-idle-slots` permite conservar estados en RAM;
+  no hay que asumir que un único slot pierde siempre la conversación anterior al alternar tareas.
+- La secuencia completa de dos turnos (dos trabajos nuevos + dos continuaciones) quedó casi empatada:
+  **82,14 s en serie frente a 80,69 s en paralelo**, ahorro de **1,76 %** en ese piloto. La mejora con caché tiene
+  una sola observación por variante y las continuaciones incluyen la respuesta anterior de cada variante; esos
+  textos difieren entre ejecución individual y batched aun a temp 0. No es un A/B con historiales idénticos ni una
+  medición de tareas completas de Cline. No atribuir todo el 14 % a reservar slots ni extrapolarlo a herramientas
+  que agreguen mucho texto nuevo. Los slots se fijaron explícitamente con `id_slot`; Cline deberá asignar/reutilizar
+  sus conversaciones correctamente para reproducir ese caso.
+- **129 muestras con dos slots ocupados simultáneamente**, sin errores de GPU/OOM ni disparos del límite preventivo
+  de GTT (30,5 GiB). La medición no llena los dos slots de 32K: el pico con dos contextos largos sigue pendiente.
+  No se probó 128K totales ni KV unificada. No son dos ventanas independientes de 64K.
+- Dos incidentes del lanzador no cuentan como mediciones: se corrigió un nombre local que tapaba el módulo de
+  concurrencia; después, el monitor consultó `/slots` durante una carga y disparó una autocarga que compitió con
+  `/models/load`. El monitor ahora consulta sólo tras la carga. Se conservaron las rondas válidas y se completó la
+  repetición de dos slots en el piloto de conversación. No hubo device lost ni fallo del driver.
+- **Decisión: conservar `parallel = 1` y los 64K**. Hay una mejora acotada posible en continuaciones pequeñas y
+  cacheadas, no una aceleración grande de dos tareas nuevas. Antes de habilitar subagentes concurrentes en Cline,
+  comparar tareas completas del cliente y aceptar/configurar el límite de 32K por slot. La sesión de Cline
+  inspeccionada tenía `enable_spawn = false`; no se cambió esa configuración.
+- Artefactos: `/home/gen/llama-panel-results/2026-11-15-parallel2-r1/` y
+  `/home/gen/llama-panel-results/2026-11-15-parallel2-conversation/` (resumen en `summary.json`). El intento preliminar
+  descartado está en `2026-11-15-parallel2/`. Settings intactos, modo IA conservado y modelo original recargado con
+  `parallel = 1`; como se avisó, se perdió la caché anterior de Cline. Base del panel `ce3432f`, fork `9d77a39`.
 
 ---
 

@@ -170,6 +170,11 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
   `--ai-mode` cierra KDE y lo restaura al terminar; salida en una carpeta nueva fuera de `/tmp`.
 - `ctx_quality.py`: datos verificables del proyecto y marcas nuevas en ~58K tokens, conversación, cache del prompt
   y límite de contexto. Conserva el estado inicial del modo IA. No mide calidad general ni pérdida frente a F16.
+- `parallel_test.py`: compara uno/dos slots y tiempo total de dos trabajos; `--followup` agrega continuaciones.
+  Resultado (5.18): reservar dos slots no baja la velocidad de un único pedido, pero dos trabajos nuevos tardan
+  ~5 % más en paralelo. El piloto cacheado ahorró ~14 % en continuaciones pequeñas, sólo ~2 % al incluir el primer
+  turno. 64K totales se dividen en dos slots de 32K; queda `parallel = 1`. Un slot también puede recuperar varias
+  conversaciones de la caché en RAM. No se habilitaron subagentes de Cline.
 - `sched_profile.py`: tramos (splits) por token y qué operaciones que no son expertos caen en el CPU.
 - `vk_timings.py`: tiempo de GPU por operación y cuánto queda para CPU + esperas (necesita una libggml-vulkan sin el
   assert del medidor, ver Descubrimientos).

@@ -112,6 +112,17 @@ registra la respuesta del servidor a una entrada que excede la ventana. Requiere
 conserva el estado inicial del modo IA y los ajustes. Es una evaluación puntual, sin control F16 ni comparación
 entre modelos.
 
+Para comparar uno y dos slots, con dos trabajos en serie/concurrentes y, opcionalmente, continuaciones con caché:
+
+```bash
+python3 tools/bench/parallel_test.py --output ~/llama-panel-results/parallel-1
+python3 tools/bench/parallel_test.py --followup --output ~/llama-panel-results/parallel-conversacion-1
+```
+
+Requiere modo IA activo, Flash-Next cargado e inactivo. Descarga el modelo del panel (pierde la caché), usa un
+router aislado y restaura la carga inicial. No cambia ajustes. Con 64K totales, dos slots tienen 32K cada uno.
+Mide 256 tokens forzados por trabajo; no evalúa la calidad de un subagente ni los tiempos de sus herramientas.
+
 Los modelos de texto se buscan en `LLAMA_MODELS_DIR` y en las carpetas de `LLAMA_EXTRA_MODELS_DIRS` (separadas por `:`, por defecto `~/models-nvme`). Los modelos partidos en shards (`-00001-of-0000N.gguf`) cuentan como uno solo.
 
 Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
