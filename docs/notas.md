@@ -77,6 +77,8 @@ ubatch-size = 2048           # entra gracias a la VRAM que libera hc en Q8_0 (co
 batch-size = 2048
 ```
 
+Origen: https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF (modelo en 2 shards y borradores MTP).
+
 El GGUF `-hcq8` es el de SC117 con las hyper-connections (`hc_(attn|ffn)_(up|down)`, 1.2 GiB en BF16) pasadas a Q8_0
 con `llama-quantize COPY --tensor-type` (parche 3). Calidad medida con `llama-perplexity --kl-divergence` (12 × 512 tokens):
 perplejidad 0.9988× ± 0.003 (igual), KLD media 0.0077, 97.5 % mismo token más probable. VRAM −0.55 GB, velocidad +2–3 %.
