@@ -815,6 +815,35 @@ servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `
   instrumentos en `~/llama-panel-results/2026-11-16-tpge-mtp/worktree-instrumentos-y-defer.diff`.
 - **Queda abierto:** el shader q3_K / q5_K con 4 columnas si alguna vez conviene MTP 3.
 
+### 5.25 Techo de pregrabar los comandos de Vulkan: medido, no alcanza (2026-11-16)
+
+**Pregunta:** antes de refactorizar el backend para grabar los comandos del tramo siguiente mientras el CPU calcula
+expertos (pendiente de 5.21), ¿cuánto tiempo pasa la GPU parada por culpa de la grabación?
+
+**Método:** medidor temporal `TPGE_VK_GAPS=archivo` (solo en el worktree): una marca de tiempo de la GPU al empezar y
+al terminar cada command buffer de cómputo, y reloj del CPU al entrar a la evaluación, al primer envío y al terminar
+la espera. Por evaluación: GPU ocupada, huecos entre un buffer y el siguiente, y demora hasta el primer envío.
+12K, temp 0, 576 tokens por brazo, motor con parches 6–8 y la configuración vigente (primer envío a 2 nodos, 16 después).
+
+| ms por token | sin MTP | con MTP 2 |
+|---|---|---|
+| Token completo | 69.3 | 52.1 |
+| Evaluaciones en la GPU (entrada → fin de la espera) | 47.0 | 30.9 |
+| GPU ocupada | 41.5 | 28.4 |
+| Huecos entre buffers | 2.73 | 1.19 |
+| Entrada → primer envío | 0.56 | 0.27 |
+| Fin de la GPU → el CPU se entera | 2.2 | 1.0 |
+
+48.9 evaluaciones y 256 buffers por token sin MTP (5.2 por evaluación); 20 y 108 con MTP.
+
+**Conclusión:** lo máximo que puede recuperar la pregrabación son los huecos más la demora inicial: **1.46 ms por token
+con MTP (2.8 %)** y 3.3 sin MTP (4.8 %). Y es un techo generoso: cada hueco dura ~13 µs en promedio, del orden de lo
+que cuesta pasar de un buffer a otro aunque el siguiente ya esté enviado, y la grabación tendría que correr en otro
+hilo mientras el CPU está con los expertos. Realista ≤1.5 % a cambio de reescribir scheduler y backend con hilos:
+**descartado**. El aviso de fin (~45 µs por evaluación) es la latencia de la interrupción; el backend ya espera girando.
+`GGML_VK_MAX_NODES_PER_SUBMIT` ya estaba ajustado (5.8, 5.21). Dato que queda: con MTP la GPU está ocupada 28 de los
+52 ms por token; el resto es CPU (expertos, muestreo, borrador).
+
 ---
 
 ## 6. Los ocho parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
@@ -934,7 +963,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 3. ~~La GPU, operación por operación~~: medido en 5.9. Las mejoras de shaders sueltos no llegan al total; la
    memoria fija sí (+2–3 %). Queda entender por qué el tramo de GPU no baja cuando baja una operación.
 4. Grabar comandos de Vulkan (5.7 ms/token, en el CPU) y lo de fuera del scheduler (3.9 ms). Primer paso hecho
-   (5.21, parche 7); queda pregrabar el tramo siguiente durante las esperas (techo ~3 ms/token).
+   (5.21, parche 7). ~~Pregrabar el tramo siguiente~~: techo medido en 5.25, 1.46 ms/token con MTP (2.8 %). Descartado.
 5. Solapar CPU y GPU (hoy se turnan): lo único independiente es el experto compartido, techo ~1.5–2 ms/token (5.21).
 6. ~~Atención con contexto largo~~: hecho (5.20, parche 6). Con MTP a 30K: 16.4 → 17.4.
 7. ~~Revisar MTP 3 contra MTP 2 en contexto largo~~: medido en 5.22, sigue 2 (la brecha bajó a −1.3 / −2.5 %).
