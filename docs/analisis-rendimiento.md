@@ -797,8 +797,14 @@ servidor). Crudos en `~/llama-panel-results/2026-11-16-tpge-mtp/` (`conf.log`, `
   ~66 de un token solo. Si la tercera costara 26, 3 borradores ganarían. Cada borrador son 2.8 ms; la puesta al día
   (`process()`: vuelve a pasar el lote verificado por el bloque MTP para llenar su caché) 4.3–5.8 ms por paso.
   A temp 0, 1 borrador rinde igual que 2.
-- **Queda abierto:** (1) por qué el costo por posición crece con el lote (perfil por operación con lotes de 2, 3 y 4);
-  (2) fusionar la puesta al día con el primer borrador (techo ~2 %).
+- **Perfil de GPU por operación según el lote** (`perf-ops`, medidor de Vulkan activo, ms por paso): total
+  63.5 / 81.9 / 107.1 con lotes de 2 / 3 / 4. El crecimiento está repartido entre todas las multiplicaciones de
+  matrices (q8_0 10.7 → 14.0 → 18.8; iq4_xs 3.8 → 7.1 → 9.5; atención 4.2 → 6.1 → 7.6): es trabajo real por columna,
+  no una anomalía. La única rareza es el salto de 3 a 4 columnas en **q3_K** (10240×2560: 177 → 225 → **382 µs**;
+  8.5 → 10.7 → 17.9 ms por paso) y q5_K (3.6 → 4.2 → 6.5), que explica por qué la cuarta posición cuesta 35 ms.
+  Arreglarlo solo acercaría 3 borradores a 2, sin superarlos.
+- **Queda abierto:** fusionar la puesta al día con el primer borrador (techo ~2 %); el shader q3_K / q5_K con 4
+  columnas si alguna vez conviene MTP 3; un borrador de mejor calidad con la VRAM libre (más aceptación).
 
 ---
 
