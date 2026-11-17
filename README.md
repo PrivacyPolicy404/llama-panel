@@ -91,7 +91,7 @@ docs/                 hardware notes and performance log (Spanish, with English 
 | Other AMD with `amdgpu` (RDNA, etc.) | Should work, untested. Same sensors (sysfs) |
 | NVIDIA (CUDA or Vulkan) | Should work, untested. Sensors come from `nvidia-smi` (no GTT memory). For images, add `--usecuda` to the model options |
 | Intel or others | Should work, untested, but **without GPU data** (VRAM, usage, temperature) |
-| Upstream llama.cpp | Should work, untested on this machine: the panel only uses upstream features (router, `/slots`, MTP) |
+| Upstream llama.cpp | **Tested** (2026-11-17): dense and MoE models work, ~3 % slower than the fork. Only the Flash-Next settings need the fork |
 | AI mode with SDDM (KDE) | **Tested**. With GDM, LightDM or another display manager it should work, untested |
 
 `scripts/install-gpu-mclk.sh` (VRAM clock and overclock) is for AMD Polaris (RX 470–590) only.

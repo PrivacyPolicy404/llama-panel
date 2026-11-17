@@ -18,8 +18,9 @@ needs the fork [PrivacyPolicy404/llama.cpp](https://github.com/PrivacyPolicy404/
 [guide](https://github.com/PrivacyPolicy404/llama.cpp/blob/ot-host-buffers/docs/rx580.md) explains the build and
 every option.
 
-**Tested on** AMD RX 580 8 GB, Vulkan (RADV), Kubuntu with SDDM. Other AMD GPUs, NVIDIA, Intel, upstream
-llama.cpp and other display managers should work but are untested: reports are welcome.
+**Tested on** AMD RX 580 8 GB, Vulkan (RADV), Kubuntu with SDDM. Upstream llama.cpp is tested too
+(about 3 % slower than the fork; only the Flash-Next settings need the fork). Other AMD GPUs, NVIDIA, Intel and
+other display managers should work but are untested: reports are welcome.
 
 **Install**
 ```bash

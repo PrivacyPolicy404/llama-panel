@@ -1125,6 +1125,25 @@ el panel restaura 2526 tokens solo; la pregunta siguiente (distinta) procesa **1
 - `llama-server` de esta versión ya expone la API de Anthropic (`/v1/messages`): Claude Code podría apuntarle sin
   proxy. Sin probar.
 
+### 5.33 El panel con llama.cpp oficial, sin los parches (2026-11-17)
+
+Para la tabla de compatibilidad del README. Se compiló aparte (`~/llama.cpp-upstream`) el commit oficial sobre el que
+está montado el fork (`9183a55`), con las mismas opciones (Vulkan, Release, `GGML_NATIVE`), y se apuntó el panel ahí
+desde `paths.env`: al reiniciar, el panel reescribió solo el unit del router. Mismo protocolo que `smoke_models.py`
+(dos respuestas cortas de 300 tokens y un prompt de ~3200), modo IA activo, los dos binarios en la misma tanda.
+
+| Modelo | Oficial | Fork | Diferencia |
+|---|---|---|---|
+| Qwen3-8B Q4_K_M (denso) | 30.8 gen · 188.9 prompt | 31.8 · 188.9 | +3 % gen |
+| Qwen3.6-35B-A3B Q4_K (MoE, expertos en RAM) | 28.3 · 228.6 | 29.2 · 231.3 | +3 % gen |
+| Flash-Next `-hcq8` | no carga | 18.9 · 134.4 | |
+
+- Todo lo que no usa los parches anda igual con el oficial; el +3 % del fork coincide con el del parche 4
+  (`multi_add`) medido en Qwen3.6.
+- Flash-Next con la configuración del panel: `error while handling argument "--override-tensor": unknown buffer type`
+  (falta el parche 1). Esperado; quedó anotado en `docs/flash-next-rx580.md`.
+- Resultados: `~/llama-panel-results/2026-11-17-compat-{oficial,fork}.json`.
+
 ---
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)

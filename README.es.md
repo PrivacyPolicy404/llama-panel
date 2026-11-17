@@ -90,7 +90,7 @@ docs/notas.md         hardware, mediciones, por qué cada configuración, trampa
 | Otras AMD con `amdgpu` (RDNA, etc.) | Debería funcionar, sin probar. Los sensores son los mismos (sysfs) |
 | NVIDIA (CUDA o Vulkan) | Debería funcionar, sin probar. Los sensores salen de `nvidia-smi` (sin memoria GTT). Para imágenes, agregar `--usecuda` en las opciones del modelo |
 | Intel u otras | Debería funcionar, sin probar, pero **sin datos de la GPU** (VRAM, uso, temperatura) |
-| llama.cpp oficial | Debería funcionar, sin probar en esta máquina: el panel usa solo funciones oficiales (router, `/slots`, MTP) |
+| llama.cpp oficial | **Probado** (2026-11-17): modelos densos y MoE andan, ~3 % más lentos que con el fork. Solo la configuración de Flash-Next necesita el fork |
 | Modo IA con SDDM (KDE) | **Probado**. Con GDM, LightDM u otro gestor de sesión debería funcionar, sin probar |
 
 `scripts/install-gpu-mclk.sh` (reloj y overclock de la VRAM) es solo para AMD Polaris (RX 470–590).

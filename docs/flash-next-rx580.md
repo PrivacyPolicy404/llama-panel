@@ -89,6 +89,8 @@ Save and apply, then load the model: the first load reads 66 GB and takes a few 
 
 ## If something is off
 
+- **`error while handling argument "--override-tensor": unknown buffer type`** in the router log: the panel is
+  using upstream llama.cpp. Point it to the fork's `llama-server` in the Setup tab.
 - **~2 tok/s and the GPU idle:** Vulkan fell back to `llvmpipe` (no access to `/dev/dri`, typical without a desktop
   session): add your user to the `render` and `video` groups and reboot.
 - **`device lost` while loading:** more pinned memory than the GTT cap. With less than 64 GB of RAM, pin fewer
