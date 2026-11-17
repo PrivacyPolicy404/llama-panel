@@ -62,6 +62,24 @@ export async function initBuddy() {
     hotkeyDown = false;
     stopRec();
   });
+  addEventListener('pointerdown', e => {
+    if (capturingHotkey) {
+      if (e.button >= 3) captureMouseButton(e);
+      return;
+    }
+    if (!mouseHotkeyMatches(e) || isInteractive(e.target)) return;
+    e.preventDefault();
+    hotkeyDown = true;
+    startRec(true);
+  }, true);
+  addEventListener('pointerup', e => {
+    const hotkey = hotkeyValue();
+    if (!hotkeyDown || hotkey.mouseButton === undefined || e.button !== hotkey.mouseButton) return;
+    e.preventDefault();
+    hotkeyDown = false;
+    stopRec();
+  }, true);
+  addEventListener('auxclick', e => { if (mouseHotkeyMatches(e)) e.preventDefault(); }, true);
 }
 
 function hotkeyValue() {
@@ -70,14 +88,20 @@ function hotkeyValue() {
     if (!raw || raw === 'off') return { scope: 'all' };
     if (OLD_HOTKEYS[raw]) return OLD_HOTKEYS[raw];  // migración de la primera versión experimental
     const value = JSON.parse(raw);
-    return typeof value.code === 'string' ? value : { scope: 'all' };
+    return typeof value.code === 'string' || Number.isInteger(value.mouseButton) && value.mouseButton >= 3 ?
+      value : { scope: 'all' };
   } catch { return { scope: 'all' }; }
 }
 
 function hotkeyMatches(e) {
   const h = hotkeyValue();
-  return h?.code && (h.scope === 'all' || S.tab === 'buddy') && e.code === h.code &&
+  return h.code && (h.scope === 'all' || S.tab === 'buddy') && e.code === h.code &&
     !!e.ctrlKey === !!h.ctrl && !!e.shiftKey === !!h.shift && !!e.altKey === !!h.alt && !!e.metaKey === !!h.meta;
+}
+
+function mouseHotkeyMatches(e) {
+  const h = hotkeyValue();
+  return h.mouseButton !== undefined && (h.scope === 'all' || S.tab === 'buddy') && e.button === h.mouseButton;
 }
 
 function isInteractive(target) {
@@ -87,6 +111,7 @@ function isInteractive(target) {
 
 function hotkeyLabel() {
   const h = hotkeyValue();
+  if (h.mouseButton !== undefined) return t('Botón lateral {n}', { n: h.mouseButton - 2 });
   if (!h.code) return t('Desactivado');
   const keys = [];
   if (h.ctrl) keys.push('Ctrl');
@@ -98,12 +123,13 @@ function hotkeyLabel() {
 }
 
 function micTitle() {
-  return !hotkeyValue().code ? t('Mantené apretado para hablar') :
+  const h = hotkeyValue();
+  return !h.code && h.mouseButton === undefined ? t('Mantené apretado para hablar') :
     t('Mantené apretado para hablar · Atajo: {key}', { key: hotkeyLabel() });
 }
 
 function saveHotkey(value) {
-  localStorage.setItem(HOTKEY_KEY, value.code ? JSON.stringify(value) : 'off');
+  localStorage.setItem(HOTKEY_KEY, value.code || value.mouseButton !== undefined ? JSON.stringify(value) : 'off');
   updateHotkeyUI();
 }
 
@@ -130,6 +156,13 @@ function captureHotkey(e) {
     return;
   }
   saveHotkey({ code: e.code, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey, scope });
+  capturingHotkey = false;
+}
+
+function captureMouseButton(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  saveHotkey({ mouseButton: e.button, scope: $('#buddy-hotkey-scope').value });
   capturingHotkey = false;
 }
 
@@ -262,7 +295,8 @@ function draw() {
             <option value="buddy">${t('Sólo en la sección Compañero')}</option>
             <option value="all">${t('En cualquier sección del panel')}</option>
           </select>
-          <p class="hint">${t('Apretá «Definir atajo» y después la combinación que quieras. No se captura mientras usás un campo, botón o enlace.')}</p>
+          <p class="hint">${t('Apretá «Definir atajo» y después una combinación de teclado o un botón lateral del mouse. No se captura mientras usás un campo, botón o enlace.')}</p>
+          <p class="hint">${t('Algunos navegadores reservan los botones Atrás/Adelante del mouse; si no llegan a la página, usá una tecla o el cliente dani.py.')}</p>
         </label>
         <label class="check"><input type="checkbox" id="buddy-share-location"> ${t('Compartir ubicación aproximada con el compañero')}</label>
         <div class="field"><span>${t('Por su cuenta')}</span>

@@ -50,6 +50,7 @@ export function translateDom(root) {
 export const EN = {
   'Desactivado': 'Disabled',
   'Espacio': 'Space',
+  'Botón lateral {n}': 'Side mouse button {n}',
   'Mantené apretado para hablar': 'Hold to talk',
   'Mantené apretado para hablar · Atajo: {key}': 'Hold to talk · Shortcut: {key}',
   'Atajo para hablar en este navegador': 'Push-to-talk shortcut in this browser',
@@ -57,8 +58,10 @@ export const EN = {
   'Borrar': 'Clear',
   'Sólo en la sección Compañero': 'Only in the Buddy section',
   'En cualquier sección del panel': 'In any panel section',
-  'Apretá «Definir atajo» y después la combinación que quieras. No se captura mientras usás un campo, botón o enlace.':
-    'Select “Set shortcut” and then press the combination you want. It is not captured while using a field, button or link.',
+  'Apretá «Definir atajo» y después una combinación de teclado o un botón lateral del mouse. No se captura mientras usás un campo, botón o enlace.':
+    'Select “Set shortcut” and then press a key combination or a side mouse button. It is not captured while using a field, button or link.',
+  'Algunos navegadores reservan los botones Atrás/Adelante del mouse; si no llegan a la página, usá una tecla o el cliente dani.py.':
+    'Some browsers reserve the mouse Back/Forward buttons; if the page does not receive them, use a key or the dani.py client.',
   'Presioná la combinación… (Escape cancela)': 'Press the combination… (Escape cancels)',
   'Para todo el panel usá una combinación con Ctrl, Alt o Shift, o una tecla F1–F12.':
     'For the whole panel, use a combination with Ctrl, Alt or Shift, or an F1–F12 key.',
