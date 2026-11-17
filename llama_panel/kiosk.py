@@ -13,6 +13,36 @@ import sys
 import time
 import urllib.request
 
+from . import config as C
+from .i18n import LANGS, _, set_lang
+
+
+def kiosk_lang():
+    """Idioma del dashboard: LLAMA_PANEL_LANG (entorno o paths.env); si no, el último que usó la interfaz web
+    (server.py lo guarda en ui-lang); si no, el del sistema."""
+    v = os.environ.get("LLAMA_PANEL_LANG") or C._LOCAL.get("LLAMA_PANEL_LANG", "")
+    if v in LANGS:
+        return v
+    try:
+        v = (C.CFG_DIR / "ui-lang").read_text().strip()
+        if v in LANGS:
+            return v
+    except OSError:
+        pass
+    for f in ("/etc/default/locale", "/etc/locale.conf"):
+        try:
+            for line in Path(f).read_text().splitlines():
+                if line.startswith("LANG="):
+                    return "es" if line[5:].strip('"').startswith("es") else "en"
+        except OSError:
+            pass
+    return "es" if os.environ.get("LANG", "").startswith("es") else "en"
+
+
+def L(word, width):
+    """Rótulo traducido y rellenado al ancho de su columna."""
+    return _(word).ljust(width)
+
 PANEL = "http://127.0.0.1:8090"
 EIGHTHS = " ▁▂▃▄▅▆▇█"
 SVC = {"active": ("●", "Encendido"), "activating": ("◌", "Arrancando"), "deactivating": ("◌", "Apagando"),
@@ -217,7 +247,7 @@ def side_by_side(a, b, gap=1):
 
 def ago(t, now):
     s = max(0, int(now - t))
-    return f"hace {s} s" if s < 60 else f"hace {s // 60} min" if s < 3600 else f"hace {s // 3600} h"
+    return _("hace {t}", t=f"{s} s" if s < 60 else f"{s // 60} min" if s < 3600 else f"{s // 3600} h")
 
 
 def gpu_box(hw, samples, width):
@@ -227,14 +257,14 @@ def gpu_box(hw, samples, width):
     vt = hw.get("vram_total") or 8
     # con Flash-Next la VRAM y la memoria fija (GTT) van casi llenas a proposito: rojo solo al borde
     used = hw.get("vram_used") or 0
-    lines = [f" VRAM {bar(used, vt, bw, 0.92, 0.98)} {used:.2f}/{vt:.0f}G · libre {max(0, vt - used):.2f}G"]
+    lines = [f" VRAM {bar(used, vt, bw, 0.92, 0.98)} {used:.2f}/{vt:.0f}G · {_('libre')} {max(0, vt - used):.2f}G"]
     if hw.get("gtt_used") is not None:  # memoria fija de amdgpu (GTT); NVIDIA no la informa
         gt = hw.get("gtt_total") or 31
         lines.append(f" GTT  {bar(hw['gtt_used'], gt, bw, 0.97, 0.995)} {hw['gtt_used']:5.2f}/{gt:.0f}G")
     gpu = [s.get("gpu") for s in samples]
     rows = graph(gpu, gw, 4, 0, 100, color="level")
     peak = hw.get("gpu_max")
-    lines += [f" {'GPU' if i == 0 else ('pico' if i == 1 and peak is not None else ''):<5}{r} "
+    lines += [f" {'GPU' if i == 0 else (_('pico') if i == 1 and peak is not None else ''):<5}{r} "
               + (f"{hw.get('gpu') or 0:d} %".rjust(7) if i == 0 else (f"{peak} %".rjust(7) if i == 1 and peak is not None else ""))
               for i, r in enumerate(rows)]
     power = [s.get("power") for s in samples]
@@ -244,7 +274,7 @@ def gpu_box(hw, samples, width):
               for i, r in enumerate(rows)]
     temps = [s.get("temp") for s in samples]
     lines.append(f" TEMP {''.join(graph(temps, gw, 1, 30, 90, color='level'))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
-    lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)} · ventilador {fan_text(hw)}")
+    lines.append(" " + _("núcleo {mhz} MHz · {mem} · ventilador {fan}", mhz=hw.get('sclk') or 0, mem=mclk_text(hw), fan=fan_text(hw)))
     return box(" · ".join(x for x in ("gpu", hw.get("gpu_name")) if x), lines, width)
 
 
@@ -256,11 +286,11 @@ def fan_text(hw):
 
 def mclk_text(hw):
     if not hw.get("mclk"):
-        return "memoria ?"
-    tags = ["fija" if hw["mclk_mode"] == "manual" else "auto"] if hw.get("mclk_mode") else []
+        return _("memoria ?")
+    tags = [_("fija") if hw["mclk_mode"] == "manual" else "auto"] if hw.get("mclk_mode") else []
     if hw.get("mclk_oc"):  # scripts/install-gpu-mclk.sh --oc
         tags.append(f"OC {hw['mclk_oc']}")
-    return f"memoria {hw['mclk']} MHz" + (f" ({', '.join(tags)})" if tags else "")
+    return _("memoria {mhz} MHz", mhz=hw['mclk']) + (f" ({', '.join(tags)})" if tags else "")
 
 
 def cpu_box(cpu, hw, width):
@@ -281,9 +311,9 @@ def cpu_box(cpu, hw, width):
         lines.append(" ".join(cells))
     temp = hw.get("cpu_temp")
     peak = hw.get("cpu_core_temp_max")
-    lines.append(f" TEMP {temp:.0f} °C · núcleo más caliente {peak:.0f} °C" if temp is not None and peak is not None
-                 else f" TEMP {temp:.0f} °C" if temp is not None else " TEMP sensor no disponible")
-    lines.append(f" carga {hw.get('load', 0):.2f} · {len(cores)} hilos")
+    lines.append(" " + _("TEMP {t} °C · núcleo más caliente {p} °C", t=f"{temp:.0f}", p=f"{peak:.0f}") if temp is not None and peak is not None
+                 else f" TEMP {temp:.0f} °C" if temp is not None else " " + _("TEMP sensor no disponible"))
+    lines.append(" " + _("carga {load} · {n} hilos", load=f"{hw.get('load', 0):.2f}", n=len(cores)))
     return box(" · ".join(x for x in ("cpu", hw.get("cpu_name")) if x), lines, width)
 
 
@@ -292,11 +322,11 @@ def mem_box(hw, width):
     bw = w - 24
     lines = [
         f" RAM   {bar(hw.get('ram_used'), hw.get('ram_total'), bw)} {hw.get('ram_used', 0):5.1f}/{hw.get('ram_total', 0):.0f}G",
-        f" caché {bar(hw.get('ram_cache'), hw.get('ram_total'), bw)} {hw.get('ram_cache', 0):5.1f}G",
+        f" {L('caché', 5)} {bar(hw.get('ram_cache'), hw.get('ram_total'), bw)} {hw.get('ram_cache', 0):5.1f}G",
     ]
     if hw.get("swap_total"):
         lines.append(f" swap  {bar(hw.get('swap_used'), hw.get('swap_total'), bw)} {hw.get('swap_used', 0):5.1f}/{hw.get('swap_total', 0):.0f}G")
-    return box("memoria · RAM", lines, width)
+    return box(_("memoria · RAM"), lines, width)
 
 
 def external_runs(cpu):
@@ -313,13 +343,13 @@ def external_runs(cpu):
 
 def cpu_txt(p):
     """Uso de CPU de un proceso: porcentaje estilo top (100 % = un hilo) y su equivalente en núcleos."""
-    return f"{p['cpu']:.0f}% · {p['cpu'] / 100:.1f} núcl."
+    return f"{p['cpu']:.0f}% · {p['cpu'] / 100:.1f} " + _("núcl.")
 
 
 def external_lines(cpu, w):
     out = []
     for p in external_runs(cpu):
-        out.append(f" {YELLOW}◆ prueba fuera del panel{RESET} · {p['name']} · cpu {cpu_txt(p)}")
+        out.append(f" {YELLOW}◆ {_('prueba fuera del panel')}{RESET} · {p['name']} · cpu {cpu_txt(p)}")
         out.append(f"   {(p.get('model') or '?')[:w - 4]}")
     return out
 
@@ -329,25 +359,25 @@ def models_box(state, stats, width, now, cpu=None):
     svc = state["svc"]
     loaded = [k for k, v in (state["text"].get("models") or {}).items() if v.get("status") in ("loaded", "loading")]
     icon, label = SVC.get(svc["text"], ("?", svc["text"]))
-    lines = [f" texto     {icon} {label}", f"   {(loaded[0] if loaded else ('ninguno cargado' if svc['text'] == 'active' else '-'))[:w - 4]}"]
+    lines = [f" {L('texto', 9)} {icon} {_(label)}", f"   {(loaded[0] if loaded else (_('ninguno cargado') if svc['text'] == 'active' else '-'))[:w - 4]}"]
     img = state.get("img") or {}
     icon, label = SVC.get(svc["img"], ("?", svc["img"]))
     pr = img.get("progress") or {}
-    gen = f" · paso {pr['step']}/{pr['steps']}" if svc["img"] == "active" and pr.get("steps") else ""
-    lines.append(f" imágenes  {icon} {label}{gen}")
+    gen = " · " + _("paso {a}/{b}", a=pr['step'], b=pr['steps']) if svc["img"] == "active" and pr.get("steps") else ""
+    lines.append(f" {L('imágenes', 9)} {icon} {_(label)}{gen}")
     lines.append(f"   {(img.get('selected') or '-')[:w - 4]}")
     lines += external_lines(cpu, w)
     resp = (stats or {}).get("text") or []
     if resp:
         last = resp[-1]
         lines.append("")
-        lines.append(f" última: {last['g_tps']:.1f} tok/s · prompt {last['p_tps']:.0f} · {ago(last['t'], now)}")
+        lines.append(" " + _("última: {g} tok/s · prompt {p} · {ago}", g=f"{last['g_tps']:.1f}", p=f"{last['p_tps']:.0f}", ago=ago(last['t'], now)))
         tps = [r["g_tps"] for r in resp]
         top = max(tps)
         rows = graph(tps, w - 10, 3, 0, top, color=BLUE)
         lines += [f" {(f'{top:.0f}' if i == 0 else ''):>4} {r}" for i, r in enumerate(rows)]
-        lines.append(f" {'':>4} tok/s de las últimas {min(len(tps), w - 10)} respuestas")
-    return box("modelos", lines, width)
+        lines.append(f" {'':>4} " + _("tok/s de las últimas {n} respuestas", n=min(len(tps), w - 10)))
+    return box(_("modelos"), lines, width)
 
 
 LIVE_ICON = {"gen": ("●", "generando"), "prompt": ("◐", "procesando el prompt"), "idle": ("○", "esperando")}
@@ -356,7 +386,7 @@ LIVE_ICON = {"gen": ("●", "generando"), "prompt": ("◐", "procesando el promp
 def live_status(live):
     live = live or {}
     icon, label = LIVE_ICON.get(live.get("state"), LIVE_ICON["idle"])
-    return f"{icon} {label}"
+    return f"{icon} {_(label)}"
 
 
 def duration(seconds):
@@ -373,53 +403,53 @@ def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
     fmt = lambda value: "--" if value is None else f"{value:.1f}"
     lines = [" " + live_status(live)]
     if live.get("prompt_tps") is None and live.get("prompt_tps_prev") is not None:
-        lines.append(f" prompt   media {fmt(live['prompt_tps_prev'])} tok/s {DIM}(pedido anterior){RESET}")
+        lines.append(f" {L('prompt', 8)} {_('media')} {fmt(live['prompt_tps_prev'])} tok/s {DIM}{_('(pedido anterior)')}{RESET}")
     else:
-        lines.append(f" prompt   media {fmt(live.get('prompt_tps'))} tok/s")
+        lines.append(f" {L('prompt', 8)} {_('media')} {fmt(live.get('prompt_tps'))} tok/s")
     lines += ["      " + row for row in graph(list(prompt_hist or []), w - 8, graph_height, 0, color=CYAN)]
-    lines.append(f" salida   media {fmt(live.get('gen_avg_tps'))} · 3 s {fmt(live.get('tps'))} tok/s")
+    lines.append(f" {L('salida', 8)} {_('media')} {fmt(live.get('gen_avg_tps'))} · 3 s {fmt(live.get('tps'))} tok/s")
     lines += ["      " + row for row in graph(list(tps_hist or []), w - 8, graph_height, 0, color=GREEN)]
     progress = live.get("prompt_progress")
     pct = f"{progress * 100:5.0f} %" if progress is not None else "   -- %"
-    lines.append(f" prompt   {bar(progress, 1, max(1, w - 28))} {pct}")
+    lines.append(f" {L('prompt', 8)} {bar(progress, 1, max(1, w - 28))} {pct}")
     size, used = live.get("ctx_size"), live.get("ctx_used")
     ctx = f"{used if used is not None else 0:>6}/{size}" if size else "    --/--"
-    lines.append(f" contexto {bar(used, size, max(1, w - 28))} {ctx}")
+    lines.append(f" {L('contexto', 8)} {bar(used, size, max(1, w - 28))} {ctx}")
     processed = live.get("prompt_tokens")
     generated = live.get("n_gen")
-    lines.append(f" tokens   prompt {processed if processed is not None else '--'} · salida {generated if generated is not None else '--'}")
+    lines.append(f" {L('tokens', 8)} prompt {processed if processed is not None else '--'} · {_('salida')} {generated if generated is not None else '--'}")
     approximate = "~" if live.get("state") == "prompt" else ""
-    lines.append(f" reuso    {live.get('prompt_cached', 0)} tokens · prompt total {approximate}{live.get('prompt_total') or '--'}")
-    lines.append(f" tiempo   prompt {duration(live.get('prompt_elapsed'))} · salida {duration(live.get('gen_elapsed'))}")
+    lines.append(f" {L('reuso', 8)} {live.get('prompt_cached', 0)} tokens · {_('prompt total')} {approximate}{live.get('prompt_total') or '--'}")
+    lines.append(f" {L('tiempo', 8)} prompt {duration(live.get('prompt_elapsed'))} · {_('salida')} {duration(live.get('gen_elapsed'))}")
     eta = None
     if live.get("state") == "prompt" and live.get("prompt_total") and live.get("prompt_tps"):
         remaining = max(0, live["prompt_total"] - live.get("prompt_cached", 0) - (processed or 0))
         eta = remaining / live["prompt_tps"]
     avg = live.get("gen_avg_tps")
     latency = f"{1000 / avg:.1f} ms/tok" if avg else "-- ms/tok"
-    lines.append(f" estimado prompt restante ~{duration(eta)}" if eta is not None else f" salida   {latency}")
+    lines.append(" " + _("estimado prompt restante ~{t}", t=duration(eta)) if eta is not None else f" {L('salida', 8)} {latency}")
     rate = live.get("draft_rate")
-    mtp = f"{rate * 100:.1f} % · {fmt(live.get('draft_len'))} tok/paso" if rate is not None else "-- (se informa al finalizar)"
-    lines.append(f" MTP últ. {mtp}")
+    mtp = f"{rate * 100:.1f} % · {fmt(live.get('draft_len'))} " + _("tok/paso") if rate is not None else _("-- (se informa al finalizar)")
+    lines.append(f" {L('MTP últ.', 8)} {mtp}")
     resp = (stats or {}).get("text") or []
     toks = sum(r.get("g_tok") or 0 for r in resp)
     seconds = sum((r.get("g_tok") or 0) / r["g_tps"] for r in resp if r.get("g_tps"))
     if graph_height > 1:
-        lines.append(f" historial {len(resp)} resp. · {toks} tok · {fmt(toks / seconds if seconds else None)} tok/s")
+        lines.append(" " + _("historial {n} resp. · {t} tok · {r} tok/s", n=len(resp), t=toks, r=fmt(toks / seconds if seconds else None)))
     age = live.get("age")
-    freshness = f"último dato hace {duration(age)}" if age is not None else "sin datos del pedido"
+    freshness = _("último dato hace {t}", t=duration(age)) if age is not None else _("sin datos del pedido")
     lines.append(" " + (YELLOW if live.get("stale") else DIM) + freshness + RESET)
-    return box("en vivo", lines, width)
+    return box(_("en vivo"), lines, width)
 
 
 def procs_box(cpu, width, max_rows=6):
     w = width - 2
-    lines = [f" {'proceso':<14}{'pid':>8}{'cpu':>18}{'hilos':>7}{'ram':>9}"]
+    lines = [f" {L('proceso', 14)}{'pid':>8}{'cpu':>18}{_('hilos'):>8}{'ram':>9}"]
     for p in (cpu.get("procs") or [])[:max_rows]:
-        lines.append(f" {p['name']:<14}{p['pid']:>8}{cpu_txt(p):>18}{p['threads']:>7}{p['rss'] / 2**30:>8.1f}G")
+        lines.append(f" {p['name']:<14}{p['pid']:>8}{cpu_txt(p):>18}{p['threads']:>8}{p['rss'] / 2**30:>8.1f}G")
     if len(lines) == 1:
-        lines.append(" (sin modelos corriendo)")
-    return box("procesos", lines, width)
+        lines.append(" " + _("(sin modelos corriendo)"))
+    return box(_("procesos"), lines, width)
 
 
 def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
@@ -439,15 +469,15 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     cpu_l = [f" CPU  {bar(total, 100, bw)} {total:4.0f} %"]
     if cores:  # una columna por hilo, separadas por espacios
         rows = graph(cores, len(cores), max(1, gh - 1), 0, 100)
-        cpu_l += [(" hilos " if i == 0 else "       ") + " ".join(r) for i, r in enumerate(rows)]
+        cpu_l += [(f" {L('hilos', 5)} " if i == 0 else "       ") + " ".join(r) for i, r in enumerate(rows)]
     if hw.get("cpu_temp") is not None:
         cpu_l.append(f" CPU {hw['cpu_temp']:.0f} °C")
-    cpu_l.append(f" {len(cores)} hilos · carga {hw.get('load', 0):.1f} · RAM {hw.get('ram_used', 0):.1f}/{hw.get('ram_total', 0):.0f}G · GTT {hw.get('gtt_used', 0):.1f}/31G")
+    cpu_l.append(f" {len(cores)} {_('hilos')} · {_('carga')} {hw.get('load', 0):.1f} · RAM {hw.get('ram_used', 0):.1f}/{hw.get('ram_total', 0):.0f}G · GTT {hw.get('gtt_used', 0):.1f}/31G")
 
     svc = state["svc"]
     loaded = [k for k, v in (state["text"].get("models") or {}).items() if v.get("status") in ("loaded", "loading")]
     icon, label = SVC.get(svc["text"], ("?", svc["text"]))
-    mod = [f" texto {icon} {label}  {(loaded[0] if loaded else '')[:w - 22]}"]
+    mod = [f" {_('texto')} {icon} {_(label)}  {(loaded[0] if loaded else '')[:w - 22]}"]
     if svc["text"] == "active":
         st = live_status(live)
         if (live or {}).get("draft_rate") is not None:
@@ -456,18 +486,18 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     img = state.get("img") or {}
     icon, label = SVC.get(svc["img"], ("?", svc["img"]))
     pr = img.get("progress") or {}
-    gen = f" paso {pr['step']}/{pr['steps']}" if svc["img"] == "active" and pr.get("steps") else ""
-    mod.append(f" imágenes {icon} {label}{gen}")
+    gen = " " + _("paso {a}/{b}", a=pr['step'], b=pr['steps']) if svc["img"] == "active" and pr.get("steps") else ""
+    mod.append(f" {_('imágenes')} {icon} {_(label)}{gen}")
     mod += external_lines(cpu, w)
     resp = (stats or {}).get("text") or []
     if resp:
         r = resp[-1]
-        mod.append(f" última {r['g_tps']:.1f} tok/s · prompt {r['p_tps']:.0f} · {ago(r['t'], now)}")
+        mod.append(" " + _("última: {g} tok/s · prompt {p} · {ago}", g=f"{r['g_tps']:.1f}", p=f"{r['p_tps']:.0f}", ago=ago(r['t'], now)))
         mod += [" " + x for x in graph([x["g_tps"] for x in resp], w - 2, max(1, gh - 1), 0)]
 
-    procs = [f" {p['name'][:12]:<12}{cpu_txt(p):>17}{p['threads']:>4} hilos{p['rss'] / 2**30:>6.1f}G"
-             for p in (cpu.get("procs") or [])[:3]] or [" (sin modelos corriendo)"]
-    return [box("gpu", gpu, width), box("cpu · memoria", cpu_l, width), box("modelos", mod, width), box("procesos", procs, width)]
+    procs = [f" {p['name'][:12]:<12}{cpu_txt(p):>17}{p['threads']:>4} {_('hilos')}{p['rss'] / 2**30:>6.1f}G"
+             for p in (cpu.get("procs") or [])[:3]] or [" " + _("(sin modelos corriendo)")]
+    return [box("gpu", gpu, width), box(_("cpu · memoria"), cpu_l, width), box(_("modelos"), mod, width), box(_("procesos"), procs, width)]
 
 
 FOOTER = " Para volver al escritorio: S dos veces · «Salir del modo IA» en el panel · Ctrl+Alt+F2 y  sudo llama-modo-ia off"
@@ -479,8 +509,10 @@ CONFIRM_SECS = 5
 def footer(width, notice=None):
     """Ultima linea: como volver al escritorio, o el aviso de la tecla S (confirmar / volviendo / error)."""
     if notice:
-        return (" " + notice)[:width], "warn"
-    return (FOOTER if len(FOOTER) <= width else FOOTER_SHORT)[:width], "dim"
+        msg = _(notice, secs=CONFIRM_SECS) if "{secs}" in notice else _(notice)  # un error con llaves no se formatea
+        return (" " + msg)[:width], "warn"
+    full, short = _(FOOTER), _(FOOTER_SHORT)
+    return (full if len(full) <= width else short)[:width], "dim"
 
 
 def leave_ai_mode():
@@ -509,12 +541,13 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
     Con 120x36 o mas usa dos columnas; si no, una columna compacta que se achica hasta entrar en la altura."""
     now = now or time.time()
     width = max(40, width)
+    set_lang(kiosk_lang())
     out = []
     clock = time.strftime("%H:%M:%S", time.localtime(now))
-    out.append((f" PANEL IA · modo IA".ljust(width - len(clock) - 1)[:width - len(clock) - 1] + clock + " ", "title"))
+    out.append(((" " + _("PANEL IA · modo IA")).ljust(width - len(clock) - 1)[:width - len(clock) - 1] + clock + " ", "title"))
     if state is None:
         out.append(("", ""))
-        out.append(("  Sin conexión con el panel. Reintentando…"[:width], "bad"))
+        out.append(("  " + _("Sin conexión con el panel. Reintentando…")[:width], "bad"))
         out.append(("", ""))
         out.append(footer(width, notice))
         return out
@@ -658,15 +691,15 @@ def run_curses():
             scr.refresh()
             if scr.getch() in (ord("s"), ord("S")):
                 if armed and time.time() - armed <= CONFIRM_SECS:
-                    armed, notice = 0, "Volviendo al escritorio… (puede tardar unos segundos)"
+                    armed, notice = 0, "Volviendo al escritorio… (puede tardar unos segundos)"  # footer() lo traduce
                     last_fetch = 0  # redibujar ya con el aviso
                     scr.erase()
                     scr.addstr(0, 0, footer(w - 1, notice)[0], curses.A_BOLD)
                     scr.refresh()
                     err = leave_ai_mode()
-                    notice = f"No se pudo salir del modo IA: {err}" if err else notice
+                    notice = f"{_('No se pudo salir del modo IA:')} {err}" if err else notice
                 else:
-                    armed, notice = time.time(), f"¿Volver al escritorio? Apretá S de nuevo en {CONFIRM_SECS} s"
+                    armed, notice = time.time(), "¿Volver al escritorio? Apretá S de nuevo en {secs} s"
 
     curses.wrapper(main)
 

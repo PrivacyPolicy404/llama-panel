@@ -138,7 +138,8 @@ ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse
 > Si usás el panel en tu PC de escritorio de todos los días, no instales el modo IA: todo lo demás funciona sin él.
 
 En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muestra este dashboard de texto
-(`llama_panel/kiosk.py`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`):
+(`llama_panel/kiosk.py`; sigue el idioma que usaste por última vez en el panel web, o `LLAMA_PANEL_LANG=es|en` en
+`paths.env`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`):
 
 ![Dashboard del modo IA en tty1: GPU, CPU por núcleo, RAM, modelo cargado, respuesta en curso y procesos](docs/img/modo-ia.png)
 

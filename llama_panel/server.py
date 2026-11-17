@@ -8,7 +8,7 @@ from . import config as C
 from . import hardware
 from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES
-from .i18n import set_lang
+from .i18n import remember_ui_lang, set_lang
 from .install import sync_units
 
 MAX_BODY = 1_000_000
@@ -46,7 +46,9 @@ class Handler(BaseHTTPRequestHandler):
     def parse_request(self):
         ok = super().parse_request()
         if ok:
-            set_lang(self.headers.get("X-Lang", ""))  # idioma de los mensajes de este pedido
+            lang = self.headers.get("X-Lang", "")
+            set_lang(lang)  # idioma de los mensajes de este pedido
+            remember_ui_lang(lang)  # y el que sigue el dashboard del modo IA
         return ok
 
     def do_GET(self):

@@ -1,6 +1,9 @@
 """Funciones de dibujo del dashboard del modo IA (sin curses ni red)."""
 import unittest
 
+import os
+
+os.environ["LLAMA_PANEL_LANG"] = "es"  # los textos esperados están en castellano, sin depender de la máquina
 from llama_panel import kiosk
 
 
@@ -126,6 +129,30 @@ class Dibujo(unittest.TestCase):
         with mock.patch.object(kiosk.urllib.request, "urlopen", side_effect=OSError("panel caído")), \
                 mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "sin permiso")):
             self.assertEqual(kiosk.leave_ai_mode(), "sin permiso")
+
+
+class Idioma(unittest.TestCase):
+    def test_language_sources_in_order(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"LLAMA_PANEL_LANG": ""}), \
+                mock.patch.object(kiosk.C, "CFG_DIR", Path(d)), mock.patch.dict(kiosk.C._LOCAL, {}, clear=True):
+            (Path(d) / "ui-lang").write_text("en\n")
+            self.assertEqual(kiosk.kiosk_lang(), "en")  # el de la interfaz web
+            with mock.patch.dict(kiosk.C._LOCAL, {"LLAMA_PANEL_LANG": "es"}):
+                self.assertEqual(kiosk.kiosk_lang(), "es")  # paths.env manda
+
+    def test_english_dashboard(self):
+        from unittest import mock
+        state = {"svc": {"text": "active", "img": "inactive"}, "text": {"models": {}}, "img": {}, "hw": {}}
+        with mock.patch.dict(os.environ, {"LLAMA_PANEL_LANG": "en"}):
+            text = "\n".join(kiosk.strip_marks(t) for t, _ in kiosk.render(state, None, None, None, width=140, height=44, now=0))
+        self.assertIn("AI PANEL · AI mode", text)
+        self.assertIn("─ live ─", text)
+        self.assertIn("Back to the desktop: S twice", text)
+        self.assertNotIn("contexto", text)
+        kiosk.set_lang("es")
 
 
 if __name__ == "__main__":

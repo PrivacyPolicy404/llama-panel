@@ -13,6 +13,24 @@ def set_lang(value):
     LANG.set(value if value in LANGS else "es")
 
 
+_ui_lang = {"v": None}
+
+
+def remember_ui_lang(value):
+    """Guarda el idioma que usa la interfaz web (ui-lang): el dashboard del modo IA lo sigue."""
+    if value not in LANGS or value == _ui_lang["v"]:
+        return
+    from . import config as C
+    f = C.CFG_DIR / "ui-lang"
+    try:
+        if not f.exists() or f.read_text().strip() != value:
+            C.CFG_DIR.mkdir(parents=True, exist_ok=True)
+            f.write_text(value + "\n")
+        _ui_lang["v"] = value
+    except OSError:
+        pass
+
+
 def _(text, **kw):
     if LANG.get() == "en":
         text = EN.get(text, text)
@@ -155,6 +173,67 @@ EN = {
         "WARNING: the panel won't start at boot until you log in. To always start it:  sudo loginctl enable-linger {user}",
     "\nListo. Abrí http://{host}.local:{port} desde otra computadora de la red (o http://localhost:{port} en esta).":
         "\nDone. Open http://{host}.local:{port} from another computer on the network (or http://localhost:{port} on this one).",
+    # dashboard del modo IA (kiosk.py); los rótulos de columna se rellenan después de traducir
+    "hace {t}": "{t} ago",
+    "libre": "free",
+    "pico": "peak",
+    "núcleo {mhz} MHz · {mem} · ventilador {fan}": "core {mhz} MHz · {mem} · fan {fan}",
+    "memoria ?": "memory ?",
+    "fija": "pinned",
+    "memoria {mhz} MHz": "memory {mhz} MHz",
+    "TEMP {t} °C · núcleo más caliente {p} °C": "TEMP {t} °C · hottest core {p} °C",
+    "TEMP sensor no disponible": "TEMP sensor not available",
+    "carga {load} · {n} hilos": "load {load} · {n} threads",
+    "caché": "cache",
+    "memoria · RAM": "memory · RAM",
+    "núcl.": "cores",
+    "prueba fuera del panel": "test outside the panel",
+    "texto": "text",
+    "imágenes": "images",
+    "ninguno cargado": "none loaded",
+    "paso {a}/{b}": "step {a}/{b}",
+    "última: {g} tok/s · prompt {p} · {ago}": "last: {g} tok/s · prompt {p} · {ago}",
+    "tok/s de las últimas {n} respuestas": "tok/s of the last {n} responses",
+    "modelos": "models",
+    "Encendido": "Running",
+    "Arrancando": "Starting",
+    "Apagando": "Stopping",
+    "Apagado": "Stopped",
+    "generando": "generating",
+    "procesando el prompt": "processing the prompt",
+    "esperando": "waiting",
+    "prompt": "prompt",
+    "media": "avg",
+    "(pedido anterior)": "(previous request)",
+    "salida": "output",
+    "contexto": "context",
+    "tokens": "tokens",
+    "reuso": "reused",
+    "prompt total": "total prompt",
+    "tiempo": "time",
+    "estimado prompt restante ~{t}": "estimated prompt left ~{t}",
+    "tok/paso": "tok/step",
+    "-- (se informa al finalizar)": "-- (reported at the end)",
+    "MTP últ.": "MTP last",
+    "historial {n} resp. · {t} tok · {r} tok/s": "history {n} resp. · {t} tok · {r} tok/s",
+    "último dato hace {t}": "last data {t} ago",
+    "sin datos del pedido": "no data for the request",
+    "en vivo": "live",
+    "proceso": "process",
+    "hilos": "threads",
+    "(sin modelos corriendo)": "(no models running)",
+    "procesos": "processes",
+    "carga": "load",
+    "cpu · memoria": "cpu · memory",
+    "PANEL IA · modo IA": "AI PANEL · AI mode",
+    "Sin conexión con el panel. Reintentando…": "No connection to the panel. Retrying…",
+    "No se pudo salir del modo IA:": "Could not leave AI mode:",
+    "Volviendo al escritorio… (puede tardar unos segundos)": "Going back to the desktop… (it may take a few seconds)",
+    "¿Volver al escritorio? Apretá S de nuevo en {secs} s": "Back to the desktop? Press S again within {secs} s",
+    " Para volver al escritorio: S dos veces · «Salir del modo IA» en el panel · Ctrl+Alt+F2 y  sudo llama-modo-ia off":
+        " Back to the desktop: S twice · «Leave AI mode» in the panel · Ctrl+Alt+F2 and  sudo llama-modo-ia off",
+    " Volver al escritorio: S dos veces · Ctrl+Alt+F2 y  sudo llama-modo-ia off":
+        " Back to the desktop: S twice · Ctrl+Alt+F2 and  sudo llama-modo-ia off",
     # opciones de razonamiento (config.REASONING_OPTS)
     "por defecto": "default",
     "auto": "auto",

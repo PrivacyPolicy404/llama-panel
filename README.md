@@ -137,7 +137,8 @@ helper without a password. AI mode **closes the graphical session** when turned 
 > If you use the panel on your everyday desktop PC, don't install AI mode: everything else works without it.
 
 In AI mode the desktop is stopped to free the VRAM it was using, and tty1 shows this text dashboard
-(`llama_panel/kiosk.py`, in Spanish; to see it over SSH without turning anything on: `python3 -m llama_panel.kiosk --once`):
+(`llama_panel/kiosk.py`; it follows the language you last used in the web panel, or `LLAMA_PANEL_LANG=en|es` in
+`paths.env`; to see it over SSH without turning anything on: `python3 -m llama_panel.kiosk --once`):
 
 ![AI mode dashboard on tty1: GPU, per-core CPU, RAM, loaded model, current response and processes](docs/img/modo-ia.png)
 
