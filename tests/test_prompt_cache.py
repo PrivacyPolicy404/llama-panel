@@ -32,6 +32,14 @@ class Names(unittest.TestCase):
         self.assertNotEqual(base, PC.file_name("modelo-a", PRESET.replace("8192", "65536")))
         self.assertEqual(base, PC.file_name("modelo-a", PRESET.replace("/x/b.gguf", "/x/c.gguf")))
         self.assertEqual(base, PC.file_name("modelo-a", PRESET.replace("# comentario", "# otro")))
+        # mismo resultado efectivo: otro orden, o el valor global repetido en el modelo
+        self.assertEqual(base, PC.file_name("modelo-a", PRESET.replace("model = /x/a.gguf\ncache-type-k = q8_0",
+                                                                      "cache-type-k = q8_0\nmodel = /x/a.gguf")))
+        self.assertEqual(base, PC.file_name("modelo-a", PRESET.replace("cache-type-k = q8_0",
+                                                                      "cache-type-k = q8_0\nctx-size = 8192")))
+        # el modelo pisa al global: el resultado efectivo cambia
+        self.assertNotEqual(base, PC.file_name("modelo-a", PRESET.replace("cache-type-k = q8_0",
+                                                                         "cache-type-k = q8_0\nctx-size = 4096")))
 
 
 class Files(unittest.TestCase):

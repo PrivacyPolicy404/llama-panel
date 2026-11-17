@@ -41,7 +41,15 @@ def file_name(mid, preset_text=None):
             preset_text = C.PRESET_FILE.read_text()
         except OSError:
             preset_text = ""
-    digest = hashlib.sha256("\n".join(preset_block(preset_text, mid)).encode()).hexdigest()[:10]
+    # Las opciones efectivas (las de [*] pisadas por las del modelo), ordenadas: reordenar el preset o mover un
+    # valor igual entre global y modelo no invalida el guardado; cambiar una opción, sí.
+    opts = {}
+    for entry in preset_block(preset_text, mid):
+        line = entry.split(":", 1)[1]
+        key, _sep, value = line.partition("=")
+        opts[key.strip()] = value.strip()
+    canon = "\n".join(f"{k}={opts[k]}" for k in sorted(opts))
+    digest = hashlib.sha256(canon.encode()).hexdigest()[:10]
     return f"{mid}.{digest}.bin"
 
 
