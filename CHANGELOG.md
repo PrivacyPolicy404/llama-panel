@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-rc.1 (2026-11-17)
 
+Experimental companion prerelease. / Prerelease experimental del Compañero.
+
+- Read-only buddy tools for one short web search per turn and ephemeral client context (language and timezone,
+  plus approximate location only when explicitly enabled on that device). Search results are limited to fixed
+  providers and treated as untrusted content; location coordinates are rounded before being sent and never saved.
 - The buddy speaks on its own: timers and reminders (a new `avisar` tool), homelab warnings (temperature,
   failed services, RAM, disk) and a morning summary, delivered to the web panel and `clients/dani.py` through
   server-sent events; only the client used last plays the audio. `POST /api/buddy/say` for automations.
