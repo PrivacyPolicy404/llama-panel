@@ -20,3 +20,18 @@ class UnitsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClientGone(unittest.TestCase):
+    def test_send_to_a_closed_connection_is_not_an_error(self):
+        from llama_panel.server import Handler
+
+        class Gone:
+            def write(self, _):
+                raise BrokenPipeError(32, "Broken pipe")
+
+        h = Handler.__new__(Handler)
+        h.wfile, h.request_version, h.requestline, h.command = Gone(), "HTTP/1.1", "POST /api/action HTTP/1.1", "POST"
+        h.client_address, h.close_connection = ("127.0.0.1", 0), False
+        h._send(200, {"ok": True})
+        self.assertTrue(h.close_connection)

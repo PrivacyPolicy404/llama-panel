@@ -21,12 +21,17 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, code, data, ctype="application/json"):
         if not isinstance(data, bytes):
             data = json.dumps(data, ensure_ascii=False).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith(("text/", "application/j")) else ""))
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith(("text/", "application/j")) else ""))
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            # el cliente se fue antes de la respuesta (por ejemplo, el dashboard del modo IA, que se apaga con
+            # la misma accion que pidio): la accion ya se hizo, no es un error
+            self.close_connection = True
 
     def _error(self, code, msg):
         self._send(code, {"ok": False, "msg": msg})
