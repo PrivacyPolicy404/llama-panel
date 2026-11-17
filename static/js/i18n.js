@@ -326,6 +326,10 @@ export const EN = {
   'escribe su memoria': 'writes its memory',
   'cambia cosas': 'changes things',
   'peligrosa': 'dangerous',
+  'Vos': 'You',
+  'Te escucho…': 'Listening…',
+  'Pensando…': 'Thinking…',
+  'Escuchando lo que dijiste…': 'Understanding what you said…',
   'token de acceso de larga duración': 'long-lived access token',
   'En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.':
     'In Home Assistant: your profile, Security, "Long-lived access tokens". Preferably from a non-admin user. It is kept in a separate file only your user can read.',

@@ -97,6 +97,16 @@ class HomeAssistantTools(unittest.TestCase):
             self.assertIn("no está disponible", BT.run("casa_controlar", '{"id": "light.x", "accion": "apagar"}')[0])
 
 
+class Config(unittest.TestCase):
+    def test_default_persona_is_not_frozen(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(C, "BUDDY_DIR", Path(d)):
+            buddy.save_config({"speak": False})
+            self.assertEqual(json.loads((Path(d) / "config.json").read_text())["persona"], "")
+            self.assertEqual(buddy.load_config()["persona"], buddy.DEFAULT_PERSONA)
+            buddy.save_config({"persona": "Sos un pirata."})
+            self.assertEqual(buddy.load_config()["persona"], "Sos un pirata.")
+
+
 class History(unittest.TestCase):
     def test_trims_the_older_half_at_once(self):
         h = []

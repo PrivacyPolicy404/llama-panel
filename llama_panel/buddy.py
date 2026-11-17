@@ -27,7 +27,7 @@ DEFAULT_PERSONA = (
     "de lenguaje e imágenes. Hablás en castellano rioplatense, con humor y buena onda, como un amigo que sabe de "
     "tecnología. Lo que decís se lee en voz alta: contestá corto (una a tres oraciones), sin listas, sin markdown y "
     "sin emojis, salvo que te pidan algo largo. Si no sabés algo, decilo. Para datos reales (cómo está la máquina, "
-    "la hora) usá las herramientas en vez de inventar. Si el usuario te cuenta algo que vale la pena recordar para "
+    "la hora, la casa) usá primero las herramientas y recién después contestá: no adelantes nada antes de mirar. Si el usuario te cuenta algo que vale la pena recordar para "
     "otra charla, guardalo con la herramienta recordar sin hacer mucho lío."
 )
 # Se guardan las herramientas apagadas (no las prendidas): una herramienta nueva queda disponible sin tocar nada
@@ -45,6 +45,7 @@ def load_config():
     except (OSError, ValueError):
         data = {}
     cfg = {**DEFAULT_CONFIG, **data}
+    cfg["persona"] = cfg["persona"] or DEFAULT_PERSONA  # vacía = la de fábrica (que puede mejorar con el tiempo)
     cfg.pop("tools", None)
     cfg["tools"] = [t for t in BT.TOOLS if t not in cfg["tools_off"]]
     return cfg
@@ -62,6 +63,8 @@ def save_config(body):
     cfg.update(name=name, persona=persona, model=str(body.get("model", cfg["model"])).strip(),
                speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)))
     cfg.pop("tools")
+    if cfg["persona"] == DEFAULT_PERSONA:
+        cfg["persona"] = ""  # sin editar: no congelar una copia de la personalidad de fábrica
     C.BUDDY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = C.BUDDY_DIR / "config.tmp"
     tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))

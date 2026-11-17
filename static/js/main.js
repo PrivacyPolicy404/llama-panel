@@ -10,7 +10,7 @@ import { renderPerf } from './perf.js';
 import { loadLogs } from './logs.js';
 import { loadSetup, needsSetup } from './setup.js';
 import { renderAuto } from './auto.js';
-import { loadBuddy } from './buddy.js';
+import { buddyTab, initBuddy, loadBuddy } from './buddy.js';
 import { playPreview, renderAudioEngine, renderAudioModels } from './audio.js';
 import { lang, setLang, t, translateDom } from './i18n.js';
 
@@ -67,6 +67,7 @@ function showTab(tab) {
   if (tab === 'logs') loadLogs();
   if (tab === 'setup') loadSetup();
   if (tab === 'buddy') loadBuddy();
+  buddyTab(tab);
 }
 
 function bind() {
@@ -137,6 +138,7 @@ async function start() {
   showTab(location.hash.slice(1) || (setup && needsSetup(setup) ? 'setup' : 'text'));
   await pollState();
   loadStats();
+  initBuddy();  // Dani escucha la barra espaciadora en todo el panel
 
   setInterval(pollState, 2000);
   setInterval(loadStats, 8000);

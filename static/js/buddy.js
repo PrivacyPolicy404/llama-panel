@@ -1,6 +1,7 @@
 // Pestana Compañero: charla con el agente (llama_panel/buddy.py) por texto o voz.
 // Voz: se graba mientras se mantiene apretado el boton (o la barra espaciadora) y el panel lo pasa a texto con
 // Whisper; la respuesta llega en eventos y cada oracion trae su audio de Piper, que se reproduce en orden.
+// Funciona desde cualquier pestana: la barra espaciadora vale en todo el panel y hay un boton flotante con el estado.
 import { $, $$, esc, getJSON, post, report, toast, withBusy } from './util.js';
 import { S } from './state.js';
 import { lang, t } from './i18n.js';
@@ -18,6 +19,54 @@ export async function loadBuddy() {
   try { B = await getJSON('/api/buddy'); } catch { return; }
   if (!drawn) draw();
   renderHistory();
+}
+
+// Al arrancar el panel: la pestana se arma oculta (la charla funciona desde cualquier lado) y aparece el boton flotante
+export async function initBuddy() {
+  await loadBuddy();
+  if (!B) return;
+  drawFab();
+  addEventListener('keydown', e => {
+    // barra espaciadora para hablar en todo el panel, salvo escribiendo en un campo
+    if (e.code !== 'Space' || e.repeat || e.target.matches('input, textarea, select, [contenteditable]')) return;
+    e.preventDefault(); startRec();
+  });
+  addEventListener('keyup', e => { if (e.code === 'Space' && rec) { e.preventDefault(); stopRec(); } });
+}
+
+export function buddyTab(tab) {
+  const fab = $('#buddy-fab');
+  if (fab) fab.hidden = tab === 'buddy';  // en la pestana ya esta todo
+}
+
+// ---------- boton flotante ----------
+let fabTimer = null;
+
+function drawFab() {
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="buddy-fab" id="buddy-fab">
+      <div class="buddy-fab-bubble" hidden><b></b><span></span></div>
+      <button class="buddy-fab-mic" title="${esc(t('Mantené apretado para hablar (o la barra espaciadora)'))}">🎤</button>
+    </div>`);
+  const mic = $('#buddy-fab .buddy-fab-mic');
+  if (!window.isSecureContext) {
+    mic.onclick = () => { location.hash = 'buddy'; $('[data-tab="buddy"]').click(); };
+    return;
+  }
+  mic.onpointerdown = e => { e.preventDefault(); startRec(); };
+  mic.onpointerup = mic.onpointerleave = () => stopRec();
+  buddyTab(S.tab);
+}
+
+function fab(state, text) {
+  const bubble = $('#buddy-fab .buddy-fab-bubble');
+  if (!bubble) return;
+  clearTimeout(fabTimer);
+  $('#buddy-fab').dataset.state = state;
+  $('b', bubble).textContent = state === 'user' ? t('Vos') : B.config.name;
+  $('span', bubble).textContent = text;
+  bubble.hidden = !text;
+  if (state === 'idle') fabTimer = setTimeout(() => { if (!playing && !abort && !rec) bubble.hidden = true; }, 12000);
 }
 
 function draw() {
@@ -133,12 +182,6 @@ function bind() {
   const mic = $('#buddy-mic');
   mic.onpointerdown = e => { e.preventDefault(); startRec(); };
   mic.onpointerup = mic.onpointerleave = () => stopRec();
-  // barra espaciadora para hablar, salvo escribiendo en un campo
-  addEventListener('keydown', e => {
-    if (S.tab !== 'buddy' || e.code !== 'Space' || e.repeat || e.target.matches('input, textarea, select')) return;
-    e.preventDefault(); startRec();
-  });
-  addEventListener('keyup', e => { if (S.tab === 'buddy' && e.code === 'Space' && rec) { e.preventDefault(); stopRec(); } });
 }
 
 // ---------- microfono ----------
@@ -162,12 +205,14 @@ async function startRec() {
   };
   mr.start();
   $('#buddy-mic').classList.add('on');
+  fab('listening', t('Te escucho…'));
 }
 
 function stopRec() {
   if (!rec || rec.mr.state !== 'recording') return;
   $('#buddy-mic').classList.remove('on');
   rec.mr.stop();
+  if (Date.now() - rec.t0 < 300) fab('idle', '');
 }
 
 // ---------- audio de la respuesta ----------
@@ -178,7 +223,10 @@ function playNext() {
   if (playing || !audioQueue.length) return;
   const url = audioQueue.shift();
   playing = new Audio(url);
-  playing.onended = playing.onerror = () => { URL.revokeObjectURL(url); playing = null; playNext(); };
+  playing.onended = playing.onerror = () => {
+    URL.revokeObjectURL(url); playing = null; playNext();
+    if (!playing && !abort) fab('idle', $('#buddy-fab .buddy-fab-bubble span')?.textContent || '');
+  };
   playing.play().catch(() => { playing = null; updStop(); });
 }
 
@@ -204,7 +252,9 @@ async function send(body) {
   const out = log.lastElementChild;
   let text = '', txtEl = null;
   const stats = [];
+  let said = '';  // toda la respuesta, para la burbuja flotante
   scroll();
+  fab('thinking', body.text ? t('Pensando…') : t('Escuchando lo que dijiste…'));
   abort = new AbortController();
   $('#buddy-stop').hidden = false;
   try {
@@ -228,14 +278,17 @@ async function send(body) {
           mine.classList.remove('pending');
           $('.buddy-text', mine).textContent = ev.text || '…';
           stats.push(t('oído en {s} s', { s: ev.stt_s }));
+          if (ev.text) fab('user', ev.text);
         } else if (ev.type === 'text') {
           $('.buddy-typing', out)?.remove();
           if (!txtEl) { out.insertAdjacentHTML('beforeend', '<div class="buddy-text"></div>'); txtEl = out.lastElementChild; }
           text += ev.delta; txtEl.textContent = text;
+          said += ev.delta; fab('speaking', said);
         } else if (ev.type === 'tool') {
           const chip = document.createElement('span');
           chip.className = 'buddy-tool' + (ev.ok ? '' : ' bad');
           chip.textContent = '🔧 ' + ev.name; chip.title = `${ev.args}\n→ ${ev.result}`;
+          if (!said) fab('thinking', '🔧 ' + ev.name); else said += '\n';
           out.insertBefore(chip, txtEl || out.querySelector('.buddy-typing'));
           txtEl = null; text = '';  // lo que diga despues va en un renglon nuevo
         } else if (ev.type === 'first_token') {
@@ -244,6 +297,7 @@ async function send(body) {
           audioQueue.push(wavUrl(ev.wav)); playNext();
         } else if (ev.type === 'error') {
           out.insertAdjacentHTML('beforeend', `<div class="buddy-text bad">${esc(ev.msg)}</div>`);
+          said = ev.msg; fab('error', ev.msg);
         }
         scroll();
       }
@@ -254,6 +308,7 @@ async function send(body) {
     $('.buddy-typing', out)?.remove();
     abort = null;
     updStop();
+    if (!playing) fab('idle', said);
     $('#buddy-stats').textContent = stats.join(' · ');
   }
 }
