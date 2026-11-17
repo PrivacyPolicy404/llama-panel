@@ -53,11 +53,13 @@ They are written in Spanish; each one starts with an English summary of the main
 - **Audio models** tab: pick the Whisper model and the Piper voice (listen to each voice first). Other programs can
   use them through `http://<machine>:8090/v1/audio/speech` and `/v1/audio/transcriptions` (OpenAI format).
 - **Buddy** tab: an agent with a personality, memory and tools that uses the loaded text model. You can talk to it:
-  hold the mic button (or the space bar), whisper.cpp turns your voice into text on the CPU and Piper reads each
+  hold the mic button (or enable a per-device shortcut), whisper.cpp turns your voice into text on the CPU and Piper
+  reads each
   sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
   call is logged. Voice setup without sudo: `scripts/install-voice.sh` (the microphone needs https or localhost, for
   example an SSH tunnel). With a Home Assistant token it can also list and switch lights, plugs, fans, scenes and
-  media players (never scripts or automations). You can talk to it from any tab (space bar, floating button). It can
+  media players (never scripts or automations). You can talk to it from any tab using the floating button or an
+  optional safe key combination. It can
   run one short web search per turn to verify current facts. Language and timezone come from the browser; approximate
   location is optional, enabled per device, and never saved. With `clients/dani.py` on your PC, you can talk to it
   from any program by holding a key (the panel serves it at `/clients/dani.py`).
