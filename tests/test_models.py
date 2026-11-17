@@ -89,8 +89,8 @@ class Preset(unittest.TestCase):
                                         "ai": {"ctx": "65536", "nmax": "3"}}})
         normal = TM.build_preset(s, self.models)
         ai = TM.build_preset(s, self.models, ai_mode=True)
-        self.assertIn("spec-draft-n-max = 2\nreasoning = on\nctx-size = 16384\n", normal)
-        self.assertIn("spec-draft-n-max = 3\nreasoning = on\nctx-size = 65536\n", ai)
+        self.assertIn("[y]\nmodel = /m/y.gguf\nctx-size = 16384\nspec-type = draft-mtp\nspec-draft-n-max = 2\nreasoning = on\n", normal)
+        self.assertIn("[y]\nmodel = /m/y.gguf\nctx-size = 65536\nspec-type = draft-mtp\nspec-draft-n-max = 3\nreasoning = on\n", ai)
         # MTP apagado solo en modo IA; las opciones crudas de modo IA siguen mandando sobre los campos
         s = settings(models={"y.gguf": {"mtp": True, "ai": {"mtp": False, "ctx": "65536"}, "extra_ai": "ctx-size = 32768"}})
         ai = TM.build_preset(s, self.models, ai_mode=True)
@@ -99,12 +99,35 @@ class Preset(unittest.TestCase):
         self.assertNotIn("ctx-size = 65536", ai)
 
 
+class Fields(unittest.TestCase):
+    def test_controls_become_preset_lines(self):
+        cfg = {"ngl": "all", "cpu_moe": "all", "parallel": "1", "kv": "q8_0", "fa": "on", "ubatch": "2048", "threads": "8"}
+        self.assertEqual(TM.field_lines(cfg), ["n-gpu-layers = all", "cpu-moe = 1", "parallel = 1", "cache-type-k = q8_0",
+                                               "cache-type-v = q8_0", "flash-attn = on", "ubatch-size = 2048", "threads = 8"])
+        self.assertEqual(TM.field_lines({"cpu_moe": "20"}), ["n-cpu-moe = 20"])
+        self.assertEqual(TM.field_lines({}), [])
+
+    def test_extra_options_win_over_controls(self):
+        s = settings(models={"y.gguf": {"parallel": "4", "kv": "q4_0", "extra": "parallel = 1"}})
+        out = TM.build_preset(s, [{"key": "y.gguf", "path": "/m/y.gguf", "id": "y"}])
+        self.assertIn("cache-type-k = q4_0", out)
+        self.assertIn("parallel = 1", out)
+        self.assertNotIn("parallel = 4", out)
+
+    def test_invalid_values(self):
+        errors, cfgs = TM.validate_settings("", {"a": {"ngl": "mucho", "kv": "q2", "parallel": "0", "threads": "8",
+                                                       "ai": {"parallel": "x", "kv": "q8_0"}}})
+        self.assertEqual(len(errors), 4)
+        self.assertEqual((cfgs["a"]["threads"], cfgs["a"]["ai"]), ("8", {"kv": "q8_0"}))
+
+
 class TextValidation(unittest.TestCase):
     def test_ok(self):
         errors, cfgs = TM.validate_settings("ctx-size = 8192", {"a": {"mtp": 1, "nmax": "3", "ctx": "4096"}})
         self.assertEqual(errors, [])
-        self.assertEqual(cfgs["a"], {"mtp": True, "nmax": "3", "reasoning": "", "ctx": "4096", "extra": "", "extra_ai": "",
-                                     "ai": {}})
+        expected = {f: "" for f in TM.FIELD_IDS}
+        expected.update(mtp=True, nmax="3", ctx="4096", extra="", extra_ai="", ai={})
+        self.assertEqual(cfgs["a"], expected)
 
     def test_ai_fields_keep_only_overrides(self):
         errors, cfgs = TM.validate_settings("", {"a": {"ai": {"mtp": False, "nmax": "", "reasoning": "off", "ctx": "65536"}}})

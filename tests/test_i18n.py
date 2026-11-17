@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 norm = lambda s: re.sub(r"\s+", " ", s).strip()
 # se escriben igual en los dos idiomas
 SAME = {"Hardware", "VRAM", "RAM", "Error", "Panel", "ES", "EN", "llama-server · router", "KoboldCpp · StableUI",
-        "Idioma / Language", "Prompt tok/s"}
+        "Idioma / Language", "Prompt tok/s", "MTP", "Flash attention", "auto"}
 
 
 def js_dictionary():
@@ -70,9 +70,19 @@ def py_keys():
     return keys
 
 
+def field_keys():
+    """Textos de los campos de cada modelo: la interfaz los dibuja desde la API y los traduce con t()."""
+    from llama_panel.text_models import FIELDS
+    keys = set()
+    for f in FIELDS:
+        keys |= {norm(f[k]) for k in ("label", "hint", "placeholder") if f.get(k) and not f[k].isdigit()}
+        keys |= {norm(label) for _, label in f.get("options", []) if not label.isdigit()}
+    return keys
+
+
 class Translations(unittest.TestCase):
     def test_interface(self):
-        missing = sorted((js_keys() | html_keys()) - js_dictionary() - SAME)
+        missing = sorted((js_keys() | html_keys() | field_keys()) - js_dictionary() - SAME)
         self.assertEqual(missing, [], "faltan en static/js/i18n.js")
 
     def test_server_messages(self):

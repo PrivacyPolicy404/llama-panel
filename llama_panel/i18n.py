@@ -123,6 +123,19 @@ EN = {
     "Guardado. El panel se reinicia para usar las rutas nuevas.": "Saved. The panel restarts to use the new paths.",
     " El servidor de texto usa el llama-server nuevo la próxima vez que se encienda o reinicie.":
         " The text server uses the new llama-server the next time it starts or restarts.",
+    "{key}: valor inválido en «{field}»: '{value}'": "{key}: invalid value in «{field}»: '{value}'",
+    # nombres de los campos de cada modelo (text_models.FIELDS), para los mensajes de error
+    "Contexto": "Context",
+    "Capas en GPU": "GPU layers",
+    "Expertos MoE en RAM": "MoE experts in RAM",
+    "Pedidos en paralelo": "Parallel requests",
+    "Caché KV": "KV cache",
+    "Flash attention": "Flash attention",
+    "Tanda del prompt": "Prompt batch",
+    "Hilos de CPU": "CPU threads",
+    "MTP": "MTP",
+    "Borradores por paso": "Drafts per step",
+    "Razonamiento": "Reasoning",
     # opciones de razonamiento (config.REASONING_OPTS)
     "por defecto": "default",
     "auto": "auto",

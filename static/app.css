@@ -330,11 +330,17 @@ details.global[open] summary { margin-bottom: 12px; }
 .lang { height: 32px; padding: 0 6px; font-size: 13px; }
 
 /* ajustes del modelo: columnas Normal / Modo IA */
-.mode-grid { display: grid; grid-template-columns: max-content max-content; gap: 8px 16px; align-items: center; }
-.mode-grid.two { grid-template-columns: max-content max-content max-content; }
+.mode-grid { display: grid; grid-template-columns: max-content max-content 1fr; gap: 8px 16px; align-items: center; }
+.mode-grid.two { grid-template-columns: max-content max-content max-content 1fr; }
+.mode-grid .mode-hint { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.mode-grid input[type=text] { width: 120px; }
+@media (max-width: 760px) { .mode-grid .mode-hint { grid-column: 1 / -1; margin: -4px 0 6px; } }
 .mode-grid .mode-h { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .mode-grid .mode-l { font-size: 12.5px; color: var(--muted); }
 .mode-grid input[type=number] { width: 120px; }
 .mode-grid select { min-width: 120px; }
 .model-edit .hint.wide { margin-top: -6px; }
-.mode-grid .mode-ai input[type=number], .mode-grid .mode-ai select { width: 170px; }
+.mode-grid .mode-ai input, .mode-grid .mode-ai select { width: 170px; }
+.mode-grid > div > select { max-width: 260px; }
+.mode-grid .mode-hint.over { color: var(--warning); }
+.mode-grid :disabled { opacity: .45; }

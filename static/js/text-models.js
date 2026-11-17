@@ -31,8 +31,26 @@ function parseOpts(text) {
   return out;
 }
 
+// Si una opcion extra cubre un campo (por ejemplo cpu-moe), el campo no vale: se desactiva y se dice por que
+function markOverrides(row) {
+  const extra = parseOpts($('[data-f=extra]', row).value), extraAi = parseOpts($('[data-f=extra_ai]', row).value);
+  const find = (opts, keys) => [...opts].reverse().find(o => keys.includes(o.key));
+  for (const f of S.config.fields) {
+    const n = $(`[data-f="${f.id}"]`, row), a = $(`[data-ai="${f.id}"]`, row), hint = $(`[data-hint="${f.id}"]`, row);
+    if (!n || !hint) continue;
+    const o = find(extra, f.keys || []), oa = find(extraAi, f.keys || []);
+    n.disabled = !!o;
+    if (a) a.disabled = !!(oa || (o && !a.value));
+    const shown = o ? t('Definido en opciones extra: {opt}', { opt: `${o.key} = ${o.val}` })
+      : oa ? t('En modo IA lo define una opción extra: {opt}', { opt: `${oa.key} = ${oa.val}` }) : t(f.hint || '');
+    hint.textContent = shown;
+    hint.classList.toggle('over', !!(o || oa));
+  }
+}
+
 // chips debajo de cada textarea: que entendio el panel de cada linea
 function renderOpts(row) {
+  markOverrides(row);
   const known = new Set(S.config.server_opts || []);
   const base = parseOpts($('[data-f=extra]', row).value);
   const baseKeys = new Set(base.map(o => o.key));
@@ -81,55 +99,53 @@ export function updateTextPerf() {
 }
 
 export function readTextCfg(row) {
-  return {
-    mtp: $('[data-f=mtp]', row).checked,
-    nmax: $('[data-f=nmax]', row).value.trim() || '2',
-    reasoning: $('[data-f=reasoning]', row).value,
-    ctx: $('[data-f=ctx]', row).value.trim(),
-    extra: $('[data-f=extra]', row).value,
-    extra_ai: $('[data-f=extra_ai]', row).value,
-    ai: readAiCfg(row),
-  };
-}
-
-// columna "Modo IA": solo lo que difiere de la columna Normal ("igual" no se guarda)
-function readAiCfg(row) {
-  const ai = {};
-  const mtp = $('[data-ai=mtp]', row)?.value;
-  if (mtp === 'on' || mtp === 'off') ai.mtp = mtp === 'on';
-  for (const k of ['nmax', 'ctx']) {
-    const v = $(`[data-ai=${k}]`, row)?.value.trim();
-    if (v) ai[k] = v;
+  const cfg = { extra: $('[data-f=extra]', row).value, extra_ai: $('[data-f=extra_ai]', row).value, ai: {} };
+  for (const f of S.config.fields) {
+    const n = $(`[data-f="${f.id}"]`, row), a = $(`[data-ai="${f.id}"]`, row);
+    cfg[f.id] = f.kind === 'check' ? n.checked : n.value.trim();
+    // columna Modo IA: vacio = igual que Normal (no se guarda)
+    const v = a ? a.value.trim() : '';
+    if (v) cfg.ai[f.id] = f.kind === 'check' ? v === 'on' : v;
   }
-  const rs = $('[data-ai=reasoning]', row)?.value;
-  if (rs !== undefined && rs !== SAME) ai.reasoning = rs;
-  return ai;
+  return cfg;
 }
 
-const SAME = '=';
+const optionsHtml = (opts, sel) => opts.map(([v, label]) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(t(label))}</option>`).join('');
 
-// Ajustes principales en dos columnas: Normal y, si el modo IA esta instalado, Modo IA (vacio = igual que Normal)
-function modeGrid(cfg, opts, aiOn) {
+function normalControl(f, v) {
+  const attrs = `data-f="${f.id}"`;
+  if (f.kind === 'check') return `<input type="checkbox" ${attrs} ${v ? 'checked' : ''} class="check">`;
+  if (f.kind === 'select') return `<select ${attrs}>${optionsHtml(f.options, v ?? '')}</select>`;
+  if (f.kind === 'layers') return `<input type="text" class="mono" ${attrs} value="${esc(v ?? '')}" placeholder="${esc(t(f.placeholder))}" spellcheck="false">`;
+  return `<input type="number" ${attrs} value="${esc(v ?? '')}" min="${f.min ?? ''}" max="${f.max ?? ''}" step="${f.step ?? 1}" placeholder="${esc(t(f.placeholder || ''))}">`;
+}
+
+function aiControl(f, v) {
+  const same = t('igual que normal'), attrs = `data-ai="${f.id}"`;
+  if (f.kind === 'check') {
+    return `<select ${attrs}><option value="">${same}</option>` +
+      `<option value="on" ${v === true ? 'selected' : ''}>${t('activado')}</option>` +
+      `<option value="off" ${v === false ? 'selected' : ''}>${t('apagado')}</option></select>`;
+  }
+  if (f.kind === 'select') {  // sin la opcion "por defecto": vacio ya significa "igual que normal"
+    return `<select ${attrs}><option value="">${same}</option>${optionsHtml(f.options.filter(o => o[0] !== ''), v)}</select>`;
+  }
+  const type = f.kind === 'layers' ? 'type="text" class="mono" spellcheck="false"' : `type="number" min="${f.min ?? ''}" max="${f.max ?? ''}" step="${f.step ?? 1}"`;
+  return `<input ${type} ${attrs} value="${esc(v ?? '')}" placeholder="${esc(same)}">`;
+}
+
+// Ajustes del modelo en columnas: Normal y, si el modo IA esta instalado, Modo IA (vacio = igual que Normal)
+function modeGrid(cfg, aiOn) {
   const ai = cfg.ai || {};
-  const same = t('igual que normal');
-  const aiCol = (html) => aiOn ? `<div class="mode-ai">${html}</div>` : '';
+  const rows = S.config.fields.map(f => `
+      <span class="mode-l">${esc(t(f.label))}</span>
+      <div>${normalControl(f, cfg[f.id])}</div>
+      ${aiOn ? `<div class="mode-ai">${aiControl(f, ai[f.id])}</div>` : ''}
+      <span class="mode-hint" data-hint="${f.id}">${esc(t(f.hint || ''))}</span>`).join('');
   return `
     <div class="mode-grid wide ${aiOn ? 'two' : ''}">
-      <span></span><span class="mode-h">${aiOn ? t('Normal') : ''}</span>${aiOn ? `<span class="mode-h">${t('Modo IA')}</span>` : ''}
-      <span class="mode-l">MTP</span>
-      <div><input type="checkbox" data-f="mtp" ${cfg.mtp ? 'checked' : ''} class="check"></div>
-      ${aiCol(`<select data-ai="mtp"><option value="">${same}</option>
-        <option value="on" ${ai.mtp === true ? 'selected' : ''}>${t('activado')}</option>
-        <option value="off" ${ai.mtp === false ? 'selected' : ''}>${t('apagado')}</option></select>`)}
-      <span class="mode-l">${t('Borradores por paso')}</span>
-      <div><input type="number" min="1" max="16" data-f="nmax" value="${esc(cfg.nmax || 2)}"></div>
-      ${aiCol(`<input type="number" min="1" max="16" data-ai="nmax" value="${esc(ai.nmax || '')}" placeholder="${esc(same)}">`)}
-      <span class="mode-l">${t('Razonamiento')}</span>
-      <div><select data-f="reasoning">${opts(cfg.reasoning)}</select></div>
-      ${aiCol(`<select data-ai="reasoning"><option value="${SAME}">${same}</option>${'reasoning' in ai ? opts(ai.reasoning) : opts(null)}</select>`)}
-      <span class="mode-l">${t('Contexto')}</span>
-      <div><input type="number" min="256" step="256" data-f="ctx" value="${esc(cfg.ctx)}" placeholder="global"></div>
-      ${aiCol(`<input type="number" min="256" step="256" data-ai="ctx" value="${esc(ai.ctx || '')}" placeholder="${esc(same)}">`)}
+      <span></span><span class="mode-h">${aiOn ? t('Normal') : ''}</span>${aiOn ? `<span class="mode-h">${t('Modo IA')}</span>` : ''}<span></span>
+      ${rows}
     </div>
     ${aiOn ? `<p class="hint wide">${t('En modo IA el escritorio está apagado y quedan ~0.4 GB más de VRAM: sirve, por ejemplo, para más contexto. Lo que quede en «igual que normal» usa la columna Normal.')}</p>` : ''}`;
 }
@@ -144,7 +160,6 @@ export function renderTextModels() {
     box.append(el(`<div class="card empty">${esc(t('No hay archivos .gguf en {dir}.', { dir: c.models_dir }))}</div>`));
     return;
   }
-  const opts = sel => c.reasoning_opts.map(([v, label]) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(label)}</option>`).join('');
   const aiOn = !!c.ai_mode_installed;
   for (const m of c.text_models) {
     const cfg = m.cfg;
@@ -164,7 +179,7 @@ export function renderTextModels() {
           </div>
         </div>
         <div class="model-edit" hidden>
-          ${modeGrid(cfg, opts, aiOn)}
+          ${modeGrid(cfg, aiOn)}
           <label class="field wide"><span>${t('Opciones extra de llama-server · una por línea: <code>clave = valor</code> · <code>#</code> para comentarios')}</span>
             <textarea rows="6" data-f="extra" data-autosize spellcheck="false">${esc(cfg.extra)}</textarea></label>
           <div class="opts wide" data-opts="extra"></div>

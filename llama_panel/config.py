@@ -60,7 +60,8 @@ PANEL_PORT = int(os.environ.get("LLAMA_PANEL_PORT", "8090"))
 CHAT_PORT = 8080
 IMG_PORT = 5001
 
-DEFAULT_GLOBAL = "n-gpu-layers = 99\nctx-size = 8192\nreasoning-format = deepseek"
+# Sin n-gpu-layers: con un valor fijo llama.cpp apaga --fit y un MoE que no entra en la VRAM va a ~2 tok/s
+DEFAULT_GLOBAL = "ctx-size = 8192\nreasoning-format = deepseek"
 REASONING_OPTS = [("", "por defecto"), ("auto", "auto"), ("on", "activado"), ("off", "apagado")]
 LINE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\s*=\s*\S.*$")
 SPLIT_RE = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$")  # modelos partidos en varios archivos

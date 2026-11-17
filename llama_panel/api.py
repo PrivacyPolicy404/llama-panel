@@ -55,6 +55,7 @@ def config():
         "img_selected": sel["key"] if sel else "",
         "server_opts": TM.server_options(),
         "ai_mode_installed": ai_mode_state()["installed"],
+        "fields": TM.FIELDS,  # la interfaz traduce los textos (castellano = clave)
     }
 
 

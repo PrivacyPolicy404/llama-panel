@@ -28,8 +28,10 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 - Monitor de VRAM, uso de GPU, temperatura/consumo/ventilador y RAM, con historia de los últimos minutos.
 - Encender, reiniciar y apagar texto e imágenes; al encender uno, el otro se apaga para liberar VRAM.
 - Cargar y descargar un modelo de texto puntual (API del router de llama-server) sin reiniciar nada.
-- Ajustes por modelo (MTP, razonamiento, contexto, opciones extra), con valores propios para el modo IA si está
-  instalado; "Guardar y aplicar" recarga solo lo necesario.
+- Ajustes por modelo con controles para las opciones que importan con poca VRAM (contexto, capas en GPU, expertos
+  MoE en RAM, pedidos en paralelo, caché KV, flash attention, tanda del prompt, hilos, MTP, razonamiento), cada uno
+  con una explicación corta y valores propios para el modo IA si está instalado. Lo demás va en las opciones extra,
+  que mandan sobre los controles (el panel muestra cuáles pisan); "Guardar y aplicar" recarga solo lo necesario.
 - Prompt inicial guardado: con un cliente tipo agente (Cline, etc.), "Guardar prompt" escribe a disco el prompt fijo
   ya procesado y el panel lo restaura solo cada vez que el modelo se carga (un minuto de espera menos por sesión).
 - Elegir el modelo de imagen y sus flags de KoboldCpp, con progreso de la generación en curso.
