@@ -13,12 +13,12 @@ let abort = null;        // charla en curso (para cortarla)
 const audioQueue = [];
 let playing = null;
 let hotkeyDown = false;
+let capturingHotkey = false;
 const HOTKEY_KEY = 'buddy-push-to-talk';
-const HOTKEYS = {
-  off: { label: 'Desactivado' },
-  buddy_space: { code: 'Space', scope: 'buddy', label: 'Espacio (sólo en Compañero)' },
-  all_ctrl_shift_space: { code: 'Space', ctrl: true, shift: true, scope: 'all', label: 'Ctrl + Shift + Espacio (todo el panel)' },
-  all_f9: { code: 'F9', scope: 'all', label: 'F9 (todo el panel)' },
+const OLD_HOTKEYS = {
+  buddy_space: { code: 'Space', scope: 'buddy' },
+  all_ctrl_shift_space: { code: 'Space', ctrl: true, shift: true, scope: 'all' },
+  all_f9: { code: 'F9', scope: 'all' },
 };
 
 // Id de esta pestana del navegador: el panel le habla los avisos al cliente que se uso ultimo (llama_panel/proactive.py)
@@ -32,6 +32,7 @@ const CLIENT = (() => {
 })();
 const KIND_ICON = { timer: '⏰', alerta: '⚠️', resumen: '☀️', aviso: '💬' };
 const seen = new Set();
+let alertsSource = null;
 
 const LEVELS = { lectura: 'solo mira', memoria: 'escribe su memoria', accion: 'cambia cosas', peligrosa: 'peligrosa' };
 
@@ -48,13 +49,14 @@ export async function initBuddy() {
   drawFab();
   listen();
   addEventListener('keydown', e => {
+    if (capturingHotkey) { captureHotkey(e); return; }
     if (e.repeat || !hotkeyMatches(e) || isInteractive(e.target)) return;
     e.preventDefault();
     hotkeyDown = true;
     startRec(true);
   });
   addEventListener('keyup', e => {
-    const hotkey = HOTKEYS[hotkeyValue()];
+    const hotkey = hotkeyValue();
     if (!hotkeyDown || !hotkey?.code || e.code !== hotkey.code) return;
     e.preventDefault();
     hotkeyDown = false;
@@ -64,13 +66,16 @@ export async function initBuddy() {
 
 function hotkeyValue() {
   try {
-    const value = localStorage.getItem(HOTKEY_KEY);
-    return HOTKEYS[value] ? value : 'off';
-  } catch { return 'off'; }
+    const raw = localStorage.getItem(HOTKEY_KEY);
+    if (!raw || raw === 'off') return { scope: 'all' };
+    if (OLD_HOTKEYS[raw]) return OLD_HOTKEYS[raw];  // migración de la primera versión experimental
+    const value = JSON.parse(raw);
+    return typeof value.code === 'string' ? value : { scope: 'all' };
+  } catch { return { scope: 'all' }; }
 }
 
 function hotkeyMatches(e) {
-  const h = HOTKEYS[hotkeyValue()];
+  const h = hotkeyValue();
   return h?.code && (h.scope === 'all' || S.tab === 'buddy') && e.code === h.code &&
     !!e.ctrlKey === !!h.ctrl && !!e.shiftKey === !!h.shift && !!e.altKey === !!h.alt && !!e.metaKey === !!h.meta;
 }
@@ -81,35 +86,86 @@ function isInteractive(target) {
 }
 
 function hotkeyLabel() {
-  return t(HOTKEYS[hotkeyValue()].label);
+  const h = hotkeyValue();
+  if (!h.code) return t('Desactivado');
+  const keys = [];
+  if (h.ctrl) keys.push('Ctrl');
+  if (h.alt) keys.push('Alt');
+  if (h.shift) keys.push('Shift');
+  if (h.meta) keys.push(navigator.platform.includes('Mac') ? '⌘' : 'Meta');
+  keys.push(h.code === 'Space' ? t('Espacio') : h.code.replace(/^Key/, '').replace(/^Digit/, ''));
+  return keys.join(' + ');
 }
 
 function micTitle() {
-  return hotkeyValue() === 'off' ? t('Mantené apretado para hablar') :
+  return !hotkeyValue().code ? t('Mantené apretado para hablar') :
     t('Mantené apretado para hablar · Atajo: {key}', { key: hotkeyLabel() });
+}
+
+function saveHotkey(value) {
+  localStorage.setItem(HOTKEY_KEY, value.code ? JSON.stringify(value) : 'off');
+  updateHotkeyUI();
+}
+
+function updateHotkeyUI() {
+  const h = hotkeyValue();
+  const label = $('#buddy-hotkey-label');
+  if (label) label.textContent = hotkeyLabel();
+  const scope = $('#buddy-hotkey-scope');
+  if (scope) scope.value = h.scope || 'all';
+  const title = micTitle();
+  if ($('#buddy-mic')) $('#buddy-mic').title = title;
+  if ($('#buddy-fab .buddy-fab-mic')) $('#buddy-fab .buddy-fab-mic').title = title;
+}
+
+function captureHotkey(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape') { capturingHotkey = false; updateHotkeyUI(); return; }
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key) || e.repeat) return;
+  const scope = $('#buddy-hotkey-scope').value;
+  const modified = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey;
+  if (scope === 'all' && !modified && !/^F([1-9]|1[0-2])$/.test(e.code)) {
+    toast(t('Para todo el panel usá una combinación con Ctrl, Alt o Shift, o una tecla F1–F12.'), 'error');
+    return;
+  }
+  saveHotkey({ code: e.code, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey, scope });
+  capturingHotkey = false;
 }
 
 // Lo que Dani dice por su cuenta (timers, avisos, el resumen de la manana) llega por server-sent events
 function listen() {
-  const es = new EventSource('/api/buddy/events?client=' + encodeURIComponent(CLIENT));
-  es.onmessage = e => {
-    let ev;
-    try { ev = JSON.parse(e.data); } catch { return; }
-    if (ev.type !== 'say' || seen.has(ev.id)) return;
-    seen.add(ev.id);
-    const icon = KIND_ICON[ev.kind] || '💬';
-    if (!abort) {  // en medio de una respuesta no se mete en el log: queda en el historial
-      $('.buddy-empty')?.remove();
-      $('#buddy-log')?.insertAdjacentHTML('beforeend', bubble('assistant', ev.text, [], icon));
-      scroll();
+  const sync = () => {
+    if (document.hidden) {
+      alertsSource?.close();
+      alertsSource = null;
+    } else if (!alertsSource) {
+      alertsSource = new EventSource('/api/buddy/events?client=' + encodeURIComponent(CLIENT));
+      alertsSource.onmessage = onAlert;
     }
-    fab('speaking', `${icon} ${ev.text}`);
-    if (ev.speak && ev.audio?.length) {
-      for (const w of ev.audio) audioQueue.push(wavUrl(w));
-      playNext();
-    } else if (!playing) fab('idle', `${icon} ${ev.text}`);
-    loadBuddyTimers();
   };
+  addEventListener('visibilitychange', sync);
+  addEventListener('pagehide', () => { alertsSource?.close(); alertsSource = null; });
+  sync();
+}
+
+function onAlert(e) {
+  let ev;
+  try { ev = JSON.parse(e.data); } catch { return; }
+  if (ev.type !== 'say' || seen.has(ev.id)) return;
+  seen.add(ev.id);
+  const icon = KIND_ICON[ev.kind] || '💬';
+  if (!abort) {  // en medio de una respuesta no se mete en el log: queda en el historial
+    $('.buddy-empty')?.remove();
+    $('#buddy-log')?.insertAdjacentHTML('beforeend', bubble('assistant', ev.text, [], icon));
+    scroll();
+  }
+  fab('speaking', `${icon} ${ev.text}`);
+  if (ev.speak && ev.audio?.length) {
+    for (const w of ev.audio) audioQueue.push(wavUrl(w));
+    playNext();
+  } else if (!playing) fab('idle', `${icon} ${ev.text}`);
+  loadBuddyTimers();
 }
 
 async function loadBuddyTimers() {
@@ -199,9 +255,14 @@ function draw() {
         </label>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
         <label class="field"><span>${t('Atajo para hablar en este navegador')}</span>
-          <select id="buddy-hotkey">${Object.entries(HOTKEYS).map(([value, h]) =>
-            `<option value="${value}">${esc(t(h.label))}</option>`).join('')}</select>
-          <p class="hint">${t('Desactivado por defecto. Los atajos nunca se capturan mientras usás un campo, botón o enlace. Para hablar desde cualquier programa usá dani.py.')}</p>
+          <span class="path-row"><b id="buddy-hotkey-label"></b>
+            <button type="button" class="btn ghost small" id="buddy-hotkey-record">${t('Definir atajo')}</button>
+            <button type="button" class="btn ghost small" id="buddy-hotkey-clear">${t('Borrar')}</button></span>
+          <select id="buddy-hotkey-scope">
+            <option value="buddy">${t('Sólo en la sección Compañero')}</option>
+            <option value="all">${t('En cualquier sección del panel')}</option>
+          </select>
+          <p class="hint">${t('Apretá «Definir atajo» y después la combinación que quieras. No se captura mientras usás un campo, botón o enlace.')}</p>
         </label>
         <label class="check"><input type="checkbox" id="buddy-share-location"> ${t('Compartir ubicación aproximada con el compañero')}</label>
         <div class="field"><span>${t('Por su cuenta')}</span>
@@ -216,11 +277,12 @@ function draw() {
           <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
         </label>
         <button class="btn ghost" id="buddy-ha-save">${t('Guardar token')}</button>
-        <div class="field"><span>${t('Desde tu PC, con una tecla')}</span>
-          <p class="hint">${t('Para hablarle desde cualquier programa (sin el navegador): mantené apretado Ctrl derecho. En Windows, en PowerShell:')}</p>
+        <div class="field"><span>${t('Hablar desde cualquier programa de tu PC')}</span>
+          <p class="hint">${t('El atajo de arriba funciona sólo cuando llama-panel tiene el foco. Para usar una tecla sobre cualquier programa, descargá este cliente en la PC que tiene el micrófono y dejalo corriendo. En Windows, abrí PowerShell:')}</p>
           <pre class="buddy-cmd">py -m pip install sounddevice pynput
 iwr ${esc(location.origin)}/clients/dani.py -OutFile dani.py
-py dani.py --server ${esc(location.origin)}</pre>
+py dani.py --server ${esc(location.origin)} --key f9</pre>
+          <p class="hint">${t('Mientras mantenés F9 apretado graba; al soltarlo manda el audio. Podés cambiar <code>f9</code> por <code>ctrl_r</code>, otra tecla F o una letra.')}</p>
           <p class="hint">${t('Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.')}</p>
         </div>
         <label class="field"><span>${t('Memoria')}</span>
@@ -256,7 +318,7 @@ function fillSettings() {
   $('#buddy-cfg-alerts').checked = c.alerts;
   $('#buddy-cfg-morning').value = c.morning || '';
   $('#buddy-share-location').checked = localStorage.getItem('buddy-share-location') === '1';
-  $('#buddy-hotkey').value = hotkeyValue();
+  updateHotkeyUI();
   renderTimers();
   const ha = B.ha;
   $('#buddy-ha-state').textContent = !ha.configured ? `· ${t('sin conectar')} (${ha.url})` : ha.ok ? `· ✓ ${t('conectado')}` : `· ✗ ${ha.msg}`;
@@ -295,11 +357,14 @@ function bind() {
   };
   $('#buddy-speak').onchange = () => post('/api/buddy/config', { speak: $('#buddy-speak').checked });
   $('#buddy-share-location').onchange = e => localStorage.setItem('buddy-share-location', e.target.checked ? '1' : '0');
-  $('#buddy-hotkey').onchange = e => {
-    localStorage.setItem(HOTKEY_KEY, e.target.value);
-    const title = micTitle();
-    $('#buddy-mic').title = title;
-    $('#buddy-fab .buddy-fab-mic').title = title;
+  $('#buddy-hotkey-record').onclick = () => {
+    capturingHotkey = true;
+    $('#buddy-hotkey-label').textContent = t('Presioná la combinación… (Escape cancela)');
+  };
+  $('#buddy-hotkey-clear').onclick = () => { capturingHotkey = false; saveHotkey({ scope: 'all' }); };
+  $('#buddy-hotkey-scope').onchange = e => {
+    const h = hotkeyValue();
+    if (h.code) saveHotkey({ ...h, scope: e.target.value });
   };
   $('#buddy-ha-save').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/ha', { token: $('#buddy-ha-token').value })));
