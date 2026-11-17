@@ -8,6 +8,8 @@ Panel web casero para levantar y bajar modelos on demand en una GPU con poca VRA
 
 Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build.
 
+![Panel con Qwen3.8-Flash-Next cargado: VRAM, GPU, temperatura y RAM arriba; servicios de texto e imágenes; lista de modelos con sus velocidades medidas](docs/img/panel.png)
+
 Está hecho y medido para una máquina concreta (AMD RX 580 de 8 GB solo con Vulkan, 64 GB de RAM, Linux con systemd).
 La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendimiento.md)) y las notas de hardware
 ([docs/notas.md](docs/notas.md)) explican cada configuración con números; pueden servir en otras GPU con poca VRAM.
