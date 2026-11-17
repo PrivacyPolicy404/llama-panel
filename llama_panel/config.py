@@ -31,11 +31,14 @@ def _read_env_file(path):
 _LOCAL = _read_env_file(PATHS_ENV)
 
 
-def _env(name, default):
-    """Variable de entorno; si no, la de paths.env (vacia vale: "sin carpetas extra"); si no, el valor por defecto."""
+def _env(name, default, allow_empty=False):
+    """Variable de entorno; si no, la de paths.env; si no, el valor por defecto. Un valor vacio en paths.env vuelve al
+    valor por defecto (una ruta vacia seria la carpeta actual), salvo con allow_empty ("sin carpetas extra")."""
     if os.environ.get(name):
         return os.environ[name]
-    return _LOCAL[name] if name in _LOCAL else str(default)
+    if name in _LOCAL and (_LOCAL[name] or allow_empty):
+        return _LOCAL[name]
+    return str(default)
 
 
 SETTINGS_FILE = CFG_DIR / "settings.json"
@@ -47,7 +50,7 @@ SLOTS_DIR = Path(os.environ.get("LLAMA_PANEL_SLOTS_DIR", HOME / ".cache" / "llam
 MODELS_DIR = Path(_env("LLAMA_MODELS_DIR", HOME / "models")).expanduser()
 # Carpetas extra separadas por ":" (por ejemplo, un NVMe para modelos que necesitan lectura rapida)
 EXTRA_MODELS_DIRS = [Path(p).expanduser() for p in
-                     _env("LLAMA_EXTRA_MODELS_DIRS", "").split(":") if p]
+                     _env("LLAMA_EXTRA_MODELS_DIRS", "", allow_empty=True).split(":") if p]
 MODELS_DIRS = [MODELS_DIR] + [d for d in EXTRA_MODELS_DIRS if d != MODELS_DIR]
 IMG_DIR = Path(_env("LLAMA_IMG_DIR", HOME / "imgmodels")).expanduser()
 LLAMA_SERVER = str(Path(_env("LLAMA_SERVER_BIN", HOME / "llama.cpp/build/bin/llama-server")).expanduser())

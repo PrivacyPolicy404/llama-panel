@@ -24,6 +24,11 @@ class EnvFileTest(unittest.TestCase):
                 self.assertEqual(C._env("X_TEST", "def"), "entorno")
             self.assertEqual(C._env("OTRA_TEST", "def"), "def")
 
+    def test_empty_value_means_default_unless_allowed(self):
+        with mock.patch.dict(C._LOCAL, {"X_TEST": ""}, clear=True):
+            self.assertEqual(C._env("X_TEST", "/def"), "/def")  # una ruta vacia seria la carpeta actual
+            self.assertEqual(C._env("X_TEST", "/def", allow_empty=True), "")
+
 
 if __name__ == "__main__":
     unittest.main()

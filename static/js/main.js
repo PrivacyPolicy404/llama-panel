@@ -31,6 +31,7 @@ async function pollState() {
 function renderAiMode() {
   const b = $('#ai-mode'), ai = S.state?.ai_mode;
   if (!b || !ai || b.dataset.armed || b.classList.contains('busy')) return;
+  b.hidden = !ai.installed;  // sin el modo IA instalado (scripts/install-modo-ia.sh) el botón no hace nada
   b.dataset.action = ai.active ? 'ai_mode_off' : 'ai_mode_on';
   b.textContent = ai.active ? t('Salir del modo IA') : t('Modo IA');
   b.dataset.confirm = ai.active ? '' : t('¿Cerrar la sesión gráfica de la máquina del panel? Tocá de nuevo');
