@@ -1,5 +1,20 @@
 # Notas: hardware, modelos y lo que aprendimos
 
+> **English summary.** Working notes for this machine: hardware limits, the current settings of each model and
+> the traps already found. The rest of the document is in Spanish. Key points:
+>
+> - **Machine:** AMD RX 580 8 GB (Polaris, Vulkan/RADV only, no `shaderFloat16`, PCIe 3.0), i7-10700, 64 GB RAM.
+> - **Limits:** amdgpu lets the GPU pin at most half the RAM (GTT, 31 GiB here); going over gives `device lost`.
+>   `memlock` is 8 GB, so `--load-mode mlock` is useless for large models. Models read from disk per token
+>   (n-gram tables) must be on the NVMe, not the HDD.
+> - **Models:** Qwen3.6-35B-A3B with experts in RAM, pinned, and an expert cache in VRAM; Qwen3.8-Flash-Next with
+>   44 of 48 expert layers pinned (fork patch 1), a 2-token MTP draft and `parallel = 1`. Dense 8–9B models fit
+>   entirely in VRAM. The exact settings are in the code blocks below.
+> - **Traps:** the router's default `parallel = 4` halves the speed of large MoE models; a global
+>   `n-gpu-layers = 99` without `cpu-moe` makes the GPU read weights over PCIe (~2 tok/s); without a desktop session
+>   logind drops GPU access and Vulkan falls back to `llvmpipe` (fixed with the `render`/`video` groups).
+> - The detailed experiments are in [`analisis-rendimiento.md`](analisis-rendimiento.md) (English summary at the top).
+
 Contexto acumulado para no tener que redescubrirlo. Primera versión: 2026-11-14.
 La bitácora detallada de cada experimento (método y números) está en `analisis-rendimiento.md`.
 

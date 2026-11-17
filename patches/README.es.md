@@ -1,0 +1,121 @@
+# Parches locales de llama.cpp
+
+[English](README.md) · **Castellano**
+
+El llama.cpp de esta máquina sale del fork **github.com/PrivacyPolicy404/llama.cpp**, rama `ot-host-buffers`:
+el `master` oficial más los 10 parches de abajo y notas en el README del fork. En `~/llama.cpp`:
+
+- `origin` = el fork (ahí se sube la rama)
+- `upstream` = ggml-org/llama.cpp, solo lectura (el push está deshabilitado)
+
+Para actualizar sin perder los parches:
+
+```bash
+~/llama-panel/scripts/update-llama.sh --check   # cuántos commits nuevos hay
+~/llama-panel/scripts/update-llama.sh           # rebase + compilar + verificar + subir al fork + reiniciar el router
+```
+
+Si algún parche deja de aplicar limpio, el script no cambia nada y avisa.
+Los archivos `.patch` son copias de los commits (sin las notas del README), por si hiciera falta reaplicarlos a mano con `git am`.
+
+## 1. `llama.cpp-ot-host-buffers.patch`
+
+`-ot` / `--override-tensor` acepta los buffers de memoria fija (`Vulkan_Host`, `CUDA_Host`, ...), para fijar solo una
+parte de los tensores que viven en RAM. En amdgpu la memoria fija (GTT) está limitada a la mitad de la RAM (31 GiB acá)
+y los expertos de Flash-Next ocupan 31.6 GiB: fijarlos todos tira el driver.
+
+Uso: `-lm none --lazy-mode on --no-host -ot "blk\.([0-9]|[1-3][0-9]|4[0-3])\.ffn_.*_exps=Vulkan_Host,ffn_.*_exps=CPU"`
+(44 de 48 capas fijas). Prompt largo 104 -> 125 tok/s. **Sin este parche la configuración de Flash-Next no carga.**
+
+## 2. `llama.cpp-vulkan-lightning-indexer-fp32.patch`
+
+La RX 580 no tiene `shaderFloat16` y el lightning indexer de Vulkan lo exigía, así que corría en el CPU: dos turnos
+GPU↔CPU extra en cada una de las 12 capas de atención dispersa de Flash-Next. El parche agrega una variante del shader
+que lee K y la máscara en 16 bits pero calcula en 32. `test-backend-ops`: 210/210 OK.
+Tramos por token 122 -> 98; generación +4–5 % (temperatura 0, sin MTP). En la GPU tarda 0.27 ms por token.
+
+## 3. `llama.cpp-quantize-copy-tensor-type.patch`
+
+`llama-quantize ENTRADA SALIDA COPY --tensor-type 'patron=tipo'` recuantiza solo los tensores nombrados y copia el
+resto tal cual (antes `COPY` ignoraba `--tensor-type`). Se usó para generar Flash-Next con las hyper-connections en Q8_0:
+
+```bash
+llama-quantize --keep-split --tensor-type 'hc_(attn|ffn)_(up|down)=q8_0' \
+    ORIGINAL-00001-of-00002.gguf SALIDA-hcq8.gguf COPY 8
+```
+
+## 4. `llama.cpp-vulkan-multi-add-amd.patch`
+
+La fusión `multi_add` de Vulkan (cadenas de sumas f32 del mismo tamaño en un solo shader) estaba atada a
+`shaderRoundingModeRTEFloat16`, que la RX 580 no tiene. Ese chequeo deja afuera los drivers donde falla (Intel ANV,
+ver PR #15252), pero también a Polaris. El shader es solo f32: el parche la habilita en los drivers de AMD.
+Sirve para las 9 sumas que combinan los 10 expertos de cada capa: 2980 -> 2591 operaciones por token.
+`test-backend-ops -o ADD`: 116/116 OK. Flash-Next +2.5 %, Qwen3.6 +3 % (por el router).
+Para apagarla: `GGML_VK_DISABLE_MULTI_ADD=1`.
+
+## 5. `llama.cpp-cpu-q2_0-avx2-prep.patch`
+
+Kernel AVX2 nuevo para los expertos Q2_0 de Flash-Next en el CPU (`MUL_MAT_ID`, generación). El viejo procesaba 3.8 GB/s
+por hilo: el límite era el cálculo, no la RAM. El nuevo reacomoda una vez por columna las activaciones Q8_0 para que
+coincidan con cómo vienen empaquetados los pesos de 2 bits (desempaquetar 32 pesos: un desplazamiento y un AND, en vez
+de 6 instrucciones), calcula `sum(y)` y las escalas una sola vez, y hace prefetch de los pesos 1 KiB adelante.
+Microbenchmark: 5.1 -> 11.2 GB/s por hilo; 8 hilos desde la RAM 33 -> 40 GB/s (el techo de esta máquina).
+Flash-Next sin MTP 13.5 -> 15.2 tok/s; **por el router 15.7 -> 17.6**. El prompt no cambia (con tandas grandes los
+expertos se calculan en la GPU). `test-backend-ops -o MUL_MAT_ID -b Vulkan0`: todos los casos `q2_0` OK.
+
+## 6. `llama.cpp-vulkan-sparse-attn-gcn.patch`
+
+La atención de Flash-Next elige ~2048 celdas por paso. La ruta dispersa de Vulkan (junta solo esas celdas) se activaba
+con K/V cuantizadas recién cuando la caché era 16× la selección, un empate medido en RDNA3/RDNA4. En la RX 580 la ruta
+densa es más lenta y la dispersa ya gana a 4×: el parche baja el umbral solo en `AMD_GCN` con K/V Q8_0.
+Efecto: la ruta dispersa se usa desde ~8K de contexto en vez de ~32K. Con MTP: 20K 17.1 -> 18.3 tok/s, 30K 16.4 -> 17.4.
+Agrega casos Q8_0 a `test-backend-ops` (1 y 3 consultas, selección 2051, caché de 8K a 64K): 9/9 OK.
+
+## 7. `llama.cpp-vulkan-first-submit-nodes.patch`
+
+`GGML_VK_FIRST_SUBMIT_NODES=N`: el primer lote de cada grafo se envía a la GPU a los N nodos (después, cada
+`GGML_VK_MAX_NODES_PER_SUBMIT` como siempre). Con los expertos en el CPU hay ~49 tramos de GPU por token y en cada uno
+la GPU esperaba a que se grabaran 16 nodos. Apagada por defecto; el panel la pone en 2 en el unit del router.
+Sin MTP 14.70 -> 15.13 tok/s (+2.9 %), con MTP +0.8–1.4 %, salida idéntica.
+
+## 8. `llama.cpp-qwen4exp-mtp-d2t.patch`
+
+El borrador MTP gasta más de la mitad de su tiempo en la proyección de salida (248320 filas), y casi todos los tokens
+que propone salen de una parte chica del vocabulario. Si el GGUF del borrador trae un tensor `d2t` (I64, K ids de
+token), `output.weight` se carga con K filas y los logits se reparten sobre el vocabulario completo con el resto en
+-inf: la misma convención que el motor ya usa en eagle3 y dflash (la idea es la de FR-Spec, arXiv 2502.14856).
+El modelo sigue verificando contra el vocabulario entero, así que la distribución de salida no cambia.
+El GGUF se genera con `tools/mtp_vocab_order.py` (orden por frecuencia) y `tools/gguf_mtp_d2t.py` (recorte).
+Con los 65536 tokens más frecuentes: 18.8 -> 19.2 tok/s a 12K y 17.6 -> 18.0 a 30K, mismos borradores aceptados,
+VRAM 7.34 -> 7.10 GiB, borrador 263 MB más chico.
+
+## 9. `llama.cpp-vulkan-kq-matvec-fold-scales.patch`
+
+Los shaders de matriz por vector q3_K y q5_K rehacían los productos de las escalas en cada columna y mantenían vivos
+a la vez los pesos, las escalas y (en q5_K) las sumas por grupo. Con 4 columnas eso pasaba los 128 registros
+vectoriales (147 y 143), y en GCN entra una sola tanda por SIMD en vez de dos: q3_K 10240×2560 costaba 226 µs con
+3 columnas y 369 con 4. Ahora las escalas se pliegan en los pesos una vez por fila y cada columna es un producto punto.
+Con 4 columnas: 369 -> 265 µs (q3_K) y 290 -> 221 µs (q5_K); 1 a 3 columnas hasta 7 % más rápido.
+`test-backend-ops` MUL_MAT 2592/2592 y MUL_MAT_ID 1160/1160.
+Flash-Next con 2 borradores MTP: 19.50 -> 19.71 tok/s a 12K y 17.92 -> 17.98 a 30K. Ver bitácora 5.28.
+
+## 10. `llama.cpp-vulkan-iq4xs-matvec-halves.patch`
+
+El mismo umbral del parche 9, pero en el caso de todos los días: el shader iq4_xs mantenía vivos los 32 valores de B
+de su sub-bloque por cada columna (41 registros por columna), y con 3 columnas (el lote de verificación con 2
+borradores MTP) llegaba a 142 registros vectoriales. Con 2 o más columnas ahora hace el sub-bloque en dos mitades
+de 16 valores (117 registros con 3 columnas); una columna sigue con el esquema original, que ahí es algo más rápido.
+10240×2560 con 3 columnas: 283 -> 173 µs. `test-backend-ops` MUL_MAT 2592/2592 y MUL_MAT_ID 1160/1160.
+Flash-Next con 2 borradores MTP: 19.62 -> 19.76 tok/s a 12K y 18.00 -> 18.43 a 30K. Ver bitácora 5.29.
+
+## Además de los parches
+
+La rama del fork lleva también commits que no son parches del motor: las notas del README, `docs/rx580.md`
+(montaje, opciones, qué cambia cada parche y cómo reproducir los números) y `scripts/mtp-d2t/` (versiones en inglés y
+sin rutas locales de `tools/mtp_vocab_order.py` y `tools/gguf_mtp_d2t.py`, para que el fork no dependa de este repo).
+
+## Si se propone upstream
+
+Las reglas de llama.cpp (`CONTRIBUTING.md`, `AGENTS.md`) piden abrir primero un issue, declarar el uso de IA,
+y que la descripción del PR y los mensajes de commit los escriba una persona. Los commits del fork tienen mensajes
+escritos con IA: para un PR hay que rehacerlos con mensajes propios, uno por PR, sin las notas del README del fork.

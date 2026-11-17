@@ -1,5 +1,26 @@
 # Bitácora de análisis de rendimiento (RX 580 + MoE grandes)
 
+> **English summary.** This is the log of every performance experiment run to make MoE models larger than the
+> VRAM usable on an AMD RX 580 8 GB (Vulkan only, PCIe 3.0) with an i7-10700 and 64 GB of RAM: hypothesis, method,
+> numbers and conclusion for each one. The rest of the document is in Spanish. Main findings:
+>
+> - **Measure without fooling yourself (section 2):** for small changes use temperature 0, no MTP, and alternate
+>   the variants (A, B, A, B); always confirm through the router, which is how the model is really used; an
+>   operation getting faster in `test-backend-ops` is not the model getting faster.
+> - **Qwen3.6-35B-A3B (section 3):** the expert cache only helps with pinned memory (`load-mode = none`) and part of
+>   the missing experts computed on the CPU (`moe-cache-cpu-share`); with mmap it is much worse. ~28 tok/s generation,
+>   ~228 tok/s long prompt.
+> - **Qwen3.8-Flash-Next 125B (section 5):** from 12.8 to about 19–20 tok/s through the router. What paid off:
+>   pinning 44 of 48 expert layers (the GTT cap is half the RAM, 31 GiB), a 2-token MTP draft, `parallel = 1`,
+>   2048-token batches, a new AVX2 kernel for Q2_0 experts, and the Vulkan patches for Polaris (each one with its
+>   own subsection). Its 51B n-gram table must live on the NVMe.
+> - **What did not work (section 8):** expert cache with mmap, more or fewer threads, 3–4 MTP drafts, prompt lookup
+>   with MTP (up to −29 % on code), 4096-token batches, fusing the small GPU operations (+2.4 % ceiling),
+>   VRAM overclock (+1–2 % but the SMU hangs).
+> - **AI mode (section 7):** stopping the desktop frees ~415 MiB of VRAM; the gain is context, not speed
+>   (Flash-Next at 32K, and 64K with a Q8_0 KV cache).
+> - The 10 fork patches are summarised in section 6 and explained in English in [`patches/README.md`](../patches/README.md).
+
 Registro de todo lo que se midió entre el 2026-11-14 y el 2026-11-15 para correr modelos MoE más grandes que la VRAM:
 qué se probó, cómo, qué dio y qué se concluyó. Sirve para no repetir pruebas y para saber de dónde sale cada
 decisión de configuración. El estado vigente y las trampas resumidas están en `notas.md`; los parches, en `../patches/`.
