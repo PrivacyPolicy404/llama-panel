@@ -32,8 +32,10 @@ _LOCAL = _read_env_file(PATHS_ENV)
 
 
 def _env(name, default):
-    """Variable de entorno; si no, la de paths.env; si no, el valor por defecto."""
-    return os.environ.get(name) or _LOCAL.get(name) or str(default)
+    """Variable de entorno; si no, la de paths.env (vacia vale: "sin carpetas extra"); si no, el valor por defecto."""
+    if os.environ.get(name):
+        return os.environ[name]
+    return _LOCAL[name] if name in _LOCAL else str(default)
 
 
 SETTINGS_FILE = CFG_DIR / "settings.json"

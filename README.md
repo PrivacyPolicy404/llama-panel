@@ -38,6 +38,7 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 panel.py              punto de entrada: corre el servidor o --install
 llama_panel/
   config.py           rutas, puertos, settings.json
+  paths.py            pestaña Configuración: rutas en paths.env, validación, sugerencias
   text_models.py      escaneo de .gguf, presets.ini del router, validación
   prompt_cache.py     prompt inicial guardado: estado del slot a disco y restauración al cargar
   img_models.py       escaneo de imagen, acompañantes (VAE/codificadores), kobold.env
@@ -47,7 +48,7 @@ llama_panel/
   actions.py          lo que hacen los botones (cargar, guardar, aplicar, encender)
   api.py              rutas /api/*
   server.py           servidor HTTP
-  install.py          units de systemd
+  install.py          units de systemd (y su sincronización al arrancar)
 static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo)
@@ -89,14 +90,18 @@ El nombre de la GPU se detecta solo; si sale mal, se fija con `LLAMA_GPU_NAME` e
 ## Instalación
 
 ```bash
-python3 panel.py --install
+git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
+cd ~/llama-panel && python3 panel.py --install
 ```
 
-Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-img`) y arranca el panel.
-La configuración del usuario vive en `~/.config/llama-panel/` (fuera del repo).
+Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-img`) y arranca el panel en
+`http://<máquina>:8090`. Si no encuentra `llama-server` o modelos, abre la pestaña **Configuración**: ahí se eligen
+las carpetas de modelos (con sugerencias al escribir y cuántos modelos hay en cada una) y los programas
+(muestra la versión de llama.cpp que encontró). Al guardar, el panel se reinicia solo y vuelve a buscar los modelos.
 
-Las rutas se cambian con variables de entorno o, más cómodo, en `~/.config/llama-panel/paths.env`
-(una variable de entorno con el mismo nombre tiene prioridad):
+La configuración del usuario vive en `~/.config/llama-panel/` (fuera del repo). Las rutas quedan en `paths.env`,
+que también se puede editar a mano; una variable de entorno con el mismo nombre tiene prioridad (y bloquea ese
+campo en el panel):
 
 ```ini
 LLAMA_MODELS_DIR=/mnt/datos/models
@@ -105,8 +110,6 @@ LLAMA_IMG_DIR=/mnt/datos/imgmodels
 KOBOLD_BIN=~/koboldcpp/koboldcpp
 LLAMA_SERVER_BIN=~/llama.cpp/build/bin/llama-server
 ```
-
-Después de cambiar `KOBOLD_BIN` o `LLAMA_SERVER_BIN` hay que volver a correr `--install` (quedan escritos en los units).
 
 Los scripts de `scripts/install-*.sh` son opcionales, se corren una vez con `sudo` y tienen `--uninstall`.
 Cada uno instala un ayudante en `/usr/local/sbin` y una regla en `/etc/sudoers.d` que deja correr **solo** ese
@@ -142,7 +145,8 @@ El servicio corre el código directamente desde esta carpeta y `llama-panel-relo
 que se guarda `panel.py` o algo en `llama_panel/`. Los archivos de `static/` se leen en cada pedido, así que alcanza
 con recargar el navegador.
 
-Solo hace falta volver a correr `--install` si cambian los units de systemd (`llama_panel/install.py`).
+Si cambian los units de systemd (`llama_panel/install.py`), el panel los reescribe al arrancar y hace
+`daemon-reload` (sin reiniciar los servicios). `--install` solo hace falta la primera vez.
 
 ```bash
 python3 -m unittest            # tests

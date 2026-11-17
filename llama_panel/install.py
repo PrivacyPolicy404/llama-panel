@@ -63,6 +63,26 @@ def units():
     }
 
 
+def sync_units():
+    """Al arrancar el panel: si ya esta instalado y algun unit quedo distinto (por ejemplo, otra ruta de llama-server
+    guardada desde la pestana Configuracion), lo reescribe y recarga systemd. No reinicia los servicios."""
+    if not (UNIT_DIR / f"{C.PANEL_SERVICE}.service").exists():
+        return []
+    changed = []
+    for name, content in units().items():
+        path = UNIT_DIR / name
+        try:
+            same = path.read_text() == content
+        except OSError:
+            same = False
+        if not same:
+            path.write_text(content)
+            changed.append(name)
+    if changed:
+        run("systemctl", "--user", "daemon-reload")
+    return changed
+
+
 def install():
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
     router_unit = UNIT_DIR / f"{C.SERVICE}.service"

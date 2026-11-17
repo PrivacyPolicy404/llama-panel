@@ -8,6 +8,7 @@ import { renderImgModels, updateImgStates } from './img-models.js';
 import { save } from './save.js';
 import { renderPerf } from './perf.js';
 import { loadLogs } from './logs.js';
+import { loadSetup, needsSetup } from './setup.js';
 
 async function pollState() {
   try {
@@ -35,8 +36,8 @@ function renderAiMode() {
   b.classList.toggle('on', ai.active);
   b.title = !ai.installed ? 'No instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh'
     : !ai.active && ai.gpu_ok === false ? 'Falta acceso permanente a la GPU: correr de nuevo el instalador del modo IA y reiniciar'
-    : ai.active ? 'Vuelve a prender el escritorio (KDE)'
-    : 'Apaga el escritorio (KDE) para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla';
+    : ai.active ? 'Vuelve a prender el escritorio'
+    : 'Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla';
 }
 
 async function loadConfig() {
@@ -59,12 +60,14 @@ function showTab(tab) {
   history.replaceState(null, '', '#' + tab);
   if (tab === 'perf') renderPerf();
   if (tab === 'logs') loadLogs();
+  if (tab === 'setup') loadSetup();
 }
 
 function bind() {
   const host = location.hostname;
   $('#host').textContent = host;
   for (const b of $$('.tabs button')) b.onclick = () => showTab(b.dataset.tab);
+  for (const a of $$('[data-goto]')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.goto); };
 
   for (const b of $$('[data-action]')) {
     b.onclick = async () => {
@@ -117,7 +120,10 @@ async function start() {
     $('#lnk-sdui').href = `http://${host}:${cfg.ports.img}/sdui`;
     renderTextModels(); renderImgModels();
   } catch { $('#conn').hidden = false; }
-  showTab(location.hash.slice(1) || 'text');
+  // primera vez (sin llama-server o sin modelos): mostrar la configuracion
+  const setup = await loadSetup();
+  $('#setup-needed').hidden = !needsSetup(setup);
+  showTab(location.hash.slice(1) || (setup && needsSetup(setup) ? 'setup' : 'text'));
   await pollState();
   loadStats();
 

@@ -4,6 +4,7 @@ from pathlib import Path
 from . import actions
 from . import config as C
 from . import hardware
+from . import paths
 from . import img_models as IM
 from . import prompt_cache as PC
 from . import stats
@@ -70,6 +71,8 @@ GET_ROUTES = {
     "/api/stats": lambda q: stats.stats(),
     "/api/live": lambda q: stats.live(),
     "/api/logs": _logs,
+    "/api/paths": lambda q: paths.current(),
+    "/api/paths/dirs": lambda q: {"dirs": paths.suggest_dirs(q.get("prefix", [""])[0])},
 }
 
 POST_ROUTES = {
@@ -83,4 +86,6 @@ POST_ROUTES = {
     "/api/text/settings": actions.text_settings,
     "/api/img/settings": actions.img_settings,
     "/api/img/use": actions.img_use,
+    "/api/paths/check": lambda b: paths.check(b.get("values") or {}),
+    "/api/paths": paths.save,
 }

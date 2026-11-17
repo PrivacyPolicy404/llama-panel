@@ -8,6 +8,7 @@ from . import config as C
 from . import hardware
 from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES
+from .install import sync_units
 
 MAX_BODY = 1_000_000
 
@@ -76,6 +77,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve():
+    try:
+        changed = sync_units()
+        if changed:
+            print(f"units actualizados: {', '.join(changed)}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"no se pudieron revisar los units: {e}", flush=True)
     hardware.start_sampler()
     prompt_cache.start_watcher()
     ThreadingHTTPServer(("0.0.0.0", C.PANEL_PORT), Handler).serve_forever()

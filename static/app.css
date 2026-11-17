@@ -311,3 +311,19 @@ details.global[open] summary { margin-bottom: 12px; }
   .model-state { min-width: 0; margin-right: auto; }
   .savebar { flex-direction: column; align-items: stretch; gap: 10px; }
 }
+
+/* ---------- configuración ---------- */
+#setup { display: flex; flex-direction: column; gap: 12px; max-width: 860px; }
+.setup-card { display: flex; flex-direction: column; gap: 10px; }
+.setup-card h4 { margin: 0; font-size: 14px; }
+.setup-card .hint { margin: 0; }
+.setup-card input[type=text] { width: 100%; }
+.path-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; margin-bottom: 6px; }
+.path-row .path-status { grid-column: 1 / -1; }
+.path-status { font-size: 12.5px; min-height: 1em; }
+.path-check.good { color: var(--good); }
+.path-check.bad { color: var(--critical-text); }
+.setup-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.setup-actions .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.setup-needed { margin: 0 0 12px; border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
+.setup-card > .btn { align-self: flex-start; }

@@ -18,7 +18,7 @@
   <div class="top-actions">
     <span class="conn" id="conn" hidden>Sin conexión con el panel</span>
     <button class="btn ghost" id="ai-mode" data-action="ai_mode_on" data-confirm="¿Apagar el escritorio? Tocá de nuevo"
-      title="Apaga el escritorio (KDE) para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla">Modo IA</button>
+      title="Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla">Modo IA</button>
     <button class="btn danger" data-action="stop_all" data-confirm="¿Seguro? Tocá de nuevo" title="Apaga texto e imágenes y libera la VRAM">Apagar todo</button>
   </div>
 </header>
@@ -103,6 +103,7 @@
     <button role="tab" data-tab="img">Modelos de imagen</button>
     <button role="tab" data-tab="perf">Rendimiento</button>
     <button role="tab" data-tab="logs">Registros</button>
+    <button role="tab" data-tab="setup">Configuración</button>
   </nav>
 
   <section class="panel" data-panel="text">
@@ -115,6 +116,8 @@
       <textarea id="global" rows="5" spellcheck="false"></textarea>
       <p class="hint">Una opción por línea: <code>clave = valor</code>, con el nombre largo de la opción de llama-server sin los guiones (ej. <code>ctx-size = 8192</code>).</p>
     </details>
+    <p class="card setup-needed" id="setup-needed" hidden>Todavía no hay modelos o falta llama-server.
+      <a href="#setup" data-goto="setup">Configurá las carpetas y programas</a>.</p>
     <div class="models" id="text-models"></div>
   </section>
 
@@ -137,6 +140,10 @@
     <div class="table-wrap"><table class="tbl" id="perf-table"></table></div>
     <h3>Imágenes: generaciones recientes</h3>
     <div class="table-wrap"><table class="tbl" id="perf-img"></table></div>
+  </section>
+
+  <section class="panel" data-panel="setup" hidden>
+    <div id="setup"></div>
   </section>
 
   <section class="panel" data-panel="logs" hidden>
