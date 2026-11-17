@@ -64,7 +64,8 @@ CHAT_PORT = 8080
 IMG_PORT = 5001
 
 # Sin n-gpu-layers: con un valor fijo llama.cpp apaga --fit y un MoE que no entra en la VRAM va a ~2 tok/s
-DEFAULT_GLOBAL = "ctx-size = 8192\nreasoning-format = deepseek"
+DEFAULT_GLOBAL = "reasoning-format = deepseek"  # opciones extra globales (texto)
+DEFAULT_GLOBAL_FIELDS = {"ctx": "8192"}  # controles globales de una instalacion nueva
 REASONING_OPTS = [("", "por defecto"), ("auto", "auto"), ("on", "activado"), ("off", "apagado")]
 LINE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*\s*=\s*\S.*$")
 SPLIT_RE = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$")  # modelos partidos en varios archivos
@@ -93,6 +94,8 @@ def load_settings():
         data = json.loads(SETTINGS_FILE.read_text())
     except Exception:  # noqa: BLE001
         data = {}
+    # instalaciones anteriores a los controles globales: sin valores nuevos (lo suyo sigue en el texto)
+    data.setdefault("global_fields", {} if "global" in data else dict(DEFAULT_GLOBAL_FIELDS))
     data.setdefault("global", DEFAULT_GLOBAL)
     data.setdefault("models", {})
     img = data.setdefault("image", {})

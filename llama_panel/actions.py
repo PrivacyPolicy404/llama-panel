@@ -209,11 +209,15 @@ def text_settings(body):
     if not isinstance(models_in, dict):
         return fail(_("Formato inválido."))
     errors, cfgs = TM.validate_settings(gl, models_in)
+    gerrors, gfields = TM.validate_global_fields(body.get("global_fields"))
+    errors += gerrors
     if errors:
         return fail(_("No se guardó. Revisá estos campos (las opciones van como clave = valor):") + "\n" + "\n".join(errors))
     with C.SETTINGS_LOCK:
         settings = C.load_settings()
         settings["global"] = gl
+        if "global_fields" in body:
+            settings["global_fields"] = gfields
         settings["models"].update(cfgs)  # conserva ajustes de modelos que hoy no estan en disco
         C.save_settings(settings)
         n = len(TM.write_preset())

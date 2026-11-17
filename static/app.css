@@ -344,3 +344,4 @@ details.global[open] summary { margin-bottom: 12px; }
 .mode-grid > div > select { max-width: 260px; }
 .mode-grid .mode-hint.over { color: var(--warning); }
 .mode-grid :disabled { opacity: .45; }
+.global-edit { border-top: 0; padding: 12px 0 4px; }

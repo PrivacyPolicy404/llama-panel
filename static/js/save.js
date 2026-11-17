@@ -1,7 +1,7 @@
 // Barra de "cambios sin guardar": guarda ajustes de texto y/o imagen.
 import { $, $$, post, report, withBusy } from './util.js';
 import { S, clearDirty, hooks } from './state.js';
-import { readTextCfg } from './text-models.js';
+import { readGlobalFields, readTextCfg } from './text-models.js';
 import { readImgCfg } from './img-models.js';
 
 
@@ -10,7 +10,7 @@ export async function save(apply, btn) {
     let ok = true;
     if (S.dirtyText) {
       const models = Object.fromEntries($$('#text-models .model').map(r => [r.dataset.key, readTextCfg(r)]));
-      const res = await post('/api/text/settings', { global: $('#global').value, models, apply });
+      const res = await post('/api/text/settings', { global: $('#global').value, global_fields: readGlobalFields(), models, apply });
       report(res); ok = ok && res.ok;
     }
     if (S.dirtyImg) {

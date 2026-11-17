@@ -178,3 +178,30 @@ class ImgScan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GlobalFields(unittest.TestCase):
+    def test_controls_go_to_the_global_section_and_text_wins(self):
+        s = settings(global_fields={"ctx": "8192", "parallel": "1", "ngl": "50"})
+        s["global"] = "n-gpu-layers = 99\nreasoning-format = deepseek"
+        out = TM.build_preset(s, [])
+        top = out.split("[*]\n", 1)[1]
+        self.assertIn("ctx-size = 8192\nparallel = 1\nn-gpu-layers = 99\nreasoning-format = deepseek\n", top)
+        self.assertNotIn("n-gpu-layers = 50", out)
+
+    def test_validation_skips_empty_and_model_only_fields(self):
+        errors, out = TM.validate_global_fields({"ctx": "16384", "kv": "", "mtp": True, "parallel": "x"})
+        self.assertEqual(out, {"ctx": "16384"})
+        self.assertEqual(len(errors), 1)
+
+    def test_new_install_gets_defaults_but_old_settings_do_not(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "settings.json"
+            with mock.patch.object(C, "SETTINGS_FILE", f):
+                self.assertEqual(C.load_settings()["global_fields"], C.DEFAULT_GLOBAL_FIELDS)
+                f.write_text(json.dumps({"global": "n-gpu-layers = 99"}))
+                self.assertEqual(C.load_settings()["global_fields"], {})

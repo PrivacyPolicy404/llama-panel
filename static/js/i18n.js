@@ -87,6 +87,7 @@ export const EN = {
   'Buscar modelos nuevos': 'Scan for new models',
   'Vuelve a leer la carpeta de modelos y se lo avisa al servidor': 'Re-reads the model folder and tells the server',
   'Ajustes globales': 'Global settings',
+  'Opciones extra globales': 'Global extra options',
   'valen para todos los modelos': 'apply to every model',
   'Una opción por línea: <code>clave = valor</code>, con el nombre largo de la opción de llama-server sin los guiones (ej. <code>ctx-size = 8192</code>).':
     'One option per line: <code>key = value</code>, using the long llama-server option name without the dashes (e.g. <code>ctx-size = 8192</code>).',

@@ -32,10 +32,10 @@ function parseOpts(text) {
 }
 
 // Si una opcion extra cubre un campo (por ejemplo cpu-moe), el campo no vale: se desactiva y se dice por que
-function markOverrides(row) {
-  const extra = parseOpts($('[data-f=extra]', row).value), extraAi = parseOpts($('[data-f=extra_ai]', row).value);
+function markOverrides(row, extraEl = $('[data-f=extra]', row), extraAiEl = $('[data-f=extra_ai]', row), fields = S.config.fields) {
+  const extra = parseOpts(extraEl.value), extraAi = parseOpts(extraAiEl ? extraAiEl.value : '');
   const find = (opts, keys) => [...opts].reverse().find(o => keys.includes(o.key));
-  for (const f of S.config.fields) {
+  for (const f of fields) {
     const n = $(`[data-f="${f.id}"]`, row), a = $(`[data-ai="${f.id}"]`, row), hint = $(`[data-hint="${f.id}"]`, row);
     if (!n || !hint) continue;
     const o = find(extra, f.keys || []), oa = find(extraAi, f.keys || []);
@@ -135,9 +135,30 @@ function aiControl(f, v) {
 }
 
 // Ajustes del modelo en columnas: Normal y, si el modo IA esta instalado, Modo IA (vacio = igual que Normal)
-function modeGrid(cfg, aiOn) {
+const globalFields = () => S.config.fields.filter(f => S.config.global_field_ids.includes(f.id));
+
+// Controles de los ajustes globales: los mismos que los del modelo, sin MTP ni columna de modo IA
+export function readGlobalFields() {
+  const box = $('#global-fields'), out = {};
+  for (const f of globalFields()) {
+    const n = $(`[data-f="${f.id}"]`, box);
+    if (n && n.value.trim()) out[f.id] = n.value.trim();
+  }
+  return out;
+}
+
+function renderGlobal() {
+  const box = $('#global-fields');
+  box.innerHTML = modeGrid(S.config.global_fields || {}, false, globalFields());
+  const sync = () => markOverrides(box, $('#global'), null, globalFields());
+  box.oninput = () => { sync(); setDirty('text'); };
+  $('#global').oninput = () => { sync(); setDirty('text'); };
+  sync();
+}
+
+function modeGrid(cfg, aiOn, fields = S.config.fields) {
   const ai = cfg.ai || {};
-  const rows = S.config.fields.map(f => `
+  const rows = fields.map(f => `
       <span class="mode-l">${esc(t(f.label))}</span>
       <div>${normalControl(f, cfg[f.id])}</div>
       ${aiOn ? `<div class="mode-ai">${aiControl(f, ai[f.id])}</div>` : ''}
@@ -154,6 +175,7 @@ export function renderTextModels() {
   const c = S.config;
   $('#text-dir').textContent = c.models_dir;
   $('#global').value = c.global;
+  renderGlobal();
   const box = $('#text-models');
   box.innerHTML = '';
   if (!c.text_models.length) {

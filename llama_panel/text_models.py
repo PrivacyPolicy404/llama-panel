@@ -80,6 +80,7 @@ FIELDS = [
      "hint": "Si el modelo piensa antes de responder (en los que lo permiten)."},
 ]
 FIELD_IDS = [f["id"] for f in FIELDS]
+GLOBAL_FIELD_IDS = [f for f in FIELD_IDS if f not in ("mtp", "nmax")]  # el MTP depende de cada modelo
 AI_FIELDS = tuple(FIELD_IDS)  # todos se pueden cambiar solo para el modo IA; cfg["ai"] guarda lo que difiere
 
 
@@ -152,6 +153,9 @@ def build_preset(settings, models, ai_mode=False):
     """Arma el presets.ini. Con ai_mode, las "opciones extra en modo IA" de cada modelo se suman y pisan al resto
     (la VRAM que libera el escritorio permite, por ejemplo, mas contexto)."""
     glob_lines, _ = C.clean_lines(settings["global"])
+    glob_keys = {l.split("=", 1)[0].strip() for l in glob_lines}
+    glob_lines = [l for l in field_lines(settings.get("global_fields") or {})
+                  if l.split("=", 1)[0].strip() not in glob_keys] + glob_lines  # el texto manda sobre los controles
     out = ["# Generado por llama-panel. No editar a mano: se reescribe al guardar.",
            f"# Modo IA: {'activo (incluye las opciones extra de modo IA)' if ai_mode else 'inactivo'}", "", "[*]"]
     out += glob_lines
@@ -200,6 +204,22 @@ def server_options():
             out = ""
         _server_opts.update(mtime=mtime, opts=sorted(set(OPT_RE.findall(out))))
     return _server_opts["opts"]
+
+
+def validate_global_fields(fields_in):
+    """Controles de los ajustes globales. Devuelve (errores, {campo: valor}) sin los vacios."""
+    fields_in = fields_in if isinstance(fields_in, dict) else {}
+    errors, out = [], {}
+    for f in FIELDS:
+        if f["id"] not in GLOBAL_FIELD_IDS or fields_in.get(f["id"]) in (None, ""):
+            continue
+        v = check_field(f, fields_in[f["id"]])
+        if v is None:
+            errors.append(_("{key}: valor inválido en «{field}»: '{value}'", key="global", field=_(f["label"]),
+                            value=fields_in[f["id"]]))
+        elif v != "":
+            out[f["id"]] = v
+    return errors, out
 
 
 def validate_settings(global_text, models_in):

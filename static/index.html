@@ -114,7 +114,9 @@
     </div>
     <details class="card global">
       <summary><b>Ajustes globales</b> <span class="muted">valen para todos los modelos</span></summary>
-      <textarea id="global" rows="5" spellcheck="false"></textarea>
+      <div class="model-edit global-edit" id="global-fields"></div>
+      <p class="hint">Opciones extra globales</p>
+      <textarea id="global" rows="3" spellcheck="false"></textarea>
       <p class="hint" data-i18n-html>Una opción por línea: <code>clave = valor</code>, con el nombre largo de la opción de llama-server sin los guiones (ej. <code>ctx-size = 8192</code>).</p>
     </details>
     <p class="card setup-needed" id="setup-needed" data-i18n-html hidden>Todavía no hay modelos o falta llama-server.
