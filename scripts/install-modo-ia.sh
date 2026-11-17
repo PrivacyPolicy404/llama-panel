@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Instala el "modo IA": apagar el escritorio (SDDM/KDE) y mostrar un dashboard de texto en tty1,
+# Instala el "modo IA": apagar el escritorio (el gestor de sesión: SDDM, GDM, LightDM...) y mostrar un dashboard de texto en tty1,
 # para dejarle toda la VRAM a los modelos. Correr UNA vez con sudo:
 #
 #   sudo ~/llama-panel/scripts/install-modo-ia.sh             # instalar
 #   sudo ~/llama-panel/scripts/install-modo-ia.sh --uninstall # desinstalar
 #
 # Instala:
-#   /usr/local/sbin/llama-modo-ia            ayudante root: solo para/arranca SDDM y el dashboard (on|off|status)
+#   /usr/local/sbin/llama-modo-ia            ayudante root: solo para/arranca el escritorio y el dashboard (on|off|status)
 #   /etc/systemd/system/llama-kiosk.service  el dashboard en tty1, corre como tu usuario (no como root)
 #   /etc/sudoers.d/llama-modo-ia             permite a tu usuario correr SOLO ese ayudante sin contraseña
 set -euo pipefail
@@ -17,6 +17,10 @@ USER_NAME="${SUDO_USER:-}"
 USER_HOME=$(getent passwd "$USER_NAME" | cut -d: -f6)
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# display-manager.service es el alias que systemd le da al gestor de sesión que esté habilitado
+systemctl cat display-manager.service >/dev/null 2>&1 || {
+    echo "No hay un gestor de sesión (display-manager.service): el modo IA no tiene escritorio que apagar."; exit 1; }
+
 HELPER=/usr/local/sbin/llama-modo-ia
 UNIT=/etc/systemd/system/llama-kiosk.service
 SUDOERS=/etc/sudoers.d/llama-modo-ia
@@ -25,7 +29,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     systemctl stop llama-kiosk.service 2>/dev/null || true
     rm -f "$HELPER" "$UNIT" "$SUDOERS"
     systemctl daemon-reload
-    systemctl start sddm.service || true
+    systemctl start display-manager.service || true
     echo "Modo IA desinstalado."
     exit 0
 fi
@@ -37,13 +41,13 @@ cat > "$HELPER" <<'EOF'
 set -e
 case "$1" in
     on)
-        systemctl stop sddm.service
+        systemctl stop display-manager.service
         systemctl start llama-kiosk.service
         chvt 1
         ;;
     off)
         systemctl stop llama-kiosk.service
-        systemctl start sddm.service
+        systemctl start display-manager.service
         ;;
     status)
         systemctl is-active llama-kiosk.service || true
@@ -68,7 +72,8 @@ After=getty@tty1.service
 User=$USER_NAME
 WorkingDirectory=$APP_DIR
 Environment=TERM=linux PYTHONDONTWRITEBYTECODE=1 LANG=C.UTF-8
-ExecStartPre=+/usr/bin/setfont -C /dev/tty1 Uni2-TerminusBold24x12
+# letra grande si existe la fuente (Debian/Ubuntu); si no, la de la consola
+ExecStartPre=-+/usr/bin/setfont -C /dev/tty1 Uni2-TerminusBold24x12
 ExecStart=/usr/bin/python3 -m llama_panel.kiosk
 StandardInput=tty
 StandardOutput=tty

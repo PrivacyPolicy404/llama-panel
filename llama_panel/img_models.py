@@ -63,16 +63,21 @@ def pick_img(settings, models):
     return models[0] if models else None
 
 
+GPU_BACKEND_FLAGS = {"--usevulkan", "--usecuda", "--usecublas", "--usehipblas", "--useclblast", "--usecpu"}
+
+
 def build_kobold_args(m, extra=""):
     args = ["--sdmodel", m["path"]]
     for flag, path in m["comps"]:
         args += [f"--{flag}", path]
-    args += ["--usevulkan", "0", "--host", "0.0.0.0", "--port", str(C.IMG_PORT)]
     try:
-        args += shlex.split(extra or "")
+        user = shlex.split(extra or "")
     except ValueError:
-        pass
-    return args
+        user = []
+    # Vulkan en la GPU 0 salvo que las opciones del modelo elijan otro backend (por ejemplo --usecuda)
+    if not any(a in GPU_BACKEND_FLAGS for a in user):
+        args += ["--usevulkan", "0"]
+    return args + ["--host", "0.0.0.0", "--port", str(C.IMG_PORT)] + user
 
 
 def write_img_env():

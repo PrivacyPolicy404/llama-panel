@@ -114,6 +114,13 @@ class ImgScan(unittest.TestCase):
         args = IM.build_kobold_args(m, "--sdoffloadcpu --sdtiledvae 768")
         self.assertEqual(args[:4], ["--sdmodel", "/i/f.gguf", "--sdvae", "/i/vae.st"])
         self.assertEqual(args[-3:], ["--sdoffloadcpu", "--sdtiledvae", "768"])
+        self.assertIn("--usevulkan", args)
+
+    def test_kobold_backend_from_model_options(self):
+        m = {"path": "/i/f.gguf", "comps": []}
+        args = IM.build_kobold_args(m, "--usecuda")
+        self.assertNotIn("--usevulkan", args)
+        self.assertEqual(args[-1], "--usecuda")
 
     def test_validation_rejects_shell_chars(self):
         models = [{"key": "a"}]

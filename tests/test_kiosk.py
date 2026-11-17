@@ -89,6 +89,20 @@ class Dibujo(unittest.TestCase):
         self.assertEqual(kiosk.prompt_sample({"task_id": "7:200", "prompt_tps": 114.3}), ("7:200", 114.3))
         self.assertIsNone(kiosk.prompt_sample(None))
 
+    def test_gpu_box_uses_detected_hardware(self):
+        nv = {"gpu_name": "RTX 3060", "vram_used": 5.0, "vram_total": 12.0, "gpu": 40, "power": 120.0,
+              "fan_pct": 45, "mclk": 7500, "sclk": 1830}
+        text = "\n".join(kiosk.strip_marks(s) for s in kiosk.gpu_box(nv, [nv], 70))
+        self.assertIn("gpu · RTX 3060", text)
+        self.assertNotIn("GTT", text)  # NVIDIA no informa memoria fija
+        self.assertIn("ventilador 45 %", text)
+        self.assertIn("memoria 7500 MHz ·", text)
+        amd = {"gpu_name": "RX 580", "gtt_used": 29.5, "gtt_total": 31.4, "mclk": 2250, "mclk_mode": "manual", "mclk_oc": 2250}
+        text = "\n".join(kiosk.strip_marks(s) for s in kiosk.gpu_box(amd, [amd], 70))
+        self.assertIn("29.50/31G", text)
+        self.assertIn("(fija, OC 2250)", text)
+        self.assertIn("─ gpu ─", "\n".join(kiosk.strip_marks(s) for s in kiosk.gpu_box({}, [], 70)))
+
 
 if __name__ == "__main__":
     unittest.main()

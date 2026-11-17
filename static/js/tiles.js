@@ -21,7 +21,7 @@ const TILES = {
   temp: {
     get: h => h.temp, auto: true, unit: '°C', d: 0,
     render(h) {
-      const sub = [h.power != null ? `${fix(h.power, 0)} W` : '', h.fan != null ? `${h.fan} rpm` : ''].filter(Boolean).join(' · ');
+      const sub = [h.power != null ? `${fix(h.power, 0)} W` : '', h.fan != null ? `${h.fan} rpm` : h.fan_pct != null ? `ventilador ${h.fan_pct} %` : ''].filter(Boolean).join(' · ');
       const crit = h.temp_crit || 100;
       return { value: `${fix(h.temp, 0)}<small> °C</small>`, sub, pct: (h.temp ?? 0) / crit * 100, level: h.temp >= 90 ? 'critical' : h.temp >= 80 ? 'warning' : '' };
     },

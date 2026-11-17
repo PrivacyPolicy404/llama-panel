@@ -227,8 +227,10 @@ def gpu_box(hw, samples, width):
     vt = hw.get("vram_total") or 8
     # con Flash-Next la VRAM y la memoria fija (GTT) van casi llenas a proposito: rojo solo al borde
     used = hw.get("vram_used") or 0
-    lines = [f" VRAM {bar(used, vt, bw, 0.92, 0.98)} {used:.2f}/{vt:.0f}G · libre {max(0, vt - used):.2f}G",
-             f" GTT  {bar(hw.get('gtt_used'), 31, bw, 0.97, 0.995)} {hw.get('gtt_used') or 0:5.2f}/31G"]
+    lines = [f" VRAM {bar(used, vt, bw, 0.92, 0.98)} {used:.2f}/{vt:.0f}G · libre {max(0, vt - used):.2f}G"]
+    if hw.get("gtt_used") is not None:  # memoria fija de amdgpu (GTT); NVIDIA no la informa
+        gt = hw.get("gtt_total") or 31
+        lines.append(f" GTT  {bar(hw['gtt_used'], gt, bw, 0.97, 0.995)} {hw['gtt_used']:5.2f}/{gt:.0f}G")
     gpu = [s.get("gpu") for s in samples]
     rows = graph(gpu, gw, 4, 0, 100, color="level")
     peak = hw.get("gpu_max")
@@ -236,26 +238,29 @@ def gpu_box(hw, samples, width):
               + (f"{hw.get('gpu') or 0:d} %".rjust(7) if i == 0 else (f"{peak} %".rjust(7) if i == 1 and peak is not None else ""))
               for i, r in enumerate(rows)]
     power = [s.get("power") for s in samples]
-    cap = hw.get("power_cap") or 155
+    cap = hw.get("power_cap") or max([p for p in power if p] or [100])
     rows = graph(power, gw, 2, 0, cap, color=MAGENTA)
     lines += [f" {'WATT' if i == 0 else '':<5}{r} " + (f"{hw.get('power') or 0:.0f} W".rjust(7) if i == 0 else f"/{cap} W".rjust(7))
               for i, r in enumerate(rows)]
     temps = [s.get("temp") for s in samples]
     lines.append(f" TEMP {''.join(graph(temps, gw, 1, 30, 90, color='level'))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
-    lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)} · ventilador {hw.get('fan') or 0} rpm")
-    return box("gpu · RX 580", lines, width)
+    lines.append(f" núcleo {hw.get('sclk') or 0} MHz · {mclk_text(hw)} · ventilador {fan_text(hw)}")
+    return box(" · ".join(x for x in ("gpu", hw.get("gpu_name")) if x), lines, width)
 
 
-STOCK_MCLK = 2000  # RX 580 de fabrica
+def fan_text(hw):
+    if hw.get("fan") is not None:
+        return f"{hw['fan']} rpm"
+    return f"{hw['fan_pct']} %" if hw.get("fan_pct") is not None else "?"
 
 
 def mclk_text(hw):
     if not hw.get("mclk"):
         return "memoria ?"
-    tags = ["fija" if hw.get("mclk_mode") == "manual" else "auto"]
-    if (hw.get("mclk_max") or 0) > STOCK_MCLK:
-        tags.append(f"OC {hw['mclk_max']}")
-    return f"memoria {hw['mclk']} MHz ({', '.join(tags)})"
+    tags = ["fija" if hw["mclk_mode"] == "manual" else "auto"] if hw.get("mclk_mode") else []
+    if hw.get("mclk_oc"):  # scripts/install-gpu-mclk.sh --oc
+        tags.append(f"OC {hw['mclk_oc']}")
+    return f"memoria {hw['mclk']} MHz" + (f" ({', '.join(tags)})" if tags else "")
 
 
 def cpu_box(cpu, hw, width):
@@ -279,7 +284,7 @@ def cpu_box(cpu, hw, width):
     lines.append(f" TEMP {temp:.0f} °C · núcleo más caliente {peak:.0f} °C" if temp is not None and peak is not None
                  else f" TEMP {temp:.0f} °C" if temp is not None else " TEMP sensor no disponible")
     lines.append(f" carga {hw.get('load', 0):.2f} · {len(cores)} hilos")
-    return box("cpu · i7-10700", lines, width)
+    return box(" · ".join(x for x in ("cpu", hw.get("cpu_name")) if x), lines, width)
 
 
 def mem_box(hw, width):

@@ -10,7 +10,8 @@ Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build.
 
 ![Panel con Qwen3.8-Flash-Next cargado: VRAM, GPU, temperatura y RAM arriba; servicios de texto e imágenes; lista de modelos con sus velocidades medidas](docs/img/panel.png)
 
-Está hecho y medido para una máquina concreta (AMD RX 580 de 8 GB solo con Vulkan, 64 GB de RAM, Linux con systemd).
+Está hecho y medido en una máquina concreta (AMD RX 580 de 8 GB solo con Vulkan, 64 GB de RAM, Linux con systemd);
+ver [Compatibilidad](#compatibilidad) para otras.
 La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendimiento.md)) y las notas de hardware
 ([docs/notas.md](docs/notas.md)) explican cada configuración con números; pueden servir en otras GPU con poca VRAM.
 
@@ -65,10 +66,25 @@ docs/notas.md         hardware, mediciones, por qué cada configuración, trampa
 ## Requisitos
 
 - Linux con systemd (servicios de usuario) y Python 3.
-- `llama-server` compilado con Vulkan; por defecto se busca en `~/llama.cpp/build/bin/llama-server`.
-  Para usar las configuraciones de los modelos MoE grandes hace falta el fork (ver abajo).
+- `llama-server` de [llama.cpp](https://github.com/ggml-org/llama.cpp) **oficial** (una versión reciente, con modo
+  router); por defecto se busca en `~/llama.cpp/build/bin/llama-server`. El fork de abajo solo hace falta para
+  algunas configuraciones de modelos MoE grandes.
 - Opcional, para imágenes: [KoboldCpp](https://github.com/LostRuins/koboldcpp) (por defecto `~/koboldcpp/koboldcpp`).
 - Modelos `.gguf` en `~/models` y de imagen en `~/imgmodels`, o donde digan las rutas configuradas.
+
+### Compatibilidad
+
+| | Estado |
+|---|---|
+| AMD con `amdgpu` + Vulkan (RX 580) | **Probado**: todo el día a día del panel corre acá |
+| Otras AMD con `amdgpu` (RDNA, etc.) | Debería funcionar, sin probar. Los sensores son los mismos (sysfs) |
+| NVIDIA (CUDA o Vulkan) | Debería funcionar, sin probar. Los sensores salen de `nvidia-smi` (sin memoria GTT). Para imágenes, agregar `--usecuda` en las opciones del modelo |
+| Intel u otras | Debería funcionar, sin probar, pero **sin datos de la GPU** (VRAM, uso, temperatura) |
+| llama.cpp oficial | Debería funcionar, sin probar en esta máquina: el panel usa solo funciones oficiales (router, `/slots`, MTP) |
+| Modo IA con SDDM (KDE) | **Probado**. Con GDM, LightDM u otro gestor de sesión debería funcionar, sin probar |
+
+`scripts/install-gpu-mclk.sh` (reloj y overclock de la VRAM) es solo para AMD Polaris (RX 470–590).
+El nombre de la GPU se detecta solo; si sale mal, se fija con `LLAMA_GPU_NAME` en `paths.env`.
 
 ## Instalación
 
@@ -103,8 +119,9 @@ En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muest
 
 ## llama.cpp: por qué un fork
 
-El servidor de texto usa el fork [PrivacyPolicy404/llama.cpp](https://github.com/PrivacyPolicy404/llama.cpp)
-(rama `ot-host-buffers`): el llama.cpp oficial más parches locales.
+El panel funciona con el llama.cpp oficial. En esta máquina usa el fork
+[PrivacyPolicy404/llama.cpp](https://github.com/PrivacyPolicy404/llama.cpp) (rama `ot-host-buffers`): el oficial
+más parches locales, la mayoría de rendimiento para Polaris (RX 580) en Vulkan.
 El principal existe por los modelos MoE grandes que no entran en la VRAM, como Qwen3.8-Flash-Next (125B):
 
 - Sus expertos viven en la RAM. Si están en memoria *fija* (pinned), la GPU los copia más rápido y el prompt se procesa ~20 % más rápido.
@@ -170,7 +187,7 @@ Mide 256 tokens forzados por trabajo; no evalúa la calidad de un subagente ni l
 
 Los modelos de texto se buscan en `LLAMA_MODELS_DIR` y en las carpetas de `LLAMA_EXTRA_MODELS_DIRS` (separadas por `:`, por defecto `~/models-nvme`). Los modelos partidos en shards (`-00001-of-0000N.gguf`) cuentan como uno solo.
 
-Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
+Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_GPU_NAME`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
 
 ## Licencia
 
