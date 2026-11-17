@@ -96,6 +96,11 @@ Los scripts de `scripts/install-*.sh` son opcionales, se corren una vez con `sud
 Cada uno instala un ayudante en `/usr/local/sbin` y una regla en `/etc/sudoers.d` que deja correr **solo** ese
 ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse; leé el encabezado de cada script antes.
 
+En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muestra este dashboard de texto
+(`llama_panel/kiosk.py`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`):
+
+![Dashboard del modo IA en tty1: GPU, CPU por núcleo, RAM, modelo cargado, respuesta en curso y procesos](docs/img/modo-ia.png)
+
 ## llama.cpp: por qué un fork
 
 El servidor de texto usa el fork [PrivacyPolicy404/llama.cpp](https://github.com/PrivacyPolicy404/llama.cpp)
