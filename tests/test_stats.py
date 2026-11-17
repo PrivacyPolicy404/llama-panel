@@ -160,12 +160,40 @@ class LiveTest(unittest.TestCase):
         slot = {"is_processing": True, "id_task": 270, "n_ctx": 65536, "n_prompt_tokens": 65296,
                 "n_prompt_tokens_processed": 4416, "n_prompt_tokens_cache": 58836, "next_token": [{"n_decoded": 0}]}
         merged = stats.merge_live_slot(live, slot)
-        self.assertEqual((merged["ctx_used"], merged["prompt_cached"]), (65296, 58836))
+        # contexto = lo ya procesado (caché + nuevos), no la tanda en curso entera (65296): esa hacía saltar la barra
+        self.assertEqual((merged["ctx_used"], merged["prompt_cached"]), (63252, 58836))
         self.assertEqual(merged["prompt_total"], round(63252 / 0.97))
         self.assertAlmostEqual(merged["prompt_progress"], 63252 / merged["prompt_total"])
         self.assertEqual(live["ctx_used"], 3387)  # no mutar el snapshot anterior
         slot["id_task"] = 271
         self.assertEqual(stats.merge_live_slot(live, slot), live)
+
+    def test_prompt_moves_smoothly_between_batches(self):
+        base = {"task_id": "7:459", "state": "prompt", "task_start": 100.0, "prompt_tps_prev": 200.0,
+                "prompt_cached": 0, "batch_seen": None, "batch_t": None, "prompt_est": None}
+        slot = {"is_processing": True, "id_task": 459, "n_ctx": 8192, "n_prompt_tokens": 2048,
+                "n_prompt_tokens_processed": 0, "n_prompt_tokens_cache": 0, "next_token": [{"n_decoded": 0}]}
+        # primera tanda, sin total: avanza con la velocidad del pedido anterior y no inventa un porcentaje
+        a = stats.merge_live_slot(base, slot, now=105.0)
+        self.assertEqual((a["ctx_used"], a["prompt_tokens"], a["prompt_progress"]), (1000, 1000, None))
+        b = stats.merge_live_slot(a, slot, now=120.0)
+        self.assertEqual(b["ctx_used"], 2048)  # tope: la tanda en curso
+        # terminó la tanda (el log ya dio el total y la velocidad media): la segunda arranca al verlo
+        b.update(prompt_log_tokens=2048, prompt_log_elapsed=8.0, prompt_log_progress=0.53)
+        slot.update(n_prompt_tokens=3864, n_prompt_tokens_processed=2048)
+        c = stats.merge_live_slot(b, slot, now=121.0)
+        self.assertEqual(c["ctx_used"], 2048)
+        d = stats.merge_live_slot(c, slot, now=124.0)
+        self.assertEqual(d["ctx_used"], 2048 + 768)  # 256 tok/s × 3 s
+        self.assertAlmostEqual(d["prompt_progress"], 2816 / d["prompt_total"])
+        # el pedido siguiente arranca su primera tanda con la velocidad de esta (no con la de un pedido corto)
+        nxt = stats.parse_live([(130.0, "[7] srv launch_slot_: id 0 | task 460 | processing task, is_child = 0")],
+                               now=130.0, previous=d)
+        self.assertEqual(nxt["batch_rate_prev"], 256.0)
+        # nunca para atrás, aunque cambie la velocidad estimada
+
+        d["prompt_log_elapsed"] = 30.0
+        self.assertEqual(stats.merge_live_slot(d, slot, now=124.5)["ctx_used"], 2816)
 
     def test_live_keeps_previous_prompt_speed_for_short_requests(self):
         launch = lambda t, task: (t, f"[7] srv launch_slot_: id 0 | task {task} | processing task, is_child = 0")

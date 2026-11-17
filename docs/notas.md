@@ -238,6 +238,12 @@ Lecciones de la primera prueba (2026-11-15):
   Arreglo de fondo: `video=HDMI-A-1:d` en la línea del kernel (GRUB), si eso que está en HDMI-A-1 no hace falta sin escritorio.
 - El dashboard se recarga solo cuando cambia `kiosk.py`.
 
+Dashboard (2026-11-17): las barras de prompt y contexto ya no saltan de a tanda. llama-server informa el avance recién
+al terminar cada tanda (2048 tokens ≈ 15 s con Flash-Next) y `n_prompt_tokens` de `/slots` incluye la tanda en curso
+entera: el contexto marcaba 2048 al arrancar y el progreso iba 0 → 53 → 100 %. Ahora se estima dentro de la tanda con
+la velocidad media del pedido (en la primera, la de la última tanda grande), sin pasar de la tanda ni volver atrás
+(`stats.estimate_prompt`). El porcentaje queda en «--» hasta que termina la primera tanda (antes no se conoce el total).
+
 Dashboard (2026-11-16): la velocidad de prompt ya no se borra con cada pedido. Un pedido con caché (pocos tokens
 nuevos) no emite «prompt processing»: su velocidad sólo llega con el `prompt eval time` final, y el pedido siguiente
 la limpiaba antes de la próxima lectura. Ahora el panel guarda la del pedido anterior del mismo modelo

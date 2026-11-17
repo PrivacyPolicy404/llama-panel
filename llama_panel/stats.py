@@ -84,7 +84,11 @@ def parse_live(entries, now=None, previous=None):
     empty = {"state": "idle", "n_gen": None, "tps": None, "gen_avg_tps": None,
              "prompt_progress": None, "prompt_tps": None, "prompt_elapsed": None, "gen_elapsed": None,
              "prompt_tokens": None, "prompt_total": None, "prompt_cached": 0, "ctx_used": None, "ctx_size": None,
-             "prompt_log_tokens": None, "prompt_log_progress": None,
+             "prompt_log_tokens": None, "prompt_log_progress": None, "prompt_log_elapsed": None,
+             # estimación entre tandas (merge_live_slot): procesados vistos, cuándo cambiaron, último estimado
+             "batch_seen": None, "batch_t": None, "prompt_est": None,
+             # velocidad de la última tanda grande (prompt largo): estima la primera tanda del pedido siguiente
+             "batch_rate_prev": None,
              "draft_rate": None, "draft_len": None, "task_id": None, "model_pid": None,
              # velocidad de prompt del pedido anterior: un pedido corto sólo informa la suya al terminar
              "prompt_tps_prev": None, "prompt_prev_task": None, "task_start": None,
@@ -98,9 +102,11 @@ def parse_live(entries, now=None, previous=None):
             size = out["ctx_size"] if same else None
             prev = (out["prompt_tps"], out["task_id"]) if out["prompt_tps"] is not None else \
                 (out["prompt_tps_prev"], out["prompt_prev_task"])
+            rate = (out["prompt_log_tokens"] / out["prompt_log_elapsed"]) if out["prompt_log_tokens"] and \
+                out["prompt_log_elapsed"] else out["batch_rate_prev"]
             out.update(empty, ctx_size=size, task_id=key, model_pid=pid)
             if same:
-                out.update(prompt_tps_prev=prev[0], prompt_prev_task=prev[1])
+                out.update(prompt_tps_prev=prev[0], prompt_prev_task=prev[1], batch_rate_prev=rate)
 
     for ts, msg in entries:
         if (m := NCTX_RE.match(msg)):
@@ -112,7 +118,7 @@ def parse_live(entries, now=None, previous=None):
             task(m[1], m[2])
             n, progress = int(m[3]), float(m[4])
             out.update(state="prompt", prompt_tokens=n, prompt_progress=progress, prompt_tps=float(m[6]),
-                       prompt_log_tokens=n, prompt_log_progress=progress,
+                       prompt_log_tokens=n, prompt_log_progress=progress, prompt_log_elapsed=float(m[5]),
                        prompt_elapsed=float(m[5]), prompt_total=round((out["prompt_cached"] + n) / progress) if progress else None,
                        ctx_used=out["prompt_cached"] + n, t=ts)
         elif (m := NGEN_RE.match(msg)):
@@ -146,8 +152,11 @@ def parse_live(entries, now=None, previous=None):
     return out
 
 
-def merge_live_slot(live, slot):
-    """El log cuenta tokens nuevos; /slots aporta el prefijo reutilizado y la secuencia residente."""
+def merge_live_slot(live, slot, now=None):
+    """El log cuenta tokens nuevos; /slots aporta el prefijo reutilizado y la secuencia residente.
+    Durante el prompt, llama-server informa el avance recién al terminar cada tanda (2048 tokens pueden ser 15 s):
+    entre tandas se estima con la velocidad medida, sin pasar de la tanda en curso ni volver atrás."""
+    now = time.time() if now is None else now
     task_id = (live.get("task_id") or "").rsplit(":", 1)[-1]
     if not slot.get("is_processing") or task_id != str(slot.get("id_task")):
         return live
@@ -171,9 +180,34 @@ def merge_live_slot(live, slot):
     # /slots confirma que el pedido sigue vivo aunque el log calle durante una tanda larga
     if n_gen:  # el log informa la salida cada ~3 s; /slots la tiene al día
         live = {**live, "n_gen": max(n_gen, live.get("n_gen") or 0)}
-    return {**live, "age": 0, "stale": False, "state": phase, "ctx_size": slot.get("n_ctx", live.get("ctx_size")),
-            "prompt_tokens": processed, "prompt_cached": cached, "prompt_total": total,
-            "ctx_used": resident, "prompt_progress": 1.0 if phase == "gen" else min(1, (cached + processed) / total) if total else 0}
+    out = {**live, "age": 0, "stale": False, "state": phase, "ctx_size": slot.get("n_ctx", live.get("ctx_size")),
+           "prompt_tokens": processed, "prompt_cached": cached, "prompt_total": total,
+           "ctx_used": resident, "prompt_progress": 1.0 if phase == "gen" else min(1, (cached + processed) / total) if total else 0}
+    if phase == "prompt":
+        out.update(estimate_prompt(out, resident, now))
+    return out
+
+
+def estimate_prompt(live, resident, now):
+    """Tokens procesados estimados dentro de la tanda en curso (resident la incluye entera)."""
+    processed, cached = live["prompt_tokens"], live["prompt_cached"]
+    upd = {}
+    if live.get("batch_seen") != processed:  # terminó una tanda (o empieza el pedido): arranca otra
+        upd["batch_seen"] = processed
+        upd["batch_t"] = live.get("task_start") if not processed and live.get("task_start") else now
+    batch_t = upd.get("batch_t", live.get("batch_t"))
+    if live.get("prompt_log_tokens") and live.get("prompt_log_elapsed"):
+        rate = live["prompt_log_tokens"] / live["prompt_log_elapsed"]  # media de este pedido
+    else:
+        # primera tanda: la de la última tanda grande (un pedido corto no dice nada de la velocidad del prompt)
+        rate = live.get("batch_rate_prev") or live.get("prompt_tps_prev")
+    inflight = max(0, resident - cached - processed)
+    est = processed + (min(inflight, int(rate * max(0, now - batch_t))) if rate and batch_t else 0)
+    est = max(est, live.get("prompt_est") or 0) if live.get("batch_seen") is not None else est  # nunca para atrás
+    total = live.get("prompt_total")
+    upd.update(prompt_est=est, prompt_tokens=est, ctx_used=cached + est,
+               prompt_progress=min(1, (cached + est) / total) if total else None)
+    return upd
 
 
 def parse_img_stats(entries, limit=40):
