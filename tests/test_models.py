@@ -84,12 +84,35 @@ class Preset(unittest.TestCase):
         self.assertIn("[y]\nmodel = /m/y.gguf\nparallel = 1\nctx-size = 32768\n", ai)
         self.assertNotIn("ctx-size = 8192", ai)
 
+    def test_ai_mode_fields_override_only_what_changes(self):
+        s = settings(models={"y.gguf": {"mtp": True, "nmax": "2", "reasoning": "on", "ctx": "16384",
+                                        "ai": {"ctx": "65536", "nmax": "3"}}})
+        normal = TM.build_preset(s, self.models)
+        ai = TM.build_preset(s, self.models, ai_mode=True)
+        self.assertIn("spec-draft-n-max = 2\nreasoning = on\nctx-size = 16384\n", normal)
+        self.assertIn("spec-draft-n-max = 3\nreasoning = on\nctx-size = 65536\n", ai)
+        # MTP apagado solo en modo IA; las opciones crudas de modo IA siguen mandando sobre los campos
+        s = settings(models={"y.gguf": {"mtp": True, "ai": {"mtp": False, "ctx": "65536"}, "extra_ai": "ctx-size = 32768"}})
+        ai = TM.build_preset(s, self.models, ai_mode=True)
+        self.assertNotIn("draft-mtp", ai.split("[y]")[1])
+        self.assertIn("ctx-size = 32768", ai)
+        self.assertNotIn("ctx-size = 65536", ai)
+
 
 class TextValidation(unittest.TestCase):
     def test_ok(self):
         errors, cfgs = TM.validate_settings("ctx-size = 8192", {"a": {"mtp": 1, "nmax": "3", "ctx": "4096"}})
         self.assertEqual(errors, [])
-        self.assertEqual(cfgs["a"], {"mtp": True, "nmax": "3", "reasoning": "", "ctx": "4096", "extra": "", "extra_ai": ""})
+        self.assertEqual(cfgs["a"], {"mtp": True, "nmax": "3", "reasoning": "", "ctx": "4096", "extra": "", "extra_ai": "",
+                                     "ai": {}})
+
+    def test_ai_fields_keep_only_overrides(self):
+        errors, cfgs = TM.validate_settings("", {"a": {"ai": {"mtp": False, "nmax": "", "reasoning": "off", "ctx": "65536"}}})
+        self.assertEqual(errors, [])
+        self.assertEqual(cfgs["a"]["ai"], {"mtp": False, "reasoning": "off", "ctx": "65536"})
+        errors, _ = TM.validate_settings("", {"a": {"ai": {"nmax": "99", "ctx": "10", "reasoning": "x"}}})
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(all("(modo IA)" in e for e in errors))
 
     def test_errors(self):
         errors, _ = TM.validate_settings("mal", {"a": {"nmax": "99", "ctx": "10", "reasoning": "x", "extra": "?"}})

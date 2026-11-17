@@ -12,7 +12,7 @@ function textBadges(m, cfg) {
   b.push(`<span class="badge">${cfg.ctx ? 'ctx ' + esc(cfg.ctx) : t('ctx global')}</span>`);
   const nExtra = cfg.extra.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
   if (nExtra) b.push(`<span class="badge">${nExtra > 1 ? t('+{n} opciones', { n: nExtra }) : t('+1 opción')}</span>`);
-  const nAi = (cfg.extra_ai || '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+  const nAi = Object.keys(cfg.ai || {}).length + (cfg.extra_ai || '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
   if (nAi) b.push(`<span class="badge accent" title="${esc(t('Se aplican solo con el modo IA activo'))}">${t('+{n} en modo IA', { n: nAi })}</span>`);
   if (vramBytes && m.size > vramBytes * 0.95) b.push(`<span class="badge warn" title="${esc(t('No entra completo en la VRAM: parte va a la RAM y será más lento'))}">${t('más grande que la VRAM')}</span>`);
   return b.join('');
@@ -88,7 +88,50 @@ export function readTextCfg(row) {
     ctx: $('[data-f=ctx]', row).value.trim(),
     extra: $('[data-f=extra]', row).value,
     extra_ai: $('[data-f=extra_ai]', row).value,
+    ai: readAiCfg(row),
   };
+}
+
+// columna "Modo IA": solo lo que difiere de la columna Normal ("igual" no se guarda)
+function readAiCfg(row) {
+  const ai = {};
+  const mtp = $('[data-ai=mtp]', row)?.value;
+  if (mtp === 'on' || mtp === 'off') ai.mtp = mtp === 'on';
+  for (const k of ['nmax', 'ctx']) {
+    const v = $(`[data-ai=${k}]`, row)?.value.trim();
+    if (v) ai[k] = v;
+  }
+  const rs = $('[data-ai=reasoning]', row)?.value;
+  if (rs !== undefined && rs !== SAME) ai.reasoning = rs;
+  return ai;
+}
+
+const SAME = '=';
+
+// Ajustes principales en dos columnas: Normal y, si el modo IA esta instalado, Modo IA (vacio = igual que Normal)
+function modeGrid(cfg, opts, aiOn) {
+  const ai = cfg.ai || {};
+  const same = t('igual que normal');
+  const aiCol = (html) => aiOn ? `<div class="mode-ai">${html}</div>` : '';
+  return `
+    <div class="mode-grid wide ${aiOn ? 'two' : ''}">
+      <span></span><span class="mode-h">${aiOn ? t('Normal') : ''}</span>${aiOn ? `<span class="mode-h">${t('Modo IA')}</span>` : ''}
+      <span class="mode-l">MTP</span>
+      <div><input type="checkbox" data-f="mtp" ${cfg.mtp ? 'checked' : ''} class="check"></div>
+      ${aiCol(`<select data-ai="mtp"><option value="">${same}</option>
+        <option value="on" ${ai.mtp === true ? 'selected' : ''}>${t('activado')}</option>
+        <option value="off" ${ai.mtp === false ? 'selected' : ''}>${t('apagado')}</option></select>`)}
+      <span class="mode-l">${t('Borradores por paso')}</span>
+      <div><input type="number" min="1" max="16" data-f="nmax" value="${esc(cfg.nmax || 2)}"></div>
+      ${aiCol(`<input type="number" min="1" max="16" data-ai="nmax" value="${esc(ai.nmax || '')}" placeholder="${esc(same)}">`)}
+      <span class="mode-l">${t('Razonamiento')}</span>
+      <div><select data-f="reasoning">${opts(cfg.reasoning)}</select></div>
+      ${aiCol(`<select data-ai="reasoning"><option value="${SAME}">${same}</option>${'reasoning' in ai ? opts(ai.reasoning) : opts(null)}</select>`)}
+      <span class="mode-l">${t('Contexto')}</span>
+      <div><input type="number" min="256" step="256" data-f="ctx" value="${esc(cfg.ctx)}" placeholder="global"></div>
+      ${aiCol(`<input type="number" min="256" step="256" data-ai="ctx" value="${esc(ai.ctx || '')}" placeholder="${esc(same)}">`)}
+    </div>
+    ${aiOn ? `<p class="hint wide">${t('En modo IA el escritorio está apagado y quedan ~0.4 GB más de VRAM: sirve, por ejemplo, para más contexto. Lo que quede en «igual que normal» usa la columna Normal.')}</p>` : ''}`;
 }
 
 export function renderTextModels() {
@@ -101,7 +144,8 @@ export function renderTextModels() {
     box.append(el(`<div class="card empty">${esc(t('No hay archivos .gguf en {dir}.', { dir: c.models_dir }))}</div>`));
     return;
   }
-  const opts = cfg => c.reasoning_opts.map(([v, label]) => `<option value="${esc(v)}" ${v === cfg.reasoning ? 'selected' : ''}>${esc(label)}</option>`).join('');
+  const opts = sel => c.reasoning_opts.map(([v, label]) => `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(label)}</option>`).join('');
+  const aiOn = !!c.ai_mode_installed;
   for (const m of c.text_models) {
     const cfg = m.cfg;
     const row = el(`
@@ -120,16 +164,11 @@ export function renderTextModels() {
           </div>
         </div>
         <div class="model-edit" hidden>
-          <label class="field"><span>${t('MTP (borradores por paso)')}</span>
-            <span class="row"><input type="checkbox" data-f="mtp" ${cfg.mtp ? 'checked' : ''} class="check">
-            <input type="number" min="1" max="16" data-f="nmax" value="${esc(cfg.nmax || 2)}"></span></label>
-          <label class="field"><span>${t('Razonamiento')}</span><select data-f="reasoning">${opts(cfg)}</select></label>
-          <label class="field"><span>${t('Contexto')}</span><input type="number" min="256" step="256" data-f="ctx" value="${esc(cfg.ctx)}" placeholder="global"></label>
-          <span></span>
+          ${modeGrid(cfg, opts, aiOn)}
           <label class="field wide"><span>${t('Opciones extra de llama-server · una por línea: <code>clave = valor</code> · <code>#</code> para comentarios')}</span>
             <textarea rows="6" data-f="extra" data-autosize spellcheck="false">${esc(cfg.extra)}</textarea></label>
           <div class="opts wide" data-opts="extra"></div>
-          <label class="field wide"><span>${t('Opciones extra en modo IA · se suman a las de arriba y las pisan, solo con el escritorio apagado (~0.4 GB más de VRAM)')}</span>
+          <label class="field wide" ${aiOn ? '' : 'hidden'}><span>${t('Opciones extra en modo IA · se suman a las de arriba y las pisan, solo con el escritorio apagado (~0.4 GB más de VRAM)')}</span>
             <textarea rows="2" data-f="extra_ai" data-autosize spellcheck="false" placeholder="${esc(t('ej: ctx-size = 32768'))}">${esc(cfg.extra_ai || '')}</textarea></label>
           <div class="opts wide" data-opts="extra_ai"></div>
         </div>

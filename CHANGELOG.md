@@ -6,7 +6,8 @@ First public release. / Primera versión pública.
 
 - Web panel (port 8090) to start and stop `llama-server` in router mode (text) and KoboldCpp + StableUI (images),
   which share the VRAM and are mutually exclusive.
-- Load and unload text models without restarts; per-model settings (MTP, reasoning, context, extra options).
+- Load and unload text models without restarts; per-model settings (MTP, reasoning, context, extra options),
+  with separate values for AI mode.
 - Saved initial prompt for agent-style clients, restored automatically when the model loads.
 - Hardware monitor (VRAM, GPU, temperature, power, RAM) for amdgpu and, untested, NVIDIA via `nvidia-smi`.
 - Performance tab (tokens/s per response, MTP acceptance, image timings) and live logs.

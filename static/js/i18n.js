@@ -156,6 +156,13 @@ export const EN = {
   'Descargar': 'Unload',
   'Ajustes': 'Settings',
   'MTP (borradores por paso)': 'MTP (drafts per step)',
+  'Normal': 'Normal',
+  'Borradores por paso': 'Drafts per step',
+  'igual que normal': 'same as normal',
+  'activado': 'on',
+  'apagado': 'off',
+  'En modo IA el escritorio está apagado y quedan ~0.4 GB más de VRAM: sirve, por ejemplo, para más contexto. Lo que quede en «igual que normal» usa la columna Normal.':
+    'In AI mode the desktop is off and there is ~0.4 GB more VRAM: useful, for example, for more context. Anything left as «same as normal» uses the Normal column.',
   'Razonamiento': 'Reasoning',
   'Contexto': 'Context',
   'Opciones extra de llama-server · una por línea: <code>clave = valor</code> · <code>#</code> para comentarios':

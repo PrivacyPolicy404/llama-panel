@@ -49,9 +49,20 @@ def scan_models(models_dirs=None):
 
 def model_cfg(settings, m):
     default = {"mtp": bool(MTP_RE.search(Path(m["key"]).stem)), "nmax": "2", "reasoning": "", "ctx": "", "extra": "",
-               "extra_ai": ""}
+               "extra_ai": "", "ai": {}}
     saved = settings["models"].get(m["key"]) or {}
     return {**default, **saved}
+
+
+# Campos que se pueden cambiar solo para el modo IA; cfg["ai"] guarda unicamente los que difieren de lo normal
+AI_FIELDS = ("mtp", "nmax", "reasoning", "ctx")
+
+
+def effective_cfg(cfg, ai_mode):
+    """Los ajustes que valen: con el modo IA activo, los de cfg["ai"] pisan a los normales."""
+    if not ai_mode:
+        return cfg
+    return {**cfg, **{k: v for k, v in (cfg.get("ai") or {}).items() if k in AI_FIELDS}}
 
 
 def ai_mode_active():
@@ -71,7 +82,7 @@ def build_preset(settings, models, ai_mode=False):
         out.append(f"slot-save-path = {C.SLOTS_DIR}/")  # para guardar y restaurar el prompt inicial (prompt_cache.py)
     out.append("")
     for m in models:
-        cfg = model_cfg(settings, m)
+        cfg = effective_cfg(model_cfg(settings, m), ai_mode)
         extra, _ = C.clean_lines(cfg.get("extra", ""))
         if ai_mode:
             extra_ai, _ = C.clean_lines(cfg.get("extra_ai", ""))
@@ -141,6 +152,27 @@ def validate_settings(global_text, models_in):
             errors.append(_("{key}: contexto debe ser un número de 256 o más (puso '{value}')", key=key, value=ctx))
         if rs not in valid_rs:
             errors.append(_("{key}: razonamiento inválido '{value}'", key=key, value=rs))
+        ai_in = c.get("ai") if isinstance(c.get("ai"), dict) else {}
+        ai = {}
+        if isinstance(ai_in.get("mtp"), bool):
+            ai["mtp"] = ai_in["mtp"]
+        if str(ai_in.get("nmax", "")).strip():
+            v = str(ai_in["nmax"]).strip()
+            if not (v.isdigit() and 1 <= int(v) <= 16):
+                errors.append(_("{key}: borradores MTP debe ser un número entre 1 y 16 (puso '{value}')",
+                                key=f"{key} (modo IA)", value=v))
+            ai["nmax"] = v
+        if "reasoning" in ai_in:
+            v = str(ai_in["reasoning"])
+            if v not in valid_rs:
+                errors.append(_("{key}: razonamiento inválido '{value}'", key=f"{key} (modo IA)", value=v))
+            ai["reasoning"] = v
+        if str(ai_in.get("ctx", "")).strip():
+            v = str(ai_in["ctx"]).strip()
+            if not (v.isdigit() and int(v) >= 256):
+                errors.append(_("{key}: contexto debe ser un número de 256 o más (puso '{value}')",
+                                key=f"{key} (modo IA)", value=v))
+            ai["ctx"] = v
         cfgs[key] = {"mtp": bool(c.get("mtp")), "nmax": nmax, "reasoning": rs, "ctx": ctx, "extra": extra,
-                     "extra_ai": extra_ai}
+                     "extra_ai": extra_ai, "ai": ai}
     return errors, cfgs

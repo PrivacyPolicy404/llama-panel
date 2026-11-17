@@ -29,7 +29,8 @@ They are written in Spanish; each one starts with an English summary of the main
 - Monitors VRAM, GPU usage, temperature/power/fan and RAM, with a history of the last few minutes.
 - Starts, restarts and stops text and images; starting one stops the other to free VRAM.
 - Loads and unloads a single text model (llama-server router API) without restarting anything.
-- Per-model settings (MTP, reasoning, context, extra options); "Save and apply" reloads only what is needed.
+- Per-model settings (MTP, reasoning, context, extra options), with separate values for AI mode if it is
+  installed; "Save and apply" reloads only what is needed.
 - Saved initial prompt: with an agent-style client (Cline, etc.), "Save prompt" writes the already-processed fixed
   prompt to disk and the panel restores it every time the model loads (about a minute less waiting per session).
 - Picks the image model and its KoboldCpp flags, with the progress of the current generation.

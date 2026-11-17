@@ -328,3 +328,13 @@ details.global[open] summary { margin-bottom: 12px; }
 .setup-needed { margin: 0 0 12px; border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
 .setup-card > .btn { align-self: flex-start; }
 .lang { height: 32px; padding: 0 6px; font-size: 13px; }
+
+/* ajustes del modelo: columnas Normal / Modo IA */
+.mode-grid { display: grid; grid-template-columns: max-content max-content; gap: 8px 16px; align-items: center; }
+.mode-grid.two { grid-template-columns: max-content max-content max-content; }
+.mode-grid .mode-h { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.mode-grid .mode-l { font-size: 12.5px; color: var(--muted); }
+.mode-grid input[type=number] { width: 120px; }
+.mode-grid select { min-width: 120px; }
+.model-edit .hint.wide { margin-top: -6px; }
+.mode-grid .mode-ai input[type=number], .mode-grid .mode-ai select { width: 170px; }
