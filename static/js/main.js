@@ -11,6 +11,7 @@ import { loadLogs } from './logs.js';
 import { loadSetup, needsSetup } from './setup.js';
 import { renderAuto } from './auto.js';
 import { loadBuddy } from './buddy.js';
+import { playPreview, renderAudioEngine, renderAudioModels } from './audio.js';
 import { lang, setLang, t, translateDom } from './i18n.js';
 
 async function pollState() {
@@ -24,7 +25,7 @@ async function pollState() {
     if (S.config && S.state.img.selected_key !== undefined && S.state.img.selected_key !== S.config.img_selected && !S.dirtyImg) {
       S.config.img_selected = S.state.img.selected_key;
     }
-    renderTiles(); renderEngines(); updateTextStates(); updateImgStates(); renderAiMode(); renderAuto();
+    renderTiles(); renderEngines(); updateTextStates(); updateImgStates(); renderAiMode(); renderAuto(); renderAudioEngine();
   } catch {
     $('#conn').hidden = false;
   }
@@ -46,7 +47,7 @@ function renderAiMode() {
 
 async function loadConfig() {
   S.config = await getJSON('/api/config');
-  renderTextModels(); renderImgModels();
+  renderTextModels(); renderImgModels(); renderAudioModels();
 }
 
 async function loadStats() {
@@ -91,6 +92,7 @@ function bind() {
     };
   }
 
+  $('[data-audio-preview]').onclick = e => playPreview(null, e.currentTarget);
   $('#rescan').onclick = async e => {
     const res = await withBusy(e.currentTarget, () => post('/api/text/rescan'));
     report(res);
@@ -127,7 +129,7 @@ async function start() {
     S.config = cfg; S.hist = hist.samples || [];
     $('#lnk-chat').href = `http://${host}:${cfg.ports.chat}`;
     $('#lnk-sdui').href = `http://${host}:${cfg.ports.img}/sdui`;
-    renderTextModels(); renderImgModels();
+    renderTextModels(); renderImgModels(); renderAudioModels();
   } catch { $('#conn').hidden = false; }
   // primera vez (sin llama-server o sin modelos): mostrar la configuracion
   const setup = await loadSetup();

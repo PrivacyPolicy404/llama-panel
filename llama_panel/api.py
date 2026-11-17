@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from . import actions
+from . import audio_models as AM
 from . import buddy
 from . import config as C
 from . import gate
@@ -34,7 +35,16 @@ def state():
         "img": img,
         "ai_mode": ai_mode_state(),
         "auto": gate.status(),
+        "audio": audio_state(),
     }
+
+
+def audio_state():
+    """El motor de audio (CPU): qué modelo de Whisper y qué voz de Piper se usan, si están, y los últimos tiempos."""
+    from . import voice
+    sel = AM.selected()
+    return {"stt": Path(sel["stt"]).name, "tts": Path(sel["tts"]).stem, "stt_ok": voice.stt_available(),
+            "tts_ok": voice.Speaker.available(), "last": voice.LAST}
 
 
 def config():
@@ -58,6 +68,9 @@ def config():
                         "extra": (settings["image"]["models"].get(m["key"]) or {}).get("extra", "")}
                        for m in imgs],
         "img_selected": sel["key"] if sel else "",
+        "audio_models": AM.scan(),
+        "audio_selected": AM.selected(),
+        "audio_dirs": [str(d) for d in AM.audio_dirs()],
         "server_opts": TM.server_options(),
         "ai_mode_installed": ai_mode_state()["installed"],
         "fields": TM.FIELDS,  # la interfaz traduce los textos (castellano = clave)
@@ -108,6 +121,8 @@ POST_ROUTES = {
     "/api/buddy/memory": lambda b: _result(buddy.save_memory(b.get("text", ""))),
     "/api/buddy/reset": lambda b: _result(buddy.reset()),
     "/api/buddy/ha": lambda b: _result(buddy.save_ha_token(b.get("token", ""))),
+    "/api/audio/use": actions.audio_use,
+    "/api/audio/preview": actions.audio_preview,
 }
 
 # Rutas que contestan de a partes (server-sent events)

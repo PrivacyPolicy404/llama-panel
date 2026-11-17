@@ -9,10 +9,12 @@ from . import gate
 from . import hardware
 from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES, POST_STREAM_ROUTES
+from .audio_api import RAW_POST_ROUTES
 from .i18n import remember_ui_lang, set_lang
 from .install import sync_units
 
 MAX_BODY = 8_000_000  # el audio del compañero llega en base64 dentro del JSON
+MAX_RAW_BODY = 30_000_000  # /v1/audio/transcriptions: OpenAI acepta archivos de hasta 25 MB
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -83,8 +85,25 @@ class Handler(BaseHTTPRequestHandler):
             events.close()
             self.close_connection = True
 
+    def _raw(self, route):
+        """Rutas compatibles con OpenAI (/v1/audio/*): cuerpo y respuesta que no son JSON del panel. No cambian nada
+        del panel (solo convierten audio), así que no necesitan la protección de exigir JSON."""
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            n = 0
+        if n > MAX_RAW_BODY:
+            return self._error(413, "demasiado grande")
+        try:
+            code, ctype, data = route(self.headers, self.rfile.read(n))
+        except Exception as e:  # noqa: BLE001
+            return self._error(500, f"Error interno: {e}")
+        self._send(code, data, ctype)
+
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path in RAW_POST_ROUTES:
+            return self._raw(RAW_POST_ROUTES[path])
         route = POST_ROUTES.get(path) or POST_STREAM_ROUTES.get(path)
         if not route:
             return self._error(404, "no encontrado")

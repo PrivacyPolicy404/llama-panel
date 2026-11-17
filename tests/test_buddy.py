@@ -34,8 +34,9 @@ class Voice(unittest.TestCase):
         self.assertEqual(voice.speakable("```\ncodigo\n```"), "")
 
     def test_audio_ctx_follows_the_length(self):
-        self.assertEqual(voice.audio_ctx(4), 320)    # 200 cuadros + margen, en múltiplos de 64
-        self.assertEqual(voice.audio_ctx(0.5), 128)
+        self.assertEqual(voice.audio_ctx(4), 448)    # 1.5 x 200 cuadros + 128, en múltiplos de 64
+        self.assertEqual(voice.audio_ctx(2.8), 384)  # con 256 repetía la frase
+        self.assertEqual(voice.audio_ctx(0.5), 384)
         self.assertEqual(voice.audio_ctx(29), 0)     # casi 30 s: la ventana entera
 
     def test_known_hallucinations_are_dropped(self):

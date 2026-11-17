@@ -6,6 +6,8 @@ Panel web casero para levantar y bajar modelos on demand en una GPU con poca VRA
 
 - **Texto:** `llama-server` (llama.cpp) en modo router, puerto 8080.
 - **Imágenes:** KoboldCpp con StableUI, puerto 5001.
+- **Audio:** whisper.cpp (voz a texto) y Piper (texto a voz) en el CPU, siempre disponibles, con rutas compatibles
+  con OpenAI en el puerto del panel.
 - **Panel:** puerto 8090. Texto e imágenes se excluyen mutuamente para compartir la VRAM.
 
 Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build. La interfaz está en castellano
@@ -45,6 +47,8 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   prende el generador, y al revés; Open WebUI, un asistente de voz o un script usan las dos cosas sin pasar por el
   panel. Un pedido con un modelo que no existe (un cliente fijado en `gpt-4o`) va al que está cargado. Aparte, la
   **descarga por inactividad** libera la VRAM después de N minutos sin uso. Las dos cosas están en Configuración.
+- Pestaña **Modelos de audio**: elegir el modelo de Whisper y la voz de Piper (cada voz se puede escuchar antes).
+  Otros programas los usan con `http://<máquina>:8090/v1/audio/speech` y `/v1/audio/transcriptions` (formato OpenAI).
 - Pestaña **Compañero**: un agente con personalidad, memoria y herramientas que usa el modelo de texto cargado. Se le
   puede hablar: mantenés apretado el micrófono (o la barra espaciadora), whisper.cpp pasa la voz a texto en el CPU y
   Piper lee cada oración de la respuesta mientras se genera la siguiente. Sus herramientas declaran qué pueden hacer y
@@ -75,6 +79,8 @@ llama_panel/
   buddy.py            pestaña Compañero: personalidad, historial y el bucle del agente (texto, herramientas y audio)
   buddy_tools.py      herramientas del compañero, cada una con su nivel de riesgo, y su registro
   voice.py            whisper.cpp (voz a texto) y Piper (texto a voz); tts_worker.py corre en el venv de Piper
+  audio_models.py     modelos de Whisper y voces de Piper en disco, y cuáles se usan
+  audio_api.py        /v1/audio/speech y /v1/audio/transcriptions compatibles con OpenAI
 static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo; i18n.js tiene las traducciones)

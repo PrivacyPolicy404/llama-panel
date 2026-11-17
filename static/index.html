@@ -95,13 +95,33 @@
         <a class="btn link" id="lnk-sdui" target="_blank" rel="noopener">Abrir StableUI ↗</a>
       </div>
     </article>
+
+    <article class="engine" id="eng-audio">
+      <div class="engine-head">
+        <div>
+          <h2>Audio</h2>
+          <div class="engine-kind">whisper.cpp · Piper · CPU</div>
+        </div>
+        <span class="status" data-status><i></i><b>–</b></span>
+      </div>
+      <dl class="facts">
+        <div><dt>Oído</dt><dd data-stt>–</dd></div>
+        <div><dt>Voz</dt><dd data-tts>–</dd></div>
+        <div class="wide"><dt>Último uso</dt><dd data-last>–</dd></div>
+      </dl>
+      <div class="engine-actions">
+        <button class="btn ghost" data-audio-preview>Escuchar la voz</button>
+        <a class="btn link" href="#audio" data-goto="audio">Modelos de audio</a>
+      </div>
+    </article>
   </section>
-  <p class="note">Texto e imágenes comparten la VRAM: al encender uno, el otro se apaga solo.</p>
+  <p class="note">Texto e imágenes comparten la VRAM: al encender uno, el otro se apaga solo. El audio corre en el CPU y está siempre disponible.</p>
 
   <!-- Pestañas -->
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="text" aria-selected="true">Modelos de texto</button>
     <button role="tab" data-tab="img">Modelos de imagen</button>
+    <button role="tab" data-tab="audio">Modelos de audio</button>
     <button role="tab" data-tab="buddy">Compañero</button>
     <button role="tab" data-tab="perf">Rendimiento</button>
     <button role="tab" data-tab="logs">Registros</button>
@@ -144,6 +164,10 @@
     <div class="table-wrap"><table class="tbl" id="perf-table"></table></div>
     <h3>Imágenes: generaciones recientes</h3>
     <div class="table-wrap"><table class="tbl" id="perf-img"></table></div>
+  </section>
+
+  <section class="panel" data-panel="audio" hidden>
+    <div id="audio-models"></div>
   </section>
 
   <section class="panel" data-panel="buddy" hidden>

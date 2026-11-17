@@ -313,3 +313,36 @@ def auto_settings(body):
                     ports=f"{C.CHAT_PORT}/{C.IMG_PORT}") + restarted + " " + idle_msg)
     return ok(_("Encendido a demanda apagado: los servicios vuelven a atender los puertos {ports}.",
                 ports=f"{C.CHAT_PORT}/{C.IMG_PORT}") + restarted + " " + idle_msg)
+
+
+# ---------- audio ----------
+def audio_use(body):
+    from . import audio_models as AM
+    kind, path = str(body.get("kind", "")), str(body.get("path", ""))
+    err = AM.select(kind, path)
+    if err:
+        return fail(_("No se pudo elegir: {err}", err=err))
+    from pathlib import Path
+    return ok(_("Oído: {model}.", model=Path(path).name) if kind == "stt" else _("Voz: {model}.", model=Path(path).stem))
+
+
+PREVIEW_TEXT = {"es": "Hola, así sueno. ¿Te gusta esta voz para tu compañero?",
+                "en": "Hi, this is how I sound. Do you like this voice for your buddy?"}
+
+
+def audio_preview(body):
+    """WAV de ejemplo con una voz (elegida o no), en base64 para la interfaz."""
+    import base64
+    from . import audio_models as AM
+    from . import voice
+    path = str(body.get("path") or AM.selected()["tts"])
+    voices = {m["path"]: m for m in AM.scan()["tts"]}
+    if path not in voices:
+        return fail(_("No existe esa voz."))
+    lang = "es" if str(voices[path]["lang"]).startswith("es") else "en"
+    text = str(body.get("text") or PREVIEW_TEXT[lang])[:300]
+    try:
+        wav = voice.preview(path, text)
+    except Exception as e:  # noqa: BLE001
+        return fail(_("Sin voz: {err}", err=e))
+    return ok("", wav=base64.b64encode(wav or b"").decode())

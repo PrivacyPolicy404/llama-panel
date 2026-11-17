@@ -6,6 +6,8 @@ A small home web panel to start and stop models on demand on a GPU with little V
 
 - **Text:** `llama-server` (llama.cpp) in router mode, port 8080.
 - **Images:** KoboldCpp with StableUI, port 5001.
+- **Audio:** whisper.cpp (speech to text) and Piper (text to speech) on the CPU, always available, with
+  OpenAI-compatible routes on the panel port.
 - **Panel:** port 8090. Text and images are mutually exclusive so they can share the VRAM.
 
 It only uses the Python 3 standard library: no dependencies, no build step. The interface is available in English
@@ -46,6 +48,8 @@ They are written in Spanish; each one starts with an English summary of the main
   image generator, and the other way around; Open WebUI, a voice assistant or a script can use both without touching
   the panel. A request naming a model that does not exist (a client fixed to `gpt-4o`) goes to the loaded one.
   Separately, **idle unload** frees the VRAM after N minutes without use. Both are in the Setup tab.
+- **Audio models** tab: pick the Whisper model and the Piper voice (listen to each voice first). Other programs can
+  use them through `http://<machine>:8090/v1/audio/speech` and `/v1/audio/transcriptions` (OpenAI format).
 - **Buddy** tab: an agent with a personality, memory and tools that uses the loaded text model. You can talk to it:
   hold the mic button (or the space bar), whisper.cpp turns your voice into text on the CPU and Piper reads each
   sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
@@ -76,6 +80,8 @@ llama_panel/
   buddy.py            Buddy tab: personality, history and the agent loop (streams text, tools and audio)
   buddy_tools.py      the buddy's tools, each with its risk level, and the call log
   voice.py            whisper.cpp (speech to text) and Piper (text to speech); tts_worker.py runs in Piper's venv
+  audio_models.py     Whisper models and Piper voices on disk, and which ones are in use
+  audio_api.py        OpenAI-compatible /v1/audio/speech and /v1/audio/transcriptions
 static/
   index.html, app.css
   js/                 native ES modules, no build (main.js starts everything; i18n.js has the translations)

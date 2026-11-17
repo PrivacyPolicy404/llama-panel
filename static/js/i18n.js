@@ -77,8 +77,6 @@ export const EN = {
   'Apagar': 'Stop',
   'Abrir chat ↗': 'Open chat ↗',
   'Abrir StableUI ↗': 'Open StableUI ↗',
-  'Texto e imágenes comparten la VRAM: al encender uno, el otro se apaga solo.':
-    'Text and images share the VRAM: starting one stops the other.',
   'Modelos de texto': 'Text models',
   'Modelos de imagen': 'Image models',
   'Rendimiento': 'Performance',
@@ -264,6 +262,36 @@ export const EN = {
   'Nombre de la GPU': 'GPU name',
   'Opcional, solo para mostrar. Detectado: <b>{name}</b>.': 'Optional, display only. Detected: <b>{name}</b>.',
   'Rutas aplicadas.': 'Paths applied.',
+  // audio
+  'Audio': 'Audio',
+  'whisper.cpp · Piper · CPU': 'whisper.cpp · Piper · CPU',
+  'Texto e imágenes comparten la VRAM: al encender uno, el otro se apaga solo. El audio corre en el CPU y está siempre disponible.':
+    'Text and images share the VRAM: starting one stops the other. Audio runs on the CPU and is always available.',
+  'Modelos de audio': 'Audio models',
+  'Oído': 'Hearing',
+  'Voz': 'Voice',
+  'Último uso': 'Last use',
+  'Escuchar la voz': 'Hear the voice',
+  'Escuchar': 'Listen',
+  'En uso': 'In use',
+  'Listo': 'Ready',
+  'Incompleto': 'Incomplete',
+  'Sin instalar': 'Not installed',
+  'falta Piper': 'Piper missing',
+  'falta whisper.cpp': 'whisper.cpp missing',
+  'oído {s} s': 'heard {s} s',
+  'voz {s} s': 'voice {s} s',
+  'Oído: Whisper': 'Hearing: Whisper',
+  'Voz: Piper': 'Voice: Piper',
+  'Pasa tu voz a texto en el CPU. small es rápido (~0.7 s para 4 s de audio); large-v3-turbo entiende mejor pero tarda ~3 veces más.':
+    'Turns your voice into text on the CPU. small is fast (~0.7 s for 4 s of audio); large-v3-turbo understands better but takes ~3 times longer.',
+  'Lee las respuestas en voz alta, en el CPU (~0.2 s por oración).': 'Reads the answers aloud, on the CPU (~0.2 s per sentence).',
+  'No hay modelos <code>ggml-*.bin</code> de whisper.cpp.': 'No whisper.cpp <code>ggml-*.bin</code> models.',
+  'No hay voces de Piper (<code>.onnx</code> con su <code>.onnx.json</code>).': 'No Piper voices (<code>.onnx</code> with its <code>.onnx.json</code>).',
+  'Carpetas: {dirs}. Otras se agregan con <code>LLAMA_AUDIO_DIRS</code> en paths.env.': 'Folders: {dirs}. Add others with <code>LLAMA_AUDIO_DIRS</code> in paths.env.',
+  'Otros programas pueden usar esta voz con la API de OpenAI: <code>base_url</code> <code>http://{host}:{port}/v1</code>, rutas <code>/audio/speech</code> y <code>/audio/transcriptions</code>.':
+    'Other programs can use this voice through the OpenAI API: <code>base_url</code> <code>http://{host}:{port}/v1</code>, routes <code>/audio/speech</code> and <code>/audio/transcriptions</code>.',
+  'El navegador no dejó reproducir el audio.': 'The browser did not allow playing the audio.',
   // compañero
   'Compañero': 'Buddy',
   '<code>{name}</code> se reemplaza por el nombre. Se lee en voz alta: conviene pedirle respuestas cortas.':

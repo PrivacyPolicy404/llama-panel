@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Audio engine (CPU) next to text and images: an Audio models tab to pick the Whisper model and the Piper voice
+  (with a preview), and OpenAI-compatible `/v1/audio/speech` and `/v1/audio/transcriptions` on the panel port.
 - Buddy tab: an agent with personality, memory and tools on the loaded text model, with voice (whisper.cpp to
   listen, Piper to speak, both on the CPU) and `scripts/install-voice.sh` to set it up without sudo.
 - Optional on-demand start: the panel serves ports 8080 and 5001 and starts text or images depending on what each

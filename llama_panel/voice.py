@@ -10,9 +10,14 @@ import struct
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
+from . import audio_models as AM
 from . import config as C
+
+# Últimos tiempos, para la tarjeta Audio del panel
+LAST = {"stt": None, "tts": None}
 
 # Whisper "escucha" estas frases en el silencio o el ruido (vienen de los subtítulos con que se entrenó)
 HALLUCINATIONS = ("subtítulos realizados por la comunidad de amara.org", "subtítulos por la comunidad de amara.org",
@@ -21,10 +26,11 @@ HALLUCINATIONS = ("subtítulos realizados por la comunidad de amara.org", "subt�
 
 
 def audio_ctx(seconds):
-    """Ventana de audio que procesa Whisper: siempre arma 30 s (1500 cuadros) aunque la orden dure 3. Ajustarla al
-    largo real baja small de 1.7 s a 0.6 s para 4 s de audio. Con margen, en múltiplos de 64; 0 = entera."""
-    frames = int(seconds * 50) + 64
-    frames = max(128, -(-frames // 64) * 64)
+    """Ventana de audio que procesa Whisper: siempre arma 30 s (1500 cuadros, 50 por segundo) aunque la orden dure 3.
+    Ajustarla al largo real baja small de 1.7 s a ~0.7 s para 4 s de audio. Muy justa, repite la frase (2.8 s de
+    audio con 256 cuadros salió dos veces): 1.5 veces el largo + 128, mínimo 384, en múltiplos de 64; 0 = entera."""
+    frames = max(384, int(seconds * 75) + 128)
+    frames = -(-frames // 64) * 64
     return 0 if frames >= 1500 else frames
 
 
@@ -36,7 +42,7 @@ def clean_transcript(text):
 
 
 def stt_available():
-    return os.access(C.WHISPER_CLI, os.X_OK) and Path(C.WHISPER_MODEL).is_file()
+    return os.access(C.WHISPER_CLI, os.X_OK) and Path(AM.selected()["stt"]).is_file()
 
 
 def transcribe(audio, threads=8, language="es"):
@@ -51,11 +57,15 @@ def transcribe(audio, threads=8, language="es"):
         seconds = max(0.0, (wav.stat().st_size - 44) / 32000)
         if seconds < 0.3:
             return "", seconds
-        r = subprocess.run([C.WHISPER_CLI, "-m", C.WHISPER_MODEL, "-f", str(wav), "-l", language, "-t", str(threads),
+        model = AM.selected()["stt"]
+        t0 = time.time()
+        r = subprocess.run([C.WHISPER_CLI, "-m", model, "-f", str(wav), "-l", language, "-t", str(threads),
                             "-ac", str(audio_ctx(seconds)), "-nt", "-np"],
                            capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
             raise RuntimeError(f"whisper: {r.stderr.strip()[-200:]}")
+        LAST["stt"] = {"t": time.time(), "audio_s": round(seconds, 1), "s": round(time.time() - t0, 2),
+                       "model": Path(model).name}
         return clean_transcript(r.stdout), seconds
 
 
@@ -109,22 +119,35 @@ class Speaker:
 
     def __init__(self):
         self.proc = None
+        self.voice = None  # voz con la que arrancó el proceso: si se elige otra, se lo reinicia
+        self.fixed = None  # voz fija (para escuchar una antes de elegirla); None = la elegida
+        self.track = True  # anotar los tiempos en LAST (las pruebas de voces no son uso real)
         self.lock = threading.Lock()
 
     def warm(self):
         """Arranca Piper de antemano (cargar la voz tarda ~0.6 s): se llama al empezar una charla con voz."""
         with self.lock:
-            if self.proc is None or self.proc.poll() is not None:
-                self._start()
+            self._ensure()
 
     @staticmethod
     def available():
-        return os.access(C.PIPER_PYTHON, os.X_OK) and Path(C.PIPER_VOICE).is_file()
+        return os.access(C.PIPER_PYTHON, os.X_OK) and Path(AM.selected()["tts"]).is_file()
 
-    def _start(self):
+    def _ensure(self):
+        voice = self.fixed or AM.selected()["tts"]
+        if self.proc is not None and self.proc.poll() is None and self.voice == voice:
+            return
+        self.stop()
         worker = Path(__file__).with_name("tts_worker.py")
-        self.proc = subprocess.Popen([C.PIPER_PYTHON, str(worker), C.PIPER_VOICE], stdin=subprocess.PIPE,
+        self.proc = subprocess.Popen([C.PIPER_PYTHON, str(worker), voice], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.voice = voice
+
+    def stop(self):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+        self.proc = None
 
     def say(self, text):
         """WAV (bytes) de `text`, o None si no hay nada que leer."""
@@ -133,18 +156,30 @@ class Speaker:
             return None
         with self.lock:
             for attempt in (1, 2):  # si el proceso murió, se lo arranca de nuevo una vez
-                if self.proc is None or self.proc.poll() is not None:
-                    self._start()
+                self._ensure()
+                t0 = time.time()
                 try:
                     self.proc.stdin.write((json.dumps({"text": text}) + "\n").encode())
                     self.proc.stdin.flush()
                     head = self.proc.stdout.read(4)
                     if len(head) == 4:
-                        return self.proc.stdout.read(struct.unpack(">I", head)[0])
+                        wav = self.proc.stdout.read(struct.unpack(">I", head)[0])
+                        if self.track:
+                            LAST["tts"] = {"t": time.time(), "s": round(time.time() - t0, 2),
+                                           "chars": len(text), "voice": Path(self.voice).stem}
+                        return wav
                 except OSError:
                     pass
-                self.proc = None
+                self.stop()
             raise RuntimeError("Piper no respondió")
 
 
 SPEAKER = Speaker()
+PREVIEW = Speaker()  # para "Escuchar" una voz en la pestaña Modelos de audio, sin tocar la del compañero
+PREVIEW.track = False
+
+
+def preview(path, text):
+    with PREVIEW.lock:
+        PREVIEW.fixed = path
+    return PREVIEW.say(text)

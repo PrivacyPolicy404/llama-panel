@@ -237,12 +237,19 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   (`~/.config/llama-panel/buddy/memoria.md`, herramienta `recordar`) y herramientas con nivel de riesgo
   (`buddy_tools.py`; registro en `buddy/herramientas.log`). La seguridad está en las herramientas, no en el modelo:
   el modelo solo propone llamadas y lo que transcribe Whisper puede traer instrucciones de cualquiera que hable cerca.
-- Voz en el CPU (la GPU es del modelo): whisper.cpp 1.9.5 en `~/whisper.cpp`, `ggml-small-q8_0` y la voz
-  `es_AR-daniela-high` de Piper en `~/models-nvme/{whisper,piper}` (rutas en paths.env).
+- Voz en el CPU (la GPU es del modelo): whisper.cpp 1.9.5 en `~/whisper.cpp`; en `~/models-nvme/whisper`
+  small-q8_0 (en uso) y large-v3-turbo-q5_0; en `~/models-nvme/piper` las voces es_AR-daniela-high (en uso),
+  es_MX-claude-high, es_MX-ald-medium y es_ES-davefx-medium (sha256 verificados). Se eligen en la pestaña Modelos de
+  audio (`settings.json` → `audio`); otras carpetas con `LLAMA_AUDIO_DIRS`. Tarjeta «Audio» al lado de Texto e
+  Imágenes: no se excluye con ellos (CPU). Rutas de OpenAI en :8090 (`audio_api.py`): speech en mp3 0.84 s para
+  una frase de 2.8 s.
 - Mediciones (Flash-Next `-hcq8`, modo IA, 2026-11-17):
   - Whisper con 4 s de audio: small 1.7 s con la ventana entera de 30 s, **0.6 s** ajustando `-ac` al largo
     (`voice.audio_ctx`); large-v3-turbo q5_0 11 s y 2.1 s, pero con la ventana chica repite palabras. 16 hilos no
     mejora a 8. Con el audio en webm del navegador (ffmpeg incluido): 0.74 s.
+  - **Trampa:** con la ventana muy justa Whisper repite la frase (2.8 s de audio con `-ac 256` salió dos veces; con
+    384 o más, bien; `-mc 0` no cambia nada). Regla: 1.5 veces el largo + 128 cuadros, mínimo 384: 4 s de audio
+    pasan de 0.66 a 0.74 s.
   - Primer token: 1.4 s sin herramientas, 3.8 s con una ronda de herramienta. Por voz, ~2.2 s desde que se suelta
     el botón (sin contar Piper).
   - Piper (`es_AR-daniela-high`, onnxruntime en CPU): 0.13 a 0.21 s por oración, ~12 veces más rápido que el audio;
