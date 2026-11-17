@@ -103,6 +103,30 @@ class Dibujo(unittest.TestCase):
         self.assertIn("(fija, OC 2250)", text)
         self.assertIn("─ gpu ─", "\n".join(kiosk.strip_marks(s) for s in kiosk.gpu_box({}, [], 70)))
 
+    def test_footer_tells_how_to_leave_ai_mode(self):
+        for w, h in ((160, 45), (80, 30)):
+            state = {"svc": {"text": "active", "img": "inactive"}, "text": {"models": {}}, "img": {}, "hw": {}}
+            lines = kiosk.render(state, None, None, None, width=w, height=h, now=0)
+            text, style = lines[-1]
+            self.assertIn("S dos veces", kiosk.strip_marks(text))
+            self.assertIn("sudo llama-modo-ia off", kiosk.strip_marks(text))
+            self.assertLessEqual(len(text), w)
+            self.assertLessEqual(len(lines), h)
+        lines = kiosk.render(None, None, None, {}, width=120, height=40, notice="¿Volver al escritorio? Apretá S de nuevo")
+        self.assertEqual(lines[-1], (" ¿Volver al escritorio? Apretá S de nuevo", "warn"))
+
+    def test_leave_ai_mode_falls_back_to_the_helper(self):
+        from unittest import mock
+        import subprocess
+        with mock.patch.object(kiosk.urllib.request, "urlopen", side_effect=OSError("panel caído")), \
+                mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+            self.assertIsNone(kiosk.leave_ai_mode())
+            run.assert_called_once()
+            self.assertEqual(run.call_args[0][0], ["sudo", "-n", kiosk.AI_MODE_HELPER, "off"])
+        with mock.patch.object(kiosk.urllib.request, "urlopen", side_effect=OSError("panel caído")), \
+                mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "sin permiso")):
+            self.assertEqual(kiosk.leave_ai_mode(), "sin permiso")
+
 
 if __name__ == "__main__":
     unittest.main()

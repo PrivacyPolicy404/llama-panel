@@ -126,7 +126,8 @@ ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse
 > propio monitor, manejado desde el navegador o por SSH desde otra computadora). Apaga el gestor de sesión: **se
 > cierra la sesión gráfica y se pierde lo que haya abierto sin guardar**. Si lo activás desde la misma PC en la que
 > estás sentado, quedás sin escritorio hasta salir del modo IA, ya sea desde el panel en otro dispositivo
-> (celular, laptop) o en esa misma PC: Ctrl+Alt+F2, iniciar sesión y correr `sudo llama-modo-ia off`.
+> (celular, laptop) o en esa misma PC: apretar S dos veces en el dashboard, o Ctrl+Alt+F2, iniciar sesión y
+> correr `sudo llama-modo-ia off`.
 > Si usás el panel en tu PC de escritorio de todos los días, no instales el modo IA: todo lo demás funciona sin él.
 
 En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muestra este dashboard de texto

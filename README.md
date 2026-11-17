@@ -127,7 +127,7 @@ helper without a password. AI mode **closes the graphical session** when turned 
 > through the browser or SSH from another computer). It stops the display manager: **the graphical session closes
 > and anything open and unsaved in it is lost**. If you turn it on from the same PC you are sitting at, you are
 > left without a desktop until you leave AI mode, either from the panel on another device (phone, laptop) or on
-> that same PC: press Ctrl+Alt+F2, log in and run `sudo llama-modo-ia off`.
+> that same PC: press S twice on the dashboard, or Ctrl+Alt+F2, log in and run `sudo llama-modo-ia off`.
 > If you use the panel on your everyday desktop PC, don't install AI mode: everything else works without it.
 
 In AI mode the desktop is stopped to free the VRAM it was using, and tty1 shows this text dashboard

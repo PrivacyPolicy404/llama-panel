@@ -470,7 +470,41 @@ def compact_boxes(state, stats, hw, samples, cpu, width, gh, now, live=None):
     return [box("gpu", gpu, width), box("cpu · memoria", cpu_l, width), box("modelos", mod, width), box("procesos", procs, width)]
 
 
-def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, tps_hist=None, prompt_hist=None):
+FOOTER = " Para volver al escritorio: S dos veces · «Salir del modo IA» en el panel · Ctrl+Alt+F2 y  sudo llama-modo-ia off"
+FOOTER_SHORT = " Volver al escritorio: S dos veces · Ctrl+Alt+F2 y  sudo llama-modo-ia off"
+AI_MODE_HELPER = "/usr/local/sbin/llama-modo-ia"
+CONFIRM_SECS = 5
+
+
+def footer(width, notice=None):
+    """Ultima linea: como volver al escritorio, o el aviso de la tecla S (confirmar / volviendo / error)."""
+    if notice:
+        return (" " + notice)[:width], "warn"
+    return (FOOTER if len(FOOTER) <= width else FOOTER_SHORT)[:width], "dim"
+
+
+def leave_ai_mode():
+    """Sale del modo IA por el panel (que tambien saca las opciones de modo IA de los modelos); si el panel no
+    responde, con el ayudante directamente. Al salir, systemd apaga este dashboard. Devuelve un error o None."""
+    try:
+        req = urllib.request.Request(PANEL + "/api/action", data=json.dumps({"do": "ai_mode_off"}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            res = json.loads(r.read())
+        if res.get("ok"):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+    import subprocess
+    try:
+        r = subprocess.run(["sudo", "-n", AI_MODE_HELPER, "off"], capture_output=True, text=True, timeout=60)
+        return None if r.returncode == 0 else (r.stderr or r.stdout).strip() or "el ayudante falló"
+    except (OSError, subprocess.SubprocessError) as e:
+        return str(e)
+
+
+def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, tps_hist=None, prompt_hist=None,
+           notice=None):
     """Devuelve las lineas del dashboard como [(texto, estilo)]; estilo en {"", "title", "dim", "good", "warn", "bad"}.
     Con 120x36 o mas usa dos columnas; si no, una columna compacta que se achica hasta entrar en la altura."""
     now = now or time.time()
@@ -481,6 +515,8 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
     if state is None:
         out.append(("", ""))
         out.append(("  Sin conexión con el panel. Reintentando…"[:width], "bad"))
+        out.append(("", ""))
+        out.append(footer(width, notice))
         return out
     hw = state.get("hw") or {}
     samples = (hist or {}).get("samples") or []
@@ -496,7 +532,9 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
                 break
         for b in boxes:
             out += [(l, "") for l in b]
-        return out[:height]
+        out = out[:height - 1]
+        out.append(footer(width, notice))
+        return out
     left_w = width // 2
     right_w = width - left_w - 1
     top = side_by_side(gpu_box(hw, samples, left_w), cpu_box(cpu, hw, right_w))
@@ -506,8 +544,9 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
                           live_panel + procs_box(cpu, right_w, proc_rows))
     for l in top + bottom:
         out.append((l, ""))
-    out.append((" Escritorio apagado para dejarle la GPU a los modelos · para volver: «Salir del modo IA» en el panel", "dim"))
-    return out[:height]
+    out = out[:height - 1]
+    out.append(footer(width, notice))
+    return out
 
 
 def snapshot():
@@ -572,7 +611,10 @@ def run_curses():
         prompt_hist = collections.deque(maxlen=240)
         last_live_sample = last_prompt_sample = None
         last_live_fetch, cpu = 0, None
+        armed, notice = 0, None  # tecla S: primer toque arma, el segundo (dentro de CONFIRM_SECS) sale
         while True:
+            if armed and time.time() - armed > CONFIRM_SECS and notice and notice.startswith("¿"):
+                armed, notice = 0, None
             if source_changed(started):  # codigo nuevo: reiniciar el proceso con la version actual
                 curses.endwin()
                 os.execv(sys.executable, [sys.executable, "-m", "llama_panel.kiosk"])
@@ -597,7 +639,8 @@ def run_curses():
                     prompt_hist.append(sample[1])
             h, w = scr.getmaxyx()
             scr.erase()
-            for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist, prompt_hist=prompt_hist)):
+            for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist,
+                                                     prompt_hist=prompt_hist, notice=notice)):
                 base = styles.get(style, curses.A_NORMAL)
                 attr, x, seg = base, 0, []
                 try:
@@ -613,7 +656,17 @@ def run_curses():
                 except curses.error:
                     pass
             scr.refresh()
-            scr.getch()
+            if scr.getch() in (ord("s"), ord("S")):
+                if armed and time.time() - armed <= CONFIRM_SECS:
+                    armed, notice = 0, "Volviendo al escritorio… (puede tardar unos segundos)"
+                    last_fetch = 0  # redibujar ya con el aviso
+                    scr.erase()
+                    scr.addstr(0, 0, footer(w - 1, notice)[0], curses.A_BOLD)
+                    scr.refresh()
+                    err = leave_ai_mode()
+                    notice = f"No se pudo salir del modo IA: {err}" if err else notice
+                else:
+                    armed, notice = time.time(), f"¿Volver al escritorio? Apretá S de nuevo en {CONFIRM_SECS} s"
 
     curses.wrapper(main)
 
