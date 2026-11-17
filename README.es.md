@@ -11,7 +11,7 @@ Panel web casero para levantar y bajar modelos on demand en una GPU con poca VRA
 Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build. La interfaz está en castellano
 e inglés (selector arriba a la derecha).
 
-![Panel con Qwen3.8-Flash-Next cargado: VRAM, GPU, temperatura y RAM arriba; servicios de texto e imágenes; lista de modelos con sus velocidades medidas](docs/img/panel.png)
+![Panel con Qwen3.8-Flash-Next cargado: VRAM, GPU, temperatura y RAM arriba; servicios de texto e imágenes; lista de modelos con sus velocidades medidas](docs/img/panel.es.png)
 
 Está hecho y medido en una máquina concreta (AMD RX 580 de 8 GB solo con Vulkan, 64 GB de RAM, Linux con systemd);
 ver [Compatibilidad](#compatibilidad) para otras.
@@ -142,7 +142,7 @@ En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muest
 (`llama_panel/kiosk.py`; sigue el idioma que usaste por última vez en el panel web, o `LLAMA_PANEL_LANG=es|en` en
 `paths.env`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`):
 
-![Dashboard del modo IA en tty1: GPU, CPU por núcleo, RAM, modelo cargado, respuesta en curso y procesos](docs/img/modo-ia.png)
+![Dashboard del modo IA en tty1: GPU, CPU por núcleo, RAM, modelo cargado, respuesta en curso y procesos](docs/img/modo-ia.es.png)
 
 ## llama.cpp: por qué un fork
 
