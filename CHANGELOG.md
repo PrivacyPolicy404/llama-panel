@@ -11,7 +11,7 @@
 - Fixes: empty paths in `paths.env`, personal default folder, AI mode button hidden when not installed, saved
   prompts no longer invalidated when equivalent settings are reordered.
 
-## 0.1.0 — 2026-11-16
+## 0.1.0 (2026-11-16)
 
 First public release. / Primera versión pública.
 

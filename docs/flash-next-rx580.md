@@ -1,8 +1,8 @@
 # Qwen3.8-Flash-Next (125B MoE) at ~20 tok/s on an RX 580, with llama-panel
 
 This is the exact panel configuration that runs
-[Qwen3.8-Flash-Next](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF) — 125B parameters,
-6B active, 66 GB on disk — on a Radeon RX 580 8 GB with 64 GB of RAM:
+[Qwen3.8-Flash-Next](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF) (125B parameters,
+6B active, 66 GB on disk) on a Radeon RX 580 8 GB with 64 GB of RAM:
 
 | | |
 |---|---|
