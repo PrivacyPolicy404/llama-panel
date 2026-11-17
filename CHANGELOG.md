@@ -4,6 +4,8 @@
 
 - Documented the experimental Buddy installation from a fresh clone, its system dependencies, the exact Hugging Face
   audio model sources, sizes, licenses and verified hashes; the voice installer now diagnoses every required command.
+- Updated the bilingual README screenshots to show the Buddy using its time and web-search tools; screenshot language
+  selection is now deterministic for reproducible captures.
 
 ## 0.2.0-rc.1 (2026-11-17)
 

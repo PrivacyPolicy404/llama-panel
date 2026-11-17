@@ -13,7 +13,7 @@ A small home web panel to start and stop models on demand on a GPU with little V
 It only uses the Python 3 standard library: no dependencies, no build step. The interface is available in English
 and Spanish (selector at the top right).
 
-![Panel with Qwen3.8-Flash-Next loaded: VRAM, GPU, temperature and RAM at the top; text and image services; model list with their measured speeds](docs/img/panel.png)
+![Buddy using its time and web-search tools, with text, image and audio services and live hardware metrics](docs/img/panel.png)
 
 It is built and measured on one specific machine (AMD RX 580 8 GB, Vulkan only, 64 GB RAM, Linux with systemd);
 see [Compatibility](#compatibility) for others.

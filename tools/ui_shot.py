@@ -1,6 +1,6 @@
 """Captura del panel con Firefox sin pantalla (WebDriver), para revisar cambios de la interfaz por SSH.
 
-Uso: python3 tools/ui_shot.py SALIDA.png [URL] [--js "codigo que devuelve algo"] [--click SELECTOR ...]
+Uso: python3 tools/ui_shot.py SALIDA.png [URL] [--lang es|en] [--js "codigo"] [--click SELECTOR ...]
   - Espera a que la pagina dibuje los modelos (o 15 s), ejecuta los --click en orden y guarda la captura.
   - --js: imprime lo que devuelve (ej. "return document.querySelectorAll('.opt.bad').length").
 Usa el geckodriver del snap de Firefox; la captura se escribe primero en ~/snap/firefox/common (el snap no ve /tmp).
@@ -28,11 +28,13 @@ def main():
     args = sys.argv[1:]
     out = args.pop(0)
     url = args.pop(0) if args and not args[0].startswith("--") else "http://127.0.0.1:8090/#text"
-    js, clicks, width, height = None, [], 1400, 2000
+    js, clicks, lang, width, height = None, [], None, 1400, 2000
     while args:
         a = args.pop(0)
         if a == "--js":
             js = args.pop(0)
+        elif a == "--lang":
+            lang = args.pop(0)
         elif a == "--click":
             clicks.append(args.pop(0))
         elif a == "--size":
@@ -48,6 +50,10 @@ def main():
         try:
             call("POST", f"/session/{sid}/window/rect", {"width": width, "height": height})
             call("POST", f"/session/{sid}/url", {"url": url})
+            if lang:
+                call("POST", f"/session/{sid}/execute/sync", {"script":
+                     "localStorage.setItem('llama-panel-lang', arguments[0]); return true", "args": [lang]})
+                call("POST", f"/session/{sid}/refresh", {})
             for _ in range(30):
                 n = call("POST", f"/session/{sid}/execute/sync",
                          {"script": "return document.querySelectorAll('.model, .img-card, tr').length", "args": []})
