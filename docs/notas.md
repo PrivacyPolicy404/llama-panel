@@ -223,6 +223,17 @@ Lecciones de la primera prueba (2026-11-15):
   Arreglo de fondo: `video=HDMI-A-1:d` en la línea del kernel (GRUB), si eso que está en HDMI-A-1 no hace falta sin escritorio.
 - El dashboard se recarga solo cuando cambia `kiosk.py`.
 
+Dashboard (2026-11-16): la velocidad de prompt ya no se borra con cada pedido. Un pedido con caché (pocos tokens
+nuevos) no emite «prompt processing»: su velocidad sólo llega con el `prompt eval time` final, y el pedido siguiente
+la limpiaba antes de la próxima lectura. Ahora el panel guarda la del pedido anterior del mismo modelo
+(`prompt_tps_prev`) y el dashboard la muestra como «(pedido anterior)» hasta tener la propia; el gráfico de prompt
+toma cada dato una vez, en cualquier fase. El tiempo de prompt corre desde el inicio del pedido sin esperar un log,
+y si `/slots` confirma que el pedido sigue en curso no se marca como atrasado (las tandas de 2048 tokens tardan
+~15 s, más que el umbral de 8 s). Replay de los logs reales leyendo cada 2 s: lecturas con pedido activo y sin
+velocidad de prompt, 1065 de 3495 → 53 (sólo el primer pedido de cada modelo).
+Intervalos: «en vivo» se lee cada 1 s (~14 ms por lectura: journal de 150 líneas + `/slots`) y el resto (estado,
+CPU, historial) cada 3 s. Los tokens de salida avanzan con `/slots`; la velocidad sigue llegando del log cada ~3 s.
+
 Dashboard (2026-11-15): «en vivo» conserva las barras de prompt/contexto entre tandas y al terminar el pedido.
 El estado se acumula entre lecturas del journal: ocho segundos sin logs señalan un dato atrasado, no el fin de la
 tarea (una tanda larga puede tardar más de veinte). Al iniciar otro pedido se limpian sus métricas; al descargar

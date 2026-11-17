@@ -31,7 +31,7 @@ RELEASE_RE = re.compile(r"^\[(\d+)\].*?task (\d+) \| stop processing: n_tokens =
 NCTX_RE = re.compile(r"^\[(\d+)\].*n_ctx_slot = (\d+)")
 DRAFT_LEN_RE = re.compile(r"mean len = +([\d.]+)")
 LIVE_FRESH = 8  # segundos sin novedades -> señalar dato atrasado, conservando la fase y las barras
-LIVE_CACHE = 1.5
+LIVE_CACHE = 0.8  # el dashboard lee «en vivo» cada 1 s
 
 
 # ---------- parseo (puro) ----------
@@ -86,21 +86,28 @@ def parse_live(entries, now=None, previous=None):
              "prompt_tokens": None, "prompt_total": None, "prompt_cached": 0, "ctx_used": None, "ctx_size": None,
              "prompt_log_tokens": None, "prompt_log_progress": None,
              "draft_rate": None, "draft_len": None, "task_id": None, "model_pid": None,
+             # velocidad de prompt del pedido anterior: un pedido corto sólo informa la suya al terminar
+             "prompt_tps_prev": None, "prompt_prev_task": None, "task_start": None,
              "t": None, "stale": False, "age": None}
     out = {**empty, **(previous or {})}
 
     def task(pid, tid):
         key = f"{pid}:{tid}"
         if key != out["task_id"]:
-            size = out["ctx_size"] if out["model_pid"] in (None, pid) else None
+            same = out["model_pid"] in (None, pid)
+            size = out["ctx_size"] if same else None
+            prev = (out["prompt_tps"], out["task_id"]) if out["prompt_tps"] is not None else \
+                (out["prompt_tps_prev"], out["prompt_prev_task"])
             out.update(empty, ctx_size=size, task_id=key, model_pid=pid)
+            if same:
+                out.update(prompt_tps_prev=prev[0], prompt_prev_task=prev[1])
 
     for ts, msg in entries:
         if (m := NCTX_RE.match(msg)):
             out.update(empty, ctx_size=int(m[2]), model_pid=m[1])
         elif (m := LAUNCH_RE.match(msg)):
             task(m[1], m[2])
-            out.update(state="prompt", prompt_progress=0.0, prompt_tokens=0, ctx_used=0, t=ts)
+            out.update(state="prompt", prompt_progress=0.0, prompt_tokens=0, ctx_used=0, t=ts, task_start=ts)
         elif (m := PROMPT_RE.match(msg)):
             task(m[1], m[2])
             n, progress = int(m[3]), float(m[4])
@@ -132,6 +139,8 @@ def parse_live(entries, now=None, previous=None):
                 out.update(state="idle", ctx_used=int(m[3]), t=ts)
         elif "Stopped llama-router.service" in msg or re.search(r"instance name=.* exited with status", msg):
             out.update(empty)
+    if out["state"] == "prompt" and out["task_start"] is not None:
+        out["prompt_elapsed"] = max(0, now - out["task_start"])  # corre entre tandas, sin esperar el próximo log
     out["age"] = max(0, now - out["t"]) if out["t"] is not None else None
     out["stale"] = out["state"] != "idle" and out["age"] is not None and out["age"] > LIVE_FRESH
     return out
@@ -159,7 +168,10 @@ def merge_live_slot(live, slot):
         total = round((cached + logged) / progress)
     else:
         total = None
-    return {**live, "state": phase, "ctx_size": slot.get("n_ctx", live.get("ctx_size")),
+    # /slots confirma que el pedido sigue vivo aunque el log calle durante una tanda larga
+    if n_gen:  # el log informa la salida cada ~3 s; /slots la tiene al día
+        live = {**live, "n_gen": max(n_gen, live.get("n_gen") or 0)}
+    return {**live, "age": 0, "stale": False, "state": phase, "ctx_size": slot.get("n_ctx", live.get("ctx_size")),
             "prompt_tokens": processed, "prompt_cached": cached, "prompt_total": total,
             "ctx_used": resident, "prompt_progress": 1.0 if phase == "gen" else min(1, (cached + processed) / total) if total else 0}
 

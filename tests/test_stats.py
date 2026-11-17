@@ -167,6 +167,35 @@ class LiveTest(unittest.TestCase):
         slot["id_task"] = 271
         self.assertEqual(stats.merge_live_slot(live, slot), live)
 
+    def test_live_keeps_previous_prompt_speed_for_short_requests(self):
+        launch = lambda t, task: (t, f"[7] srv launch_slot_: id 0 | task {task} | processing task, is_child = 0")
+        timing = (119, "[7] slot print_timing: id 0 | task 200 | prompt eval time = 1170.28 ms / 19 tokens"
+                       " ( 61.59 ms per token, 16.24 tokens per second)")
+        first = stats.parse_live([launch(100, 200), timing], now=119)
+        self.assertEqual(first["prompt_tps"], 16.24)
+        # el pedido siguiente todavía no informó nada: se conserva la velocidad del anterior, aparte
+        second = stats.parse_live([launch(120, 201)], now=125, previous=first)
+        self.assertIsNone(second["prompt_tps"])
+        self.assertEqual((second["prompt_tps_prev"], second["prompt_prev_task"]), (16.24, "7:200"))
+        self.assertEqual(second["prompt_elapsed"], 5)  # corre sin esperar un log
+        third = stats.parse_live([launch(130, 202)], now=131, previous=second)
+        self.assertEqual((third["prompt_tps_prev"], third["prompt_prev_task"]), (16.24, "7:200"))
+        other_model = stats.parse_live([(140, launch(140, 1)[1].replace("[7]", "[8]"))], now=141, previous=third)
+        self.assertIsNone(other_model["prompt_tps_prev"])
+
+    def test_live_slot_confirms_request_is_alive(self):
+        live = stats.parse_live(self.LINES[:2], now=130)
+        self.assertTrue(live["stale"])
+        task = live["task_id"].rsplit(":", 1)[-1]
+        slot = {"is_processing": True, "id_task": int(task), "n_prompt_tokens": 10,
+                "n_prompt_tokens_processed": 10, "n_prompt_tokens_cache": 0}
+        merged = stats.merge_live_slot(live, slot)
+        self.assertFalse(merged["stale"])
+        self.assertEqual(merged["age"], 0)
+        # la salida avanza con /slots entre un log y el siguiente
+        gen = stats.merge_live_slot({**live, "n_gen": 40}, {**slot, "next_token": [{"n_decoded": 57}]})
+        self.assertEqual((gen["state"], gen["n_gen"]), ("gen", 57))
+
     def test_task_numbers_restart_in_a_new_process(self):
         new_proc = [(120.0, "[9] 0.28.3 I slot print_timing: id  0 | task 177 | n_gen =    40, tg =  15.0 t/s, tg_3s =  15.5 t/s")]
         self.assertEqual(stats.parse_live(self.LINES + self.END + new_proc, now=121.0)["state"], "gen")

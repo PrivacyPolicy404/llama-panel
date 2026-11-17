@@ -1,7 +1,7 @@
 """Dashboard de texto para el "modo IA", estilo btop: corre en la consola (tty1) sin escritorio.
 
 Lee la API del panel (servicios, GPU, historia) y /proc (CPU por hilo, procesos) y dibuja cajas con graficos.
-  python3 -m llama_panel.kiosk                      # pantalla completa (curses), se actualiza cada 2 s
+  python3 -m llama_panel.kiosk                      # pantalla completa (curses), «en vivo» cada 1 s, el resto cada 3 s
   python3 -m llama_panel.kiosk --once [--size 140x44]  # imprime un cuadro como texto (para probar por SSH)
 Lo arranca el servicio llama-kiosk.service (ver scripts/install-modo-ia.sh).
 Solo usa caracteres que entran en las fuentes de la consola de Linux (bloques y bordes; no braille).
@@ -367,7 +367,10 @@ def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
     live = live or {}
     fmt = lambda value: "--" if value is None else f"{value:.1f}"
     lines = [" " + live_status(live)]
-    lines.append(f" prompt   media {fmt(live.get('prompt_tps'))} tok/s")
+    if live.get("prompt_tps") is None and live.get("prompt_tps_prev") is not None:
+        lines.append(f" prompt   media {fmt(live['prompt_tps_prev'])} tok/s {DIM}(pedido anterior){RESET}")
+    else:
+        lines.append(f" prompt   media {fmt(live.get('prompt_tps'))} tok/s")
     lines += ["      " + row for row in graph(list(prompt_hist or []), w - 8, graph_height, 0, color=CYAN)]
     lines.append(f" salida   media {fmt(live.get('gen_avg_tps'))} · 3 s {fmt(live.get('tps'))} tok/s")
     lines += ["      " + row for row in graph(list(tps_hist or []), w - 8, graph_height, 0, color=GREEN)]
@@ -525,6 +528,20 @@ def fetch_live():
         return None
 
 
+LIVE_EVERY, REST_EVERY = 1, 3  # segundos: la caja «en vivo» y el resto (estado, CPU, historial)
+
+
+def prompt_sample(live):
+    """(pedido, tok/s) del último dato de prompt. Un pedido corto lo informa recién al terminar y el siguiente
+    puede empezar antes de la próxima lectura: en ese caso se toma el que el panel guardó del pedido anterior."""
+    live = live or {}
+    if live.get("prompt_tps") is not None:
+        return live.get("task_id"), live["prompt_tps"]
+    if live.get("prompt_tps_prev") is not None:
+        return live.get("prompt_prev_task"), live["prompt_tps_prev"]
+    return None
+
+
 def run_curses():
     import curses
 
@@ -542,20 +559,24 @@ def run_curses():
         marks = {GREEN: curses.color_pair(2), YELLOW: curses.color_pair(3) | curses.A_BOLD,
                  RED: curses.color_pair(4) | curses.A_BOLD, CYAN: curses.color_pair(1) | curses.A_BOLD,
                  DIM: curses.A_DIM, BLUE: curses.color_pair(5) | curses.A_BOLD, MAGENTA: curses.color_pair(6) | curses.A_BOLD}
-        scr.timeout(2000)
+        scr.timeout(LIVE_EVERY * 1000)
         sampler = CpuSampler()
         sampler.sample()
         cached, last_fetch, started = (None, None, None), 0, time.time()
         live, tps_hist = None, collections.deque(maxlen=240)
         prompt_hist = collections.deque(maxlen=240)
-        last_live_sample = None
+        last_live_sample = last_prompt_sample = None
+        last_live_fetch, cpu = 0, None
         while True:
             if source_changed(started):  # codigo nuevo: reiniciar el proceso con la version actual
                 curses.endwin()
                 os.execv(sys.executable, [sys.executable, "-m", "llama_panel.kiosk"])
-            if time.time() - last_fetch > 1.8:
+            if time.time() - last_fetch > REST_EVERY - 0.2:
                 state, stats, hist = snapshot()
                 cached, last_fetch = (state, stats if stats is not None else cached[1], hist), time.time()
+                cpu = sampler.sample()
+            if time.time() - last_live_fetch > LIVE_EVERY - 0.2:
+                last_live_fetch = time.time()
                 update = fetch_live()
                 if update is not None:
                     live = update
@@ -565,9 +586,10 @@ def run_curses():
                     last_live_sample = live.get("t")
                     if live.get("state") == "gen":
                         tps_hist.append(live.get("tps"))
-                    elif live.get("state") == "prompt":
-                        prompt_hist.append(live.get("prompt_tps"))
-            cpu = sampler.sample()
+                sample = prompt_sample(live)
+                if sample and sample != last_prompt_sample:
+                    last_prompt_sample = sample
+                    prompt_hist.append(sample[1])
             h, w = scr.getmaxyx()
             scr.erase()
             for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist, prompt_hist=prompt_hist)):

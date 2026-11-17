@@ -80,6 +80,15 @@ class Dibujo(unittest.TestCase):
         self.assertIn("58836 tokens", text)
         self.assertIn("restante ~24s", text)  # 2048 nuevos pendientes, sin volver a contar el prefijo
 
+    def test_prompt_speed_falls_back_to_previous_request(self):
+        live = {"state": "prompt", "task_id": "7:201", "prompt_tps": None, "prompt_tps_prev": 114.3, "prompt_prev_task": "7:200"}
+        text = "\n".join(kiosk.strip_marks(s) for s in kiosk.live_box(live, {}, [], 79))
+        self.assertIn("prompt   media 114.3 tok/s (pedido anterior)", text)
+        self.assertEqual(kiosk.prompt_sample(live), ("7:200", 114.3))
+        # el mismo dato visto como actual y luego como anterior no se grafica dos veces
+        self.assertEqual(kiosk.prompt_sample({"task_id": "7:200", "prompt_tps": 114.3}), ("7:200", 114.3))
+        self.assertIsNone(kiosk.prompt_sample(None))
+
 
 if __name__ == "__main__":
     unittest.main()
