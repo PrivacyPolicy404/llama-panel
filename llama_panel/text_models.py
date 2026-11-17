@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from . import config as C
+from .i18n import _
 
 MTP_RE = re.compile(r"(^|[-_.])MTP([-_.]|$)")
 MIN_SIZE = 50 * 1024 * 1024
@@ -135,11 +136,11 @@ def validate_settings(global_text, models_in):
         errors += [f"{key}: {b}" for b in C.clean_lines(extra)[1]]
         errors += [f"{key} (modo IA): {b}" for b in C.clean_lines(extra_ai)[1]]
         if not (nmax.isdigit() and 1 <= int(nmax) <= 16):
-            errors.append(f"{key}: borradores MTP debe ser un numero entre 1 y 16 (puso '{nmax}')")
+            errors.append(_("{key}: borradores MTP debe ser un número entre 1 y 16 (puso '{value}')", key=key, value=nmax))
         if ctx and not (ctx.isdigit() and int(ctx) >= 256):
-            errors.append(f"{key}: contexto debe ser un numero de 256 o mas (puso '{ctx}')")
+            errors.append(_("{key}: contexto debe ser un número de 256 o más (puso '{value}')", key=key, value=ctx))
         if rs not in valid_rs:
-            errors.append(f"{key}: razonamiento invalido '{rs}'")
+            errors.append(_("{key}: razonamiento inválido '{value}'", key=key, value=rs))
         cfgs[key] = {"mtp": bool(c.get("mtp")), "nmax": nmax, "reasoning": rs, "ctx": ctx, "extra": extra,
                      "extra_ai": extra_ai}
     return errors, cfgs

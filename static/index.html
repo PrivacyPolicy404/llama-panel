@@ -16,6 +16,7 @@
     <span class="host" id="host"></span>
   </div>
   <div class="top-actions">
+    <select id="lang" class="lang" aria-label="Idioma / Language" title="Idioma / Language"><option value="es">ES</option><option value="en">EN</option></select>
     <span class="conn" id="conn" hidden>Sin conexión con el panel</span>
     <button class="btn ghost" id="ai-mode" data-action="ai_mode_on" data-confirm="¿Apagar el escritorio? Tocá de nuevo"
       title="Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla">Modo IA</button>
@@ -114,9 +115,9 @@
     <details class="card global">
       <summary><b>Ajustes globales</b> <span class="muted">valen para todos los modelos</span></summary>
       <textarea id="global" rows="5" spellcheck="false"></textarea>
-      <p class="hint">Una opción por línea: <code>clave = valor</code>, con el nombre largo de la opción de llama-server sin los guiones (ej. <code>ctx-size = 8192</code>).</p>
+      <p class="hint" data-i18n-html>Una opción por línea: <code>clave = valor</code>, con el nombre largo de la opción de llama-server sin los guiones (ej. <code>ctx-size = 8192</code>).</p>
     </details>
-    <p class="card setup-needed" id="setup-needed" hidden>Todavía no hay modelos o falta llama-server.
+    <p class="card setup-needed" id="setup-needed" data-i18n-html hidden>Todavía no hay modelos o falta llama-server.
       <a href="#setup" data-goto="setup">Configurá las carpetas y programas</a>.</p>
     <div class="models" id="text-models"></div>
   </section>
@@ -124,7 +125,7 @@
   <section class="panel" data-panel="img" hidden>
     <div class="panel-tools"><span class="muted" id="img-dir"></span></div>
     <div class="img-grid" id="img-models"></div>
-    <p class="hint">Las opciones extra son flags de KoboldCpp separados por espacios (ej. <code>--sdoffloadcpu</code>, <code>--sdtiledvae 768</code>, <code>--sdlora /ruta/archivo.safetensors</code>).</p>
+    <p class="hint" data-i18n-html>Las opciones extra son flags de KoboldCpp separados por espacios (ej. <code>--sdoffloadcpu</code>, <code>--sdtiledvae 768</code>, <code>--sdlora /ruta/archivo.safetensors</code>).</p>
   </section>
 
   <section class="panel" data-panel="perf" hidden>

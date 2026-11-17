@@ -10,6 +10,7 @@ from . import prompt_cache as PC
 from . import services
 from . import text_models as TM
 from .services import free_vram_for, router, router_error, router_models, svc, svc_state, wait_router
+from .i18n import _
 
 
 def ok(msg, **kw):
@@ -24,40 +25,42 @@ def fail(msg, **kw):
 def do_action(action):
     if action == "stop":
         svc("stop")
-        return ok("Servidor de texto apagado.")
+        return ok(_("Servidor de texto apagado."))
     if action in ("start", "restart"):
         note = free_vram_for("text")
         n = len(TM.write_preset())
         out = svc("restart" if action == "restart" else "start")
-        verb = "reiniciado" if action == "restart" else "encendido"
-        return ok(f"Servidor de texto {verb} ({n} modelos).{note} {out}".strip())
+        msg = _("Servidor de texto reiniciado ({n} modelos).", n=n) if action == "restart" \
+            else _("Servidor de texto encendido ({n} modelos).", n=n)
+        return ok(f"{msg}{note} {out}".strip())
     if action in ("img_start", "img_restart"):
         m = IM.write_img_env()
         if not m:
-            return fail(f"No hay modelos de imagen en {C.IMG_DIR}.")
+            return fail(_("No hay modelos de imagen en {dir}.", dir=C.IMG_DIR))
         note = free_vram_for("img")
         out = svc("restart" if action == "img_restart" else "start", C.IMG_SERVICE)
-        verb = "reiniciado" if action == "img_restart" else "encendido"
-        return ok(f"Generador de imagenes {verb} con {m['id']}.{note} {out}".strip())
+        msg = _("Generador de imágenes reiniciado con {model}.", model=m["id"]) if action == "img_restart" \
+            else _("Generador de imágenes encendido con {model}.", model=m["id"])
+        return ok(f"{msg}{note} {out}".strip())
     if action == "img_stop":
         svc("stop", C.IMG_SERVICE)
-        return ok("Generador de imagenes apagado.")
+        return ok(_("Generador de imágenes apagado."))
     if action in ("ai_mode_on", "ai_mode_off"):
         on = action == "ai_mode_on"
         good, out = services.ai_mode(on)
         if not good:
-            return fail(f"No se pudo {'activar' if on else 'desactivar'} el modo IA. {out}".strip())
+            return fail(f"{_('No se pudo activar el modo IA.') if on else _('No se pudo desactivar el modo IA.')} {out}".strip())
         # las "opciones extra en modo IA" de cada modelo entran o salen del preset
         with C.SETTINGS_LOCK:
             TM.write_preset(ai_mode=on)
         note = f" {apply_text()}" if svc_state() == "active" else ""
-        return ok(("Modo IA activado: escritorio apagado, dashboard en la pantalla." if on
-                   else "Modo IA desactivado: el escritorio vuelve en unos segundos.") + note)
+        return ok((_("Modo IA activado: escritorio apagado, dashboard en la pantalla.") if on
+                   else _("Modo IA desactivado: el escritorio vuelve en unos segundos.")) + note)
     if action == "stop_all":
         svc("stop")
         svc("stop", C.IMG_SERVICE)
-        return ok("Todo apagado: la VRAM queda libre.")
-    return fail("Accion desconocida.")
+        return ok(_("Todo apagado: la VRAM queda libre."))
+    return fail(_("Acción desconocida."))
 
 
 # ---------- texto ----------
@@ -68,16 +71,16 @@ def ensure_router():
         note = free_vram_for("text")
         TM.write_preset()
         svc("start")
-        note = " Servidor de texto encendido." + note
+        note = _(" Servidor de texto encendido.") + note
     if not wait_router():
-        return False, "El servidor de texto no responde. Mira la pestana Registros." + note
+        return False, _("El servidor de texto no responde. Mirá la pestaña Registros.") + note
     return True, note
 
 
 def text_load(body):
     mid = str(body.get("id", ""))
     if mid not in {m["id"] for m in TM.scan_models()}:
-        return fail(f"No existe el modelo '{mid}'.")
+        return fail(_("No existe el modelo '{model}'.", model=mid))
     good, note = ensure_router()
     if not good:
         return fail(note)
@@ -90,10 +93,10 @@ def text_load(body):
     others = _unload_others(mid)
     err = _load_with_retry(mid)
     if err:
-        return fail(f"No se pudo cargar {mid}: {err}")
+        return fail(_("No se pudo cargar {model}: {err}", model=mid, err=err))
     if others:
-        note = f" Se descargo {', '.join(others)}." + note
-    return ok(f"Cargando {mid}…{note}")
+        note = _(" Se descargó {models}.", models=", ".join(others)) + note
+    return ok(_("Cargando {model}…", model=mid) + note)
 
 
 def _unload_others(keep):
@@ -128,8 +131,8 @@ def text_unload(body):
     try:
         router("POST", "/models/unload", {"model": mid}, timeout=15)
     except Exception as e:  # noqa: BLE001
-        return fail(f"No se pudo descargar {mid}: {router_error(e)}")
-    return ok(f"{mid} descargado: la VRAM queda libre.")
+        return fail(_("No se pudo descargar {model}: {err}", model=mid, err=router_error(e)))
+    return ok(_("{model} descargado: la VRAM queda libre.", model=mid))
 
 
 def _loaded_model(body):
@@ -140,38 +143,39 @@ def _loaded_model(body):
 def text_prompt_save(body):
     mid = _loaded_model(body)
     if not mid:
-        return fail("El modelo tiene que estar cargado.")
+        return fail(_("El modelo tiene que estar cargado."))
     tokens, err = PC.save(mid)
     if err:
-        return fail(f"No se pudo guardar el prompt: {err}")
-    return ok(f"Prompt guardado: {tokens} tokens. Se restaura solo cada vez que {mid} se cargue.")
+        return fail(_("No se pudo guardar el prompt: {err}", err=err))
+    return ok(_("Prompt guardado: {tokens} tokens. Se restaura solo cada vez que {model} se cargue.", tokens=tokens, model=mid))
 
 
 def text_prompt_restore(body):
     mid = _loaded_model(body)
     if not mid:
-        return fail("El modelo tiene que estar cargado.")
+        return fail(_("El modelo tiene que estar cargado."))
     tokens, err = PC.restore(mid)
     if err:
-        return fail(f"No se pudo restaurar el prompt: {err}")
-    return ok(f"Prompt restaurado: {tokens} tokens." if tokens else "No hay un prompt guardado para la configuración actual.")
+        return fail(_("No se pudo restaurar el prompt: {err}", err=err))
+    return ok(_("Prompt restaurado: {tokens} tokens.", tokens=tokens) if tokens
+              else _("No hay un prompt guardado para la configuración actual."))
 
 
 def text_prompt_delete(body):
     n = PC.delete(str(body.get("id", "")))
-    return ok("Prompt guardado borrado." if n else "No había un prompt guardado.")
+    return ok(_("Prompt guardado borrado.") if n else _("No había un prompt guardado."))
 
 
 def apply_text():
     """Aplica el preset nuevo sin reiniciar el router: recarga la lista y vuelve a cargar el modelo activo."""
     if svc_state() != "active":
-        return "El servidor estaba apagado: se aplica cuando lo enciendas."
+        return _("El servidor estaba apagado: se aplica cuando lo enciendas.")
     before = [k for k, v in router_models().items() if v["status"] in ("loaded", "loading", "sleeping")]
     try:
         router("GET", "/models?reload=1", timeout=15)
     except Exception:  # noqa: BLE001
         svc("restart")
-        return "Servidor reiniciado con la nueva configuracion."
+        return _("Servidor reiniciado con la nueva configuración.")
     time.sleep(0.5)
     after = router_models()
     reloaded = []
@@ -183,8 +187,8 @@ def apply_text():
             except Exception:  # noqa: BLE001
                 pass
     if reloaded:
-        return f"Aplicado: {', '.join(reloaded)} se esta recargando con los ajustes nuevos."
-    return "Aplicado: el servidor ya usa la nueva configuracion."
+        return _("Aplicado: {models} se está recargando con los ajustes nuevos.", models=", ".join(reloaded))
+    return _("Aplicado: el servidor ya usa la nueva configuración.")
 
 
 def text_rescan(_body):
@@ -194,19 +198,19 @@ def text_rescan(_body):
         try:
             router("GET", "/models?reload=1", timeout=15)
         except Exception as e:  # noqa: BLE001
-            return fail(f"{n} modelos encontrados, pero el servidor no pudo recargar la lista: {router_error(e)}")
-        return ok(f"{n} modelos encontrados. El servidor ya los conoce.")
-    return ok(f"{n} modelos encontrados.")
+            return fail(_("{n} modelos encontrados, pero el servidor no pudo recargar la lista: {err}", n=n, err=router_error(e)))
+        return ok(_("{n} modelos encontrados. El servidor ya los conoce.", n=n))
+    return ok(_("{n} modelos encontrados.", n=n))
 
 
 def text_settings(body):
     gl = str(body.get("global", ""))
     models_in = body.get("models") or {}
     if not isinstance(models_in, dict):
-        return fail("Formato invalido.")
+        return fail(_("Formato inválido."))
     errors, cfgs = TM.validate_settings(gl, models_in)
     if errors:
-        return fail("No se guardo. Revisa estos campos (las opciones van como clave = valor):\n" + "\n".join(errors))
+        return fail(_("No se guardó. Revisá estos campos (las opciones van como clave = valor):") + "\n" + "\n".join(errors))
     with C.SETTINGS_LOCK:
         settings = C.load_settings()
         settings["global"] = gl
@@ -214,8 +218,8 @@ def text_settings(body):
         C.save_settings(settings)
         n = len(TM.write_preset())
     if body.get("apply"):
-        return ok(f"Guardado ({n} modelos). {apply_text()}")
-    return ok(f"Guardado ({n} modelos). Se aplica en la proxima carga.")
+        return ok(_("Guardado ({n} modelos).", n=n) + " " + apply_text())
+    return ok(_("Guardado ({n} modelos).", n=n) + " " + _("Se aplica en la próxima carga."))
 
 
 # ---------- imagenes ----------
@@ -224,32 +228,32 @@ def img_settings(body):
     selected = str(body.get("selected", ""))
     errors, cfgs = IM.validate_settings(models, body.get("models"))
     if selected and selected not in {m["key"] for m in models}:
-        errors.append(f"modelo '{selected}' no existe en {C.IMG_DIR}")
+        errors.append(_("modelo '{model}' no existe en {dir}", model=selected, dir=C.IMG_DIR))
     if errors:
-        return fail("No se guardo.\n" + "\n".join(errors))
+        return fail(_("No se guardó.") + "\n" + "\n".join(errors))
     with C.SETTINGS_LOCK:
         settings = C.load_settings()
         settings["image"]["selected"] = selected or (models[0]["key"] if models else "")
         settings["image"]["models"].update(cfgs)
         C.save_settings(settings)
         m = IM.write_img_env()
-    name = m["id"] if m else "ninguno"
+    name = m["id"] if m else _("ninguno")
     if body.get("apply"):
         if svc_state(C.IMG_SERVICE) == "active":
             svc("restart", C.IMG_SERVICE)
-            return ok(f"Guardado (modelo de imagen: {name}) y generador reiniciado.")
-        return ok(f"Guardado (modelo de imagen: {name}). El generador esta apagado: se aplica al encenderlo.")
-    return ok(f"Guardado (modelo de imagen: {name}). Se aplica en el proximo arranque del generador.")
+            return ok(_("Guardado (modelo de imagen: {model}) y generador reiniciado.", model=name))
+        return ok(_("Guardado (modelo de imagen: {model}). El generador está apagado: se aplica al encenderlo.", model=name))
+    return ok(_("Guardado (modelo de imagen: {model}). Se aplica en el próximo arranque del generador.", model=name))
 
 
 def img_use(body):
     key = str(body.get("key", ""))
     models = IM.scan_img_models()
     if key not in {m["key"] for m in models}:
-        return fail(f"No existe el modelo '{key}'.")
+        return fail(_("No existe el modelo '{model}'.", model=key))
     errors, cfgs = IM.validate_settings(models, body.get("models"))
     if errors:
-        return fail("No se guardo.\n" + "\n".join(errors))
+        return fail(_("No se guardó.") + "\n" + "\n".join(errors))
     with C.SETTINGS_LOCK:
         settings = C.load_settings()
         settings["image"]["selected"] = key
@@ -259,4 +263,6 @@ def img_use(body):
     note = free_vram_for("img")
     was_on = svc_state(C.IMG_SERVICE) in ("active", "activating")
     out = svc("restart" if was_on else "start", C.IMG_SERVICE)
-    return ok(f"Generador de imagenes {'reiniciado' if was_on else 'encendido'} con {m['id']}.{note} {out}".strip())
+    msg = _("Generador de imágenes reiniciado con {model}.", model=m["id"]) if was_on \
+        else _("Generador de imágenes encendido con {model}.", model=m["id"])
+    return ok(f"{msg}{note} {out}".strip())

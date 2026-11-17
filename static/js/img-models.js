@@ -1,6 +1,7 @@
 // Pestana de modelos de imagen: tarjetas, opciones extra y "usar este".
 import { $, $$, el, esc, gb, post, report, withBusy } from './util.js';
 import { S, hooks, setDirty } from './state.js';
+import { t } from './i18n.js';
 
 export function renderImgModels() {
   const c = S.config;
@@ -8,22 +9,22 @@ export function renderImgModels() {
   const box = $('#img-models');
   box.innerHTML = '';
   if (!c.img_models.length) {
-    box.append(el(`<div class="card empty">No hay modelos (.gguf / .safetensors de más de 100 MB) en ${esc(c.img_dir)}.</div>`));
+    box.append(el(`<div class="card empty">${esc(t('No hay modelos (.gguf / .safetensors de más de 100 MB) en {dir}.', { dir: c.img_dir }))}</div>`));
     return;
   }
   for (const m of c.img_models) {
     const comps = m.comps.length
       ? m.comps.map(([f, n]) => `<span title="${esc(n)}"><b>${esc(f)}</b> ${esc(n)}</span>`).join('')
-      : '<span class="muted">solo el modelo</span>';
+      : `<span class="muted">${t('solo el modelo')}</span>`;
     const card = el(`
       <div class="card img-card" data-key="${esc(m.key)}">
         <div class="model-name" title="${esc(m.key)}">${esc(m.id)}</div>
-        <span class="badge accent sel-tag" hidden>Seleccionado</span>
+        <span class="badge accent sel-tag" hidden>${t('Seleccionado')}</span>
         <div class="model-meta"><span class="badge">${gb(m.size)}</span></div>
         <div class="comps">${comps}</div>
-        <label class="field"><span>Opciones extra</span>
-          <input type="text" class="mono" data-extra value="${esc(m.extra)}" placeholder="ej: --sdoffloadcpu --sdtiledvae 768" spellcheck="false"></label>
-        <div class="foot"><button class="btn small" data-use>Usar este</button></div>
+        <label class="field"><span>${t('Opciones extra')}</span>
+          <input type="text" class="mono" data-extra value="${esc(m.extra)}" placeholder="${esc(t('ej: --sdoffloadcpu --sdtiledvae 768'))}" spellcheck="false"></label>
+        <div class="foot"><button class="btn small" data-use>${t('Usar este')}</button></div>
       </div>`);
     $('[data-extra]', card).addEventListener('input', () => setDirty('img'));
     $('[data-use]', card).onclick = e => useImg(m.key, e.currentTarget);
@@ -41,7 +42,7 @@ export function updateImgStates() {
     $('.sel-tag', card).hidden = !sel;
     const btn = $('[data-use]', card);
     if (btn.classList.contains('busy')) continue;
-    btn.textContent = sel && imgOn ? 'Reiniciar con este' : imgOn ? 'Cambiar a este' : 'Usar y encender';
+    btn.textContent = sel && imgOn ? t('Reiniciar con este') : imgOn ? t('Cambiar a este') : t('Usar y encender');
   }
 }
 

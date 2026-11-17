@@ -1,6 +1,7 @@
 // Pestana Configuracion: carpetas de modelos, ejecutables y nombre de la GPU (se guardan en paths.env).
 import { $, $$, esc, getJSON, post, report, toast, withBusy } from './util.js';
 import { hooks } from './state.js';
+import { t } from './i18n.js';
 
 let P = null;        // respuesta de /api/paths
 let checkTimer = null;
@@ -20,8 +21,8 @@ function values() {
 
 const dirRow = (path, check, locked) => `
   <div class="path-row">
-    <input type="text" class="mono" data-dir list="dir-suggest" value="${esc(path)}" placeholder="/ruta/a/modelos" ${locked ? 'disabled' : ''}>
-    <button class="btn ghost small" data-remove title="Quitar esta carpeta" ${locked ? 'disabled' : ''}>Quitar</button>
+    <input type="text" class="mono" data-dir list="dir-suggest" value="${esc(path)}" placeholder="${esc(t('/ruta/a/modelos'))}" ${locked ? 'disabled' : ''}>
+    <button class="btn ghost small" data-remove title="${esc(t('Quitar esta carpeta'))}" ${locked ? 'disabled' : ''}>${t('Quitar')}</button>
     <div class="path-status">${check ? status(check) : ''}</div>
   </div>`;
 
@@ -37,28 +38,28 @@ export function renderSetup() {
   if (!P) return;
   const { values: v, checks: c, locked } = P;
   const lock = k => locked.includes(k);
-  const env = locked.length ? `<p class="hint">Los campos grises están fijados por una variable de entorno del servicio y no se pueden cambiar desde acá.</p>` : '';
+  const env = locked.length ? `<p class="hint">${t('Los campos grises están fijados por una variable de entorno del servicio y no se pueden cambiar desde acá.')}</p>` : '';
   $('#setup').innerHTML = `
     <div class="card setup-card">
-      <h4>Modelos de texto</h4>
-      <p class="hint">Carpetas donde buscar archivos <code>.gguf</code> (también en subcarpetas). Conviene que los modelos grandes estén en un disco rápido.</p>
+      <h4>${t('Modelos de texto')}</h4>
+      <p class="hint">${t('Carpetas donde buscar archivos <code>.gguf</code> (también en subcarpetas). Conviene que los modelos grandes estén en un disco rápido.')}</p>
       <div id="text-dirs">${v.text_dirs.map((d, i) => dirRow(d, c.text_dirs[i], lock('text_dirs'))).join('')}</div>
-      <button class="btn ghost small" id="add-dir" ${lock('text_dirs') ? 'disabled' : ''}>Agregar carpeta</button>
+      <button class="btn ghost small" id="add-dir" ${lock('text_dirs') ? 'disabled' : ''}>${t('Agregar carpeta')}</button>
     </div>
     <div class="card setup-card">
-      <h4>Programas</h4>
-      ${field('llama_server', 'llama-server', 'De llama.cpp, compilado con el backend de tu GPU (Vulkan, CUDA, ROCm…). Ej.: <code>~/llama.cpp/build/bin/llama-server</code>', v.llama_server, c.llama_server, lock('llama_server'))}
-      ${field('kobold', 'KoboldCpp', 'Opcional, para generar imágenes.', v.kobold, c.kobold, lock('kobold'))}
+      <h4>${t('Programas')}</h4>
+      ${field('llama_server', 'llama-server', t('De llama.cpp, compilado con el backend de tu GPU (Vulkan, CUDA, ROCm…). Ej.: <code>~/llama.cpp/build/bin/llama-server</code>'), v.llama_server, c.llama_server, lock('llama_server'))}
+      ${field('kobold', 'KoboldCpp', t('Opcional, para generar imágenes.'), v.kobold, c.kobold, lock('kobold'))}
     </div>
     <div class="card setup-card">
-      <h4>Imágenes y GPU</h4>
-      ${field('img_dir', 'Carpeta de modelos de imagen', 'Opcional. <code>.safetensors</code> o <code>.gguf</code> de Stable Diffusion / Flux.', v.img_dir, c.img_dir, lock('img_dir'), 'dir-suggest')}
-      ${field('gpu_name', 'Nombre de la GPU', `Opcional, solo para mostrar. Detectado: <b>${esc(P.detected_gpu || 'ninguno')}</b>.`, v.gpu_name, null, lock('gpu_name'))}
+      <h4>${t('Imágenes y GPU')}</h4>
+      ${field('img_dir', t('Carpeta de modelos de imagen'), t('Opcional. <code>.safetensors</code> o <code>.gguf</code> de Stable Diffusion / Flux.'), v.img_dir, c.img_dir, lock('img_dir'), 'dir-suggest')}
+      ${field('gpu_name', t('Nombre de la GPU'), t('Opcional, solo para mostrar. Detectado: <b>{name}</b>.', { name: esc(P.detected_gpu || t('ninguno')) }), v.gpu_name, null, lock('gpu_name'))}
     </div>
     ${env}
     <div class="setup-actions">
       <span class="muted mono">${esc(P.file)}</span>
-      <button class="btn" id="paths-save">Guardar</button>
+      <button class="btn" id="paths-save">${t('Guardar')}</button>
     </div>
     <datalist id="dir-suggest"></datalist>`;
   bindSetup();
@@ -120,7 +121,7 @@ async function saveSetup(btn) {
     P = await waitForPanel() || P;
     if (r.rescan) report(await post('/api/text/rescan'));
     await hooks.loadConfig?.();
-    return { ok: true, msg: 'Rutas aplicadas.' };
+    return { ok: true, msg: t('Rutas aplicadas.') };
   });
   report(res);
   renderSetup();

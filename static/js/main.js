@@ -9,6 +9,7 @@ import { save } from './save.js';
 import { renderPerf } from './perf.js';
 import { loadLogs } from './logs.js';
 import { loadSetup, needsSetup } from './setup.js';
+import { lang, setLang, t, translateDom } from './i18n.js';
 
 async function pollState() {
   try {
@@ -31,13 +32,13 @@ function renderAiMode() {
   const b = $('#ai-mode'), ai = S.state?.ai_mode;
   if (!b || !ai || b.dataset.armed || b.classList.contains('busy')) return;
   b.dataset.action = ai.active ? 'ai_mode_off' : 'ai_mode_on';
-  b.textContent = ai.active ? 'Salir del modo IA' : 'Modo IA';
-  b.dataset.confirm = ai.active ? '' : '¿Apagar el escritorio? Tocá de nuevo';
+  b.textContent = ai.active ? t('Salir del modo IA') : t('Modo IA');
+  b.dataset.confirm = ai.active ? '' : t('¿Apagar el escritorio? Tocá de nuevo');
   b.classList.toggle('on', ai.active);
-  b.title = !ai.installed ? 'No instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh'
-    : !ai.active && ai.gpu_ok === false ? 'Falta acceso permanente a la GPU: correr de nuevo el instalador del modo IA y reiniciar'
-    : ai.active ? 'Vuelve a prender el escritorio'
-    : 'Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla';
+  b.title = !ai.installed ? t('No instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh')
+    : !ai.active && ai.gpu_ok === false ? t('Falta acceso permanente a la GPU: correr de nuevo el instalador del modo IA y reiniciar')
+    : ai.active ? t('Vuelve a prender el escritorio')
+    : t('Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla');
 }
 
 async function loadConfig() {
@@ -111,6 +112,10 @@ function bind() {
 }
 
 async function start() {
+  translateDom(document.body);  // textos fijos de index.html
+  const sel = $('#lang');
+  sel.value = lang();
+  sel.onchange = () => setLang(sel.value);  // guarda y recarga la pagina en el idioma nuevo
   bind();
   const host = location.hostname;
   try {

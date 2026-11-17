@@ -17,6 +17,7 @@ import urllib.parse
 
 from . import config as C
 from .services import router, router_error, router_models
+from .i18n import _
 
 NAME_RE = re.compile(r"\.[0-9a-f]{10}\.bin$")
 _lock = threading.Lock()
@@ -81,7 +82,7 @@ def save(mid):
         try:
             slot = _slot(mid)
             if slot.get("is_processing"):
-                return None, "el modelo esta respondiendo; esperar a que termine"
+                return None, _("el modelo está respondiendo; esperar a que termine")
             name = file_name(mid)
             C.SLOTS_DIR.mkdir(parents=True, exist_ok=True)
             res = _slot_action(mid, "save", name)
@@ -90,7 +91,7 @@ def save(mid):
         tokens = res.get("n_saved")
         if not tokens:
             (C.SLOTS_DIR / name).unlink(missing_ok=True)
-            return None, "el slot esta vacio: mandar primero un mensaje desde el cliente"
+            return None, _("el slot está vacío: mandar primero un mensaje desde el cliente")
         (C.SLOTS_DIR / name).with_suffix(".json").write_text(json.dumps({"tokens": tokens}))
         for old in _files_of(mid):  # guardados de configuraciones anteriores
             if old.name != name:

@@ -327,3 +327,4 @@ details.global[open] summary { margin-bottom: 12px; }
 .setup-actions .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
 .setup-needed { margin: 0 0 12px; border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
 .setup-card > .btn { align-self: flex-start; }
+.lang { height: 32px; padding: 0 6px; font-size: 13px; }

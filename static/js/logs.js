@@ -1,6 +1,7 @@
 // Pestana de registros: journal de cada servicio, con filtro.
 import { $, esc, getJSON } from './util.js';
 import { S } from './state.js';
+import { t } from './i18n.js';
 
 export async function loadLogs() {
   const pre = $('#logs');
@@ -11,7 +12,7 @@ export async function loadLogs() {
     pre.innerHTML = lines.filter(l => !f || l.toLowerCase().includes(f)).map(l => {
       const cls = /\b(error|failed|fatal)\b| E /i.test(l) ? 'e' : /\b(warn(ing)?)\b| W /i.test(l) ? 'w' : '';
       return cls ? `<span class="${cls}">${esc(l)}</span>` : esc(l);
-    }).join('\n') || '<span class="muted">(vacío)</span>';
+    }).join('\n') || `<span class="muted">${t('(vacío)')}</span>`;
     if (atBottom) pre.scrollTop = pre.scrollHeight;
   } catch { /* reintenta en el próximo ciclo */ }
 }

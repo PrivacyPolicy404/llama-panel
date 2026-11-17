@@ -14,6 +14,7 @@ from . import config as C
 from . import hardware
 from .img_models import IMG_EXT
 from .text_models import AUX_PREFIXES
+from .i18n import _
 
 # campo de la interfaz -> variable
 FIELDS = {"img_dir": "LLAMA_IMG_DIR", "llama_server": "LLAMA_SERVER_BIN", "kobold": "KOBOLD_BIN",
@@ -61,14 +62,16 @@ def is_text_model(name):
 def _dir_check(path, want, what):
     p = _expand(path)
     if p is None:
-        return {"ok": False, "msg": "vacío"}
+        return {"ok": False, "msg": _("vacío")}
     if not p.exists():
-        return {"ok": False, "msg": "no existe"}
+        return {"ok": False, "msg": _("no existe")}
     if not p.is_dir():
-        return {"ok": False, "msg": "no es una carpeta"}
+        return {"ok": False, "msg": _("no es una carpeta")}
     n, cut = count_files(p, want)
-    more = " o más (carpeta muy grande, no se revisó toda)" if cut else ""
-    return {"ok": n > 0, "msg": f"{n}{more} {what}" if n else f"sin {what} todavía"}
+    what = _(what)
+    msg = _("{n} o más {what} (carpeta muy grande, no se revisó toda)", n=n, what=what) if cut \
+        else _("{n} {what}", n=n, what=what) if n else _("sin {what} todavía", what=what)
+    return {"ok": n > 0, "msg": msg}
 
 
 _versions = {}
@@ -95,12 +98,13 @@ def server_version(path):
 def _bin_check(path, optional=""):
     p = _expand(path)
     if p is None:
-        return {"ok": None if optional else False, "msg": optional or "vacío"}
+        return {"ok": None if optional else False, "msg": _(optional or "vacío")}
     if not p.exists():
-        return {"ok": None if optional else False, "msg": "no existe" + (f" ({optional})" if optional else "")}
+        return {"ok": None if optional else False,
+                "msg": _("no existe (opcional: solo para imágenes)") if optional else _("no existe")}
     if not p.is_file() or not os.access(p, os.X_OK):
-        return {"ok": False, "msg": "no es un ejecutable"}
-    return {"ok": True, "msg": "encontrado"}
+        return {"ok": False, "msg": _("no es un ejecutable")}
+    return {"ok": True, "msg": _("encontrado")}
 
 
 def check(values):
@@ -110,12 +114,12 @@ def check(values):
     server = _bin_check(values.get("llama_server"))
     if server["ok"]:
         v = server_version(_expand(values["llama_server"]))
-        server["msg"] = f"llama.cpp {v}" if v else "encontrado (no respondió a --version)"
+        server["msg"] = _("llama.cpp {version}", version=v) if v else _("encontrado (no respondió a --version)")
     return {
         "text_dirs": text,
         "img_dir": _dir_check(values.get("img_dir"), lambda f: Path(f).suffix.lower() in IMG_EXT,
                               "archivos de modelo de imagen") if str(values.get("img_dir") or "").strip()
-        else {"ok": None, "msg": "sin carpeta (opcional)"},
+        else {"ok": None, "msg": _("sin carpeta (opcional)")},
         "llama_server": server,
         "kobold": _bin_check(values.get("kobold"), "opcional: solo para imágenes"),
     }
@@ -126,23 +130,23 @@ def validate(values):
     errors = []
     dirs = [str(d).strip() for d in values.get("text_dirs") or [] if str(d).strip()]
     if not dirs:
-        errors.append("Hace falta al menos una carpeta de modelos de texto.")
+        errors.append(_("Hace falta al menos una carpeta de modelos de texto."))
     for label, v in [("carpeta", d) for d in dirs] + [("carpeta", values.get("img_dir") or "")] + \
             [("ejecutable", values.get(k) or "") for k in ("llama_server", "kobold")] + \
             [("nombre", values.get("gpu_name") or "")]:
         v = str(v)
         if any(c in v for c in "\n\r\0"):
-            errors.append(f"La {label} «{v.strip()}» tiene saltos de línea.")
+            errors.append(_("La ruta «{path}» tiene saltos de línea.", path=v.strip()))
         elif label != "nombre" and v.strip() and not v.strip().startswith(("/", "~")):
-            errors.append(f"«{v.strip()}» tiene que ser una ruta absoluta (empezar con / o ~).")
+            errors.append(_("«{path}» tiene que ser una ruta absoluta (empezar con / o ~).", path=v.strip()))
     for k in ("llama_server", "kobold"):
         if re.search(r"\s", str(values.get(k) or "").strip()):
-            errors.append(f"La ruta de {'llama-server' if k == 'llama_server' else 'KoboldCpp'} no puede tener"
-                          " espacios (va en un servicio de systemd).")
+            errors.append(_("La ruta de {prog} no puede tener espacios (va en un servicio de systemd).",
+                            prog="llama-server" if k == "llama_server" else "KoboldCpp"))
     if any(":" in d for d in dirs):
-        errors.append("Las carpetas de modelos no pueden tener «:».")
+        errors.append(_("Las carpetas de modelos no pueden tener «:»."))
     if not str(values.get("llama_server") or "").strip():
-        errors.append("Falta la ruta de llama-server.")
+        errors.append(_("Falta la ruta de llama-server."))
     return errors
 
 
@@ -178,7 +182,7 @@ def restart_panel(delay=0.8):
 def save(body):
     values = body.get("values") or {}
     if not isinstance(values, dict) or not isinstance(values.get("text_dirs", []), list):
-        return {"ok": False, "msg": "Datos inválidos."}
+        return {"ok": False, "msg": _("Datos inválidos.")}
     errors = validate(values)
     if errors:
         return {"ok": False, "msg": " ".join(errors)}
@@ -196,8 +200,8 @@ def save(body):
     restart_panel()
     return {"ok": True, "changed": changed,
             "rescan": bool({"text_dirs", "img_dir"} & set(changed)),
-            "msg": "Guardado. El panel se reinicia para usar las rutas nuevas."
-                   + (" El servidor de texto usa el llama-server nuevo la próxima vez que se encienda o reinicie."
+            "msg": _("Guardado. El panel se reinicia para usar las rutas nuevas.")
+                   + (_(" El servidor de texto usa el llama-server nuevo la próxima vez que se encienda o reinicie.")
                       if "llama_server" in changed else "")}
 
 

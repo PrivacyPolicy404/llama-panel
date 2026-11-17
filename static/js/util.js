@@ -1,4 +1,5 @@
 // Utilidades sin estado: DOM, formato, red, toasts, tooltip y etiquetas de estado.
+import { lang, locale, t as tr } from './i18n.js';
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -10,29 +11,27 @@ export const fix = (x, d = 1) => (x == null || isNaN(x) ? '–' : Number(x).toFi
 export const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 export function ago(t) {
   const s = Math.max(0, Math.round(now() - t));
-  if (s < 60) return `hace ${s} s`;
-  if (s < 3600) return `hace ${Math.round(s / 60)} min`;
-  if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
-  return `hace ${Math.round(s / 86400)} d`;
+  const v = s < 60 ? `${s} s` : s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`;
+  return tr('hace {time}', { time: v });
 }
 export const clock = t => {
-  const d = new Date(t * 1000), hms = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  return d.toDateString() === new Date().toDateString() ? hms : `${d.toLocaleDateString('es', { day: '2-digit', month: '2-digit' })} ${hms}`;
+  const d = new Date(t * 1000), hms = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? hms : `${d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit' })} ${hms}`;
 };
 export const dur = s => s < 60 ? `${fix(s, 1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
 
 
 export async function getJSON(url) {
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(url, { cache: 'no-store', headers: { 'X-Lang': lang() } });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 export async function post(url, body = {}) {
   try {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Lang': lang() }, body: JSON.stringify(body) });
     return await r.json();
   } catch {
-    return { ok: false, msg: 'No se pudo contactar al panel.' };
+    return { ok: false, msg: tr('No se pudo contactar al panel.') };
   }
 }
 export async function withBusy(btn, fn) {
@@ -67,7 +66,7 @@ export const SVC = {
 };
 export function setStatus(node, [cls, label]) {
   node.className = node.className.replace(/\b(good|warning|critical)\b/g, '').trim() + (cls ? ' ' + cls : '');
-  $('b', node).textContent = label;
+  $('b', node).textContent = tr(label);  // las etiquetas de SVC y modelStatus son claves en castellano
 }
 export function modelStatus(ms, textOn) {
   if (!textOn || !ms) return ['', 'Sin cargar'];

@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 
 from . import config as C
+from .i18n import _
 
 
 # ---------- systemd ----------
@@ -55,10 +56,10 @@ def ai_mode_state():
 def ai_mode(on):
     """Prende o apaga el modo IA. Devuelve (ok, salida)."""
     if not os.path.exists(AI_MODE_HELPER):
-        return False, "El modo IA no esta instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh"
+        return False, _("El modo IA no está instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh")
     if on and not gpu_access_without_desktop():
-        return False, ("Sin escritorio, los modelos perderían el acceso a la GPU. Correr de nuevo  "
-                       "sudo ~/llama-panel/scripts/install-modo-ia.sh  (agrega los grupos render y video) y reiniciar.")
+        return False, _("Sin escritorio, los modelos perderían el acceso a la GPU. Correr de nuevo  "
+                        "sudo ~/llama-panel/scripts/install-modo-ia.sh  (agrega los grupos render y video) y reiniciar.")
     if on:
         run("systemctl", "--user", "stop", "sunshine.service")
     out = run("sudo", "-n", AI_MODE_HELPER, "on" if on else "off", timeout=60)
@@ -70,10 +71,11 @@ def ai_mode(on):
 
 def free_vram_for(which):
     """Apaga el otro servicio si esta prendido. Devuelve una nota para el usuario."""
-    other, label = (C.IMG_SERVICE, "Generador de imagenes") if which == "text" else (C.SERVICE, "Servidor de texto")
+    other, note = (C.IMG_SERVICE, " Generador de imágenes apagado para liberar VRAM.") if which == "text" \
+        else (C.SERVICE, " Servidor de texto apagado para liberar VRAM.")
     if svc_state(other) in ("active", "activating"):
         svc("stop", other)
-        return f" {label} apagado para liberar VRAM."
+        return _(note)
     return ""
 
 

@@ -5,6 +5,7 @@ from . import actions
 from . import config as C
 from . import hardware
 from . import paths
+from .i18n import _
 from . import img_models as IM
 from . import prompt_cache as PC
 from . import stats
@@ -43,7 +44,7 @@ def config():
         "models_dir": "  ·  ".join(str(d) for d in C.MODELS_DIRS if d.is_dir()) or str(C.MODELS_DIR),
         "img_dir": str(C.IMG_DIR),
         "vram_total": hardware.latest().get("vram_total"),
-        "reasoning_opts": C.REASONING_OPTS,
+        "reasoning_opts": [(v, _(label)) for v, label in C.REASONING_OPTS],
         "ports": {"chat": C.CHAT_PORT, "img": C.IMG_PORT},
         "text_models": [{"key": m["key"], "id": m["id"], "size": m["size"], "cfg": TM.model_cfg(settings, m)}
                         for m in TM.scan_models()],

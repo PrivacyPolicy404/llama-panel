@@ -1,6 +1,7 @@
 // Tiles de hardware (VRAM, GPU, temperatura, RAM) con sparklines y tooltip.
 import { $, ago, fix, now, tip } from './util.js';
 import { S } from './state.js';
+import { t } from './i18n.js';
 
 export const HIST_WINDOW = 600; // maximo de segundos que muestran los sparklines
 // La ventana se adapta a la historia disponible (minimo 1 minuto) para que el grafico ocupe todo el ancho
@@ -21,7 +22,7 @@ const TILES = {
   temp: {
     get: h => h.temp, auto: true, unit: '°C', d: 0,
     render(h) {
-      const sub = [h.power != null ? `${fix(h.power, 0)} W` : '', h.fan != null ? `${h.fan} rpm` : h.fan_pct != null ? `ventilador ${h.fan_pct} %` : ''].filter(Boolean).join(' · ');
+      const sub = [h.power != null ? `${fix(h.power, 0)} W` : '', h.fan != null ? `${h.fan} rpm` : h.fan_pct != null ? t('ventilador {pct} %', { pct: h.fan_pct }) : ''].filter(Boolean).join(' · ');
       const crit = h.temp_crit || 100;
       return { value: `${fix(h.temp, 0)}<small> °C</small>`, sub, pct: (h.temp ?? 0) / crit * 100, level: h.temp >= 90 ? 'critical' : h.temp >= 80 ? 'warning' : '' };
     },
@@ -30,7 +31,7 @@ const TILES = {
     get: h => h.ram_used, max: h => h.ram_total, unit: 'GiB', d: 1,
     render(h) {
       const pct = h.ram_used / h.ram_total * 100;
-      return { value: `${fix(h.ram_used)} <small>/ ${fix(h.ram_total, 0)} GiB</small>`, sub: `carga ${fix(h.load, 2)}`, pct, level: pct >= 95 ? 'critical' : pct >= 85 ? 'warning' : '' };
+      return { value: `${fix(h.ram_used)} <small>/ ${fix(h.ram_total, 0)} GiB</small>`, sub: t('carga {load}', { load: fix(h.load, 2) }), pct, level: pct >= 95 ? 'critical' : pct >= 85 ? 'warning' : '' };
     },
   },
 };

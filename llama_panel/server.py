@@ -8,6 +8,7 @@ from . import config as C
 from . import hardware
 from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES
+from .i18n import set_lang
 from .install import sync_units
 
 MAX_BODY = 1_000_000
@@ -36,6 +37,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(404, "no encontrado")
         ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         self._send(200, path.read_bytes(), ctype)
+
+    def parse_request(self):
+        ok = super().parse_request()
+        if ok:
+            set_lang(self.headers.get("X-Lang", ""))  # idioma de los mensajes de este pedido
+        return ok
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)

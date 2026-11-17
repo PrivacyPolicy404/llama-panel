@@ -5,6 +5,7 @@ import shlex
 from pathlib import Path
 
 from . import config as C
+from .i18n import _
 
 IMG_EXT = (".gguf", ".safetensors", ".ckpt")
 ARG_RE = re.compile(r"^[A-Za-z0-9_./:=+,-]+$")
@@ -102,10 +103,10 @@ def validate_settings(models, cfg_in):
         try:
             toks = shlex.split(extra)
         except ValueError as ex:
-            errors.append(f"{key}: opciones extra mal escritas ({ex})")
+            errors.append(_("{key}: opciones extra mal escritas ({err})", key=key, err=ex))
             continue
         for t in toks:
             if not ARG_RE.match(t):
-                errors.append(f"{key}: '{t}' tiene caracteres no permitidos (solo letras, numeros y . _ / : = + , -)")
+                errors.append(_("{key}: '{token}' tiene caracteres no permitidos (solo letras, números y . _ / : = + , -)", key=key, token=t))
         cfgs[key] = {"extra": extra}
     return errors, cfgs
