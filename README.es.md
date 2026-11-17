@@ -108,6 +108,10 @@ Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-im
 las carpetas de modelos (con sugerencias al escribir y cuántos modelos hay en cada una) y los programas
 (muestra la versión de llama.cpp que encontró). Al guardar, el panel se reinicia solo y vuelve a buscar los modelos.
 
+Para que el panel arranque al prender la máquina sin que nadie inicie sesión (lo que querés en un servidor),
+`--install` activa el *linger* de tu usuario; si el sistema pide permisos, muestra el comando
+(`sudo loginctl enable-linger $USER`).
+
 La configuración del usuario vive en `~/.config/llama-panel/` (fuera del repo). Las rutas quedan en `paths.env`,
 que también se puede editar a mano; una variable de entorno con el mismo nombre tiene prioridad (y bloquea ese
 campo en el panel):

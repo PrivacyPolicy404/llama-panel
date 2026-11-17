@@ -109,6 +109,9 @@ This creates the systemd user services (`llama-panel`, `llama-router`, `kobold-i
 the model folders (with suggestions as you type and how many models each one has) and the programs (it shows the
 llama.cpp version it found). On save, the panel restarts itself and rescans the models.
 
+So that the panel starts at boot without anyone logging in (what you want on a server), `--install` turns on
+*lingering* for your user; if your system asks for privileges it prints the command (`sudo loginctl enable-linger $USER`).
+
 User configuration lives in `~/.config/llama-panel/` (outside the repo). Paths are stored in `paths.env`, which can
 also be edited by hand; an environment variable with the same name takes precedence (and locks that field in the
 panel):

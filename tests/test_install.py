@@ -35,3 +35,19 @@ class ClientGone(unittest.TestCase):
         h.client_address, h.close_connection = ("127.0.0.1", 0), False
         h._send(200, {"ok": True})
         self.assertTrue(h.close_connection)
+
+
+class Linger(unittest.TestCase):
+    def test_enables_or_explains(self):
+        from unittest import mock
+        calls = []
+
+        def fake_run(*cmd, **kw):
+            calls.append(cmd)
+            return "no"
+        with mock.patch.object(install, "run", fake_run):
+            msg = install.ensure_linger("prueba")
+        self.assertIn(("loginctl", "enable-linger", "prueba"), calls)
+        self.assertIn("sudo loginctl enable-linger prueba", msg)
+        with mock.patch.object(install, "run", lambda *c, **k: "yes"):
+            self.assertNotIn("sudo", install.ensure_linger("prueba"))

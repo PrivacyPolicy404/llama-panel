@@ -4,6 +4,7 @@ from pathlib import Path
 
 from . import config as C
 from .img_models import write_img_env
+from .i18n import _, set_lang
 from .services import run, svc, svc_state
 from .text_models import write_preset
 
@@ -83,6 +84,20 @@ def sync_units():
     return changed
 
 
+def ensure_linger(user=None):
+    """Los servicios de usuario arrancan con la maquina solo con "linger"; sin eso el panel espera a que alguien inicie
+    sesion (mal en un servidor que se maneja de forma remota). Devuelve un mensaje para mostrar."""
+    import getpass
+    user = user or getpass.getuser()
+    if run("loginctl", "show-user", user, "-p", "Linger", "--value") == "yes":
+        return _("Arranque con la máquina: activo (linger).")
+    run("loginctl", "enable-linger", user)
+    if run("loginctl", "show-user", user, "-p", "Linger", "--value") == "yes":
+        return _("Arranque con la máquina: activado (linger).")
+    return _("AVISO: el panel no va a arrancar solo al prender la máquina hasta que inicies sesión. Para que arranque"
+             " siempre:  sudo loginctl enable-linger {user}", user=user)
+
+
 def install():
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
     router_unit = UNIT_DIR / f"{C.SERVICE}.service"
@@ -92,20 +107,25 @@ def install():
     for name, content in units().items():
         (UNIT_DIR / name).write_text(content)
 
+    set_lang("es" if os.environ.get("LANG", "").startswith("es") else "en")  # mensajes en el idioma del sistema
     n = len(write_preset())
-    print(f"Configuracion de texto generada con {n} modelos: {C.PRESET_FILE}")
+    print(_("Configuración de texto generada con {n} modelos: {file}", n=n, file=C.PRESET_FILE))
     m = write_img_env()
-    print(f"Generador de imagenes configurado con el modelo: {m['id']}" if m
-          else f"(No hay modelos de imagen todavia en {C.IMG_DIR}.)")
+    print(_("Generador de imágenes configurado con el modelo: {model}", model=m["id"]) if m
+          else _("(No hay modelos de imagen todavía en {dir}.)", dir=C.IMG_DIR))
+    if not Path(C.LLAMA_SERVER).exists():
+        print(_("AVISO: no existe {path}. Elegí llama-server en la pestaña Configuración del panel.", path=C.LLAMA_SERVER))
     if not Path(C.KOBOLD_BIN).exists():
-        print(f"AVISO: no existe {C.KOBOLD_BIN}")
+        print(_("(KoboldCpp no está en {path}: es opcional, solo para imágenes.)", path=C.KOBOLD_BIN))
 
     print(run("systemctl", "--user", "daemon-reload") or "daemon-reload ok")
-    print(run("systemctl", "--user", "enable", C.PANEL_SERVICE) or "panel habilitado")
-    print(run("systemctl", "--user", "enable", f"{C.PANEL_SERVICE}-reload.path") or "auto-reinicio habilitado")
-    print(run("systemctl", "--user", "restart", f"{C.PANEL_SERVICE}-reload.path") or "auto-reinicio activo")
-    print(run("systemctl", "--user", "restart", C.PANEL_SERVICE) or "panel (re)iniciado")
+    print(run("systemctl", "--user", "enable", C.PANEL_SERVICE) or _("panel habilitado"))
+    print(run("systemctl", "--user", "enable", f"{C.PANEL_SERVICE}-reload.path") or _("auto-reinicio habilitado"))
+    print(run("systemctl", "--user", "restart", f"{C.PANEL_SERVICE}-reload.path") or _("auto-reinicio activo"))
+    print(run("systemctl", "--user", "restart", C.PANEL_SERVICE) or _("panel (re)iniciado"))
     if svc_state() == "active":
         svc("restart")
-        print("Servidor de modelos de texto reiniciado con la nueva configuracion.")
-    print(f"\nListo. Abri http://{os.uname().nodename}.local:{C.PANEL_PORT} desde la laptop.")
+        print(_("Servidor de modelos de texto reiniciado con la nueva configuración."))
+    print(ensure_linger())
+    print(_("\nListo. Abrí http://{host}.local:{port} desde otra computadora de la red (o http://localhost:{port} en esta).",
+            host=os.uname().nodename, port=C.PANEL_PORT))

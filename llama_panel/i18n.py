@@ -136,6 +136,25 @@ EN = {
     "MTP": "MTP",
     "Borradores por paso": "Drafts per step",
     "Razonamiento": "Reasoning",
+    # instalación (install.py)
+    "Configuración de texto generada con {n} modelos: {file}": "Text configuration generated with {n} models: {file}",
+    "Generador de imágenes configurado con el modelo: {model}": "Image generator set up with the model: {model}",
+    "(No hay modelos de imagen todavía en {dir}.)": "(No image models yet in {dir}.)",
+    "AVISO: no existe {path}. Elegí llama-server en la pestaña Configuración del panel.":
+        "WARNING: {path} does not exist. Choose llama-server in the panel's Setup tab.",
+    "(KoboldCpp no está en {path}: es opcional, solo para imágenes.)": "(KoboldCpp is not at {path}: optional, only for images.)",
+    "panel habilitado": "panel enabled",
+    "auto-reinicio habilitado": "auto-restart enabled",
+    "auto-reinicio activo": "auto-restart active",
+    "panel (re)iniciado": "panel (re)started",
+    "Servidor de modelos de texto reiniciado con la nueva configuración.": "Text model server restarted with the new settings.",
+    "Arranque con la máquina: activo (linger).": "Start at boot: on (linger).",
+    "Arranque con la máquina: activado (linger).": "Start at boot: turned on (linger).",
+    "AVISO: el panel no va a arrancar solo al prender la máquina hasta que inicies sesión. Para que arranque"
+    " siempre:  sudo loginctl enable-linger {user}":
+        "WARNING: the panel won't start at boot until you log in. To always start it:  sudo loginctl enable-linger {user}",
+    "\nListo. Abrí http://{host}.local:{port} desde otra computadora de la red (o http://localhost:{port} en esta).":
+        "\nDone. Open http://{host}.local:{port} from another computer on the network (or http://localhost:{port} on this one).",
     # opciones de razonamiento (config.REASONING_OPTS)
     "por defecto": "default",
     "auto": "auto",
