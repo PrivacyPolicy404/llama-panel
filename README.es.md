@@ -45,6 +45,11 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   prende el generador, y al revés; Open WebUI, un asistente de voz o un script usan las dos cosas sin pasar por el
   panel. Un pedido con un modelo que no existe (un cliente fijado en `gpt-4o`) va al que está cargado. Aparte, la
   **descarga por inactividad** libera la VRAM después de N minutos sin uso. Las dos cosas están en Configuración.
+- Pestaña **Compañero**: un agente con personalidad, memoria y herramientas que usa el modelo de texto cargado. Se le
+  puede hablar: mantenés apretado el micrófono (o la barra espaciadora), whisper.cpp pasa la voz a texto en el CPU y
+  Piper lee cada oración de la respuesta mientras se genera la siguiente. Sus herramientas declaran qué pueden hacer y
+  cada llamada queda registrada. La voz se instala sin sudo con `scripts/install-voice.sh` (el micrófono necesita
+  https o localhost, por ejemplo un túnel SSH).
 
 ## Estructura
 
@@ -66,6 +71,9 @@ llama_panel/
   server.py           servidor HTTP
   install.py          units de systemd (y su sincronización al arrancar)
   kiosk.py            dashboard de texto del "modo IA" (tty1)
+  buddy.py            pestaña Compañero: personalidad, historial y el bucle del agente (texto, herramientas y audio)
+  buddy_tools.py      herramientas del compañero, cada una con su nivel de riesgo, y su registro
+  voice.py            whisper.cpp (voz a texto) y Piper (texto a voz); tts_worker.py corre en el venv de Piper
 static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo; i18n.js tiene las traducciones)
@@ -74,6 +82,7 @@ scripts/
   update-llama.sh     actualiza llama.cpp manteniendo los parches (--check solo informa)
   install-gpu-mclk.sh opcional, con sudo: reloj de la VRAM al máximo mientras corre un modelo
   install-modo-ia.sh  opcional, con sudo: "modo IA" (apaga el escritorio, dashboard en tty1)
+  install-voice.sh    opcional, sin sudo: whisper.cpp, Piper y los modelos en castellano para el Compañero
 patches/              parches locales de llama.cpp y cómo reaplicarlos
 tools/bench/          benchmark, uso de CPU/GPU, tamaños de GGUF y test de humo de los modelos
 tools/                utilidades de GGUF (hc en Q8_0, borrador MTP con salida recortada)

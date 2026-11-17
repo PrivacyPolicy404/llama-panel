@@ -231,6 +231,26 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 Antes de medir: apagar texto e imágenes en el panel. Para probar `--load-mode none` con modelos grandes, envolver
 el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryMax=56G ..."`).
 
+## Compañero (pestaña «Compañero», `buddy.py`)
+
+- Agente propio sobre el modelo de texto cargado (o el elegido en sus ajustes), con personalidad editable, memoria
+  (`~/.config/llama-panel/buddy/memoria.md`, herramienta `recordar`) y herramientas con nivel de riesgo
+  (`buddy_tools.py`; registro en `buddy/herramientas.log`). La seguridad está en las herramientas, no en el modelo:
+  el modelo solo propone llamadas y lo que transcribe Whisper puede traer instrucciones de cualquiera que hable cerca.
+- Voz en el CPU (la GPU es del modelo): whisper.cpp 1.9.5 en `~/whisper.cpp`, `ggml-small-q8_0` y la voz
+  `es_AR-daniela-high` de Piper en `~/models-nvme/{whisper,piper}` (rutas en paths.env).
+- Mediciones (Flash-Next `-hcq8`, modo IA, 2026-11-17):
+  - Whisper con 4 s de audio: small 1.7 s con la ventana entera de 30 s, **0.6 s** ajustando `-ac` al largo
+    (`voice.audio_ctx`); large-v3-turbo q5_0 11 s y 2.1 s, pero con la ventana chica repite palabras. 16 hilos no
+    mejora a 8. Con el audio en webm del navegador (ffmpeg incluido): 0.74 s.
+  - Primer token: 1.4 s sin herramientas, 3.8 s con una ronda de herramienta. Por voz, ~2.2 s desde que se suelta
+    el botón (sin contar Piper).
+  - **Trampa: el prompt tiene que quedar fijo.** Personalidad y herramientas son ~1200 tokens: si cambian, Flash-Next
+    los reprocesa a ~58 tok/s (~20 s). Por eso la memoria se lee al empezar cada charla (no en cada mensaje), el
+    prompt no lleva la hora y el historial se recorta de a mitades.
+- El micrófono del navegador solo anda en https o `localhost`: desde la laptop, túnel SSH
+  (`ssh -L 8090:localhost:8090 …`) y abrir `http://localhost:8090`.
+
 ## Modo IA
 
 Botón «Modo IA» en el panel: apaga SDDM/KDE y Sunshine (~350–400 MiB de VRAM: kwin 95, plasmashell 79, Xorg, Sunshine)

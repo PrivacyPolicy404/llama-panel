@@ -56,6 +56,15 @@ IMG_DIR = Path(_env("LLAMA_IMG_DIR", HOME / "imgmodels")).expanduser()
 LLAMA_SERVER = str(Path(_env("LLAMA_SERVER_BIN", HOME / "llama.cpp/build/bin/llama-server")).expanduser())
 KOBOLD_BIN = str(Path(_env("KOBOLD_BIN", HOME / "koboldcpp/koboldcpp")).expanduser())
 
+# Compañero (buddy.py): voz con whisper.cpp (entender, en el CPU) y Piper (hablar, en su propio venv)
+# (scripts/install-voice.sh deja todo en VOICE_DIR; otras ubicaciones van en paths.env)
+VOICE_DIR = HOME / ".local/share/llama-panel/voice"
+WHISPER_CLI = str(Path(_env("WHISPER_CLI", HOME / "whisper.cpp/build/bin/whisper-cli")).expanduser())
+WHISPER_MODEL = str(Path(_env("WHISPER_MODEL", VOICE_DIR / "ggml-small-q8_0.bin")).expanduser())
+PIPER_PYTHON = str(Path(_env("PIPER_PYTHON", VOICE_DIR / "piper-venv/bin/python")).expanduser())
+PIPER_VOICE = str(Path(_env("PIPER_VOICE", VOICE_DIR / "es_AR-daniela-high.onnx")).expanduser())
+BUDDY_DIR = CFG_DIR / "buddy"  # personalidad, memoria y registro de herramientas
+
 SERVICE = "llama-router"
 IMG_SERVICE = "kobold-img"
 PANEL_SERVICE = "llama-panel"

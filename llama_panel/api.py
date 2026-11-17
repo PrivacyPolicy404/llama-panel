@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from . import actions
+from . import buddy
 from . import config as C
 from . import gate
 from . import hardware
@@ -80,7 +81,14 @@ GET_ROUTES = {
     "/api/logs": _logs,
     "/api/paths": lambda q: paths.current(),
     "/api/paths/dirs": lambda q: {"dirs": paths.suggest_dirs(q.get("prefix", [""])[0])},
+    "/api/buddy": lambda q: buddy.state(),
 }
+
+
+def _result(pair):
+    good, msg = pair
+    return {"ok": good, "msg": msg}
+
 
 POST_ROUTES = {
     "/api/action": lambda b: actions.do_action(str(b.get("do", ""))),
@@ -96,4 +104,12 @@ POST_ROUTES = {
     "/api/paths/check": lambda b: paths.check(b.get("values") or {}),
     "/api/paths": paths.save,
     "/api/auto": actions.auto_settings,
+    "/api/buddy/config": lambda b: _result(buddy.save_config(b)),
+    "/api/buddy/memory": lambda b: _result(buddy.save_memory(b.get("text", ""))),
+    "/api/buddy/reset": lambda b: _result(buddy.reset()),
+}
+
+# Rutas que contestan de a partes (server-sent events)
+POST_STREAM_ROUTES = {
+    "/api/buddy/chat": buddy.chat,
 }

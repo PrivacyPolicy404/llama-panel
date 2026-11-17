@@ -8,11 +8,11 @@ from . import config as C
 from . import gate
 from . import hardware
 from . import prompt_cache
-from .api import GET_ROUTES, POST_ROUTES
+from .api import GET_ROUTES, POST_ROUTES, POST_STREAM_ROUTES
 from .i18n import remember_ui_lang, set_lang
 from .install import sync_units
 
-MAX_BODY = 1_000_000
+MAX_BODY = 8_000_000  # el audio del compañero llega en base64 dentro del JSON
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -66,8 +66,26 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             self._error(500, f"Error interno: {e}")
 
+    def _stream(self, events):
+        """Eventos (server-sent events) de una ruta que va contestando de a partes, como la charla del compañero.
+        Si el cliente se va, se cierra el generador: la ruta corta lo que estaba haciendo."""
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            for ev in events:
+                self.wfile.write(b"data: " + json.dumps(ev, ensure_ascii=False).encode() + b"\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            events.close()
+            self.close_connection = True
+
     def do_POST(self):
-        route = POST_ROUTES.get(urllib.parse.urlparse(self.path).path)
+        path = urllib.parse.urlparse(self.path).path
+        route = POST_ROUTES.get(path) or POST_STREAM_ROUTES.get(path)
         if not route:
             return self._error(404, "no encontrado")
         # Exigir JSON impide que otra pagina web dispare acciones con un formulario (CSRF)
@@ -85,6 +103,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("se espera un objeto")
         except ValueError as e:
             return self._error(400, f"JSON invalido: {e}")
+        if path in POST_STREAM_ROUTES:
+            return self._stream(route(body))
         try:
             self._send(200, route(body))
         except Exception as e:  # noqa: BLE001

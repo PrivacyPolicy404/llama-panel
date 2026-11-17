@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Buddy tab: an agent with personality, memory and tools on the loaded text model, with voice (whisper.cpp to
+  listen, Piper to speak, both on the CPU) and `scripts/install-voice.sh` to set it up without sudo.
 - Optional on-demand start: the panel serves ports 8080 and 5001 and starts text or images depending on what each
   client asks for, after the requests in progress finish; requests for a model that does not exist go to the
   loaded one. Optional idle unload after N minutes. Both in the Setup tab.

@@ -10,6 +10,7 @@ import { renderPerf } from './perf.js';
 import { loadLogs } from './logs.js';
 import { loadSetup, needsSetup } from './setup.js';
 import { renderAuto } from './auto.js';
+import { loadBuddy } from './buddy.js';
 import { lang, setLang, t, translateDom } from './i18n.js';
 
 async function pollState() {
@@ -64,6 +65,7 @@ function showTab(tab) {
   if (tab === 'perf') renderPerf();
   if (tab === 'logs') loadLogs();
   if (tab === 'setup') loadSetup();
+  if (tab === 'buddy') loadBuddy();
 }
 
 function bind() {

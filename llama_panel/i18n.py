@@ -268,6 +268,19 @@ EN = {
         "On-demand start on: the panel serves ports {ports} and starts whatever each client asks for.",
     "Encendido a demanda apagado: los servicios vuelven a atender los puertos {ports}.":
         "On-demand start off: the services serve ports {ports} again.",
+    # compañero (buddy.py)
+    "Charla nueva.": "New chat.",
+    "Compañero guardado.": "Buddy saved.",
+    "Demasiadas herramientas seguidas; corté acá.": "Too many tool calls in a row; stopped here.",
+    "El compañero está contestando otra cosa; esperá un momento.": "The buddy is answering something else; wait a moment.",
+    "El compañero necesita un nombre.": "The buddy needs a name.",
+    "Herramienta desconocida.": "Unknown tool.",
+    "Memoria guardada.": "Memory saved.",
+    "Mensaje vacío.": "Empty message.",
+    "No hay un modelo de texto cargado: cargá uno o elegí cuál usar en los ajustes del compañero.":
+        "No text model is loaded: load one or pick which one to use in the buddy settings.",
+    "No se entendió nada; probá de nuevo.": "Nothing was understood; try again.",
+    "Sin voz: {err}": "No voice: {err}",
     "por defecto": "default",
     "auto": "auto",
     "activado": "on",

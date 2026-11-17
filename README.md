@@ -46,6 +46,11 @@ They are written in Spanish; each one starts with an English summary of the main
   image generator, and the other way around; Open WebUI, a voice assistant or a script can use both without touching
   the panel. A request naming a model that does not exist (a client fixed to `gpt-4o`) goes to the loaded one.
   Separately, **idle unload** frees the VRAM after N minutes without use. Both are in the Setup tab.
+- **Buddy** tab: an agent with a personality, memory and tools that uses the loaded text model. You can talk to it:
+  hold the mic button (or the space bar), whisper.cpp turns your voice into text on the CPU and Piper reads each
+  sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
+  call is logged. Voice setup without sudo: `scripts/install-voice.sh` (the microphone needs https or localhost, for
+  example an SSH tunnel).
 
 ## Layout
 
@@ -67,6 +72,9 @@ llama_panel/
   server.py           HTTP server
   install.py          systemd units (and keeping them in sync at startup)
   kiosk.py            text dashboard for "AI mode" (tty1)
+  buddy.py            Buddy tab: personality, history and the agent loop (streams text, tools and audio)
+  buddy_tools.py      the buddy's tools, each with its risk level, and the call log
+  voice.py            whisper.cpp (speech to text) and Piper (text to speech); tts_worker.py runs in Piper's venv
 static/
   index.html, app.css
   js/                 native ES modules, no build (main.js starts everything; i18n.js has the translations)
@@ -75,6 +83,7 @@ scripts/
   update-llama.sh     updates llama.cpp keeping the patches (--check only reports)
   install-gpu-mclk.sh optional, with sudo: VRAM clock at max while a model runs (AMD Polaris)
   install-modo-ia.sh  optional, with sudo: "AI mode" (stops the desktop, dashboard on tty1)
+  install-voice.sh    optional, without sudo: whisper.cpp, Piper and the Spanish models for the Buddy tab
 patches/              local llama.cpp patches and how to reapply them
 tools/bench/          benchmarks, CPU/GPU usage, GGUF sizes and model smoke test
 tools/                GGUF utilities (hc in Q8_0, MTP draft with trimmed output)
