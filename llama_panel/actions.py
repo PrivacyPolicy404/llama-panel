@@ -144,17 +144,19 @@ def text_prompt_save(body):
     mid = _loaded_model(body)
     if not mid:
         return fail(_("El modelo tiene que estar cargado."))
-    tokens, err = PC.save(mid)
+    profile = PC.slug(body.get("name"))
+    tokens, err = PC.save(mid, profile)
     if err:
         return fail(_("No se pudo guardar el prompt: {err}", err=err))
-    return ok(_("Prompt guardado: {tokens} tokens. Se restaura solo cada vez que {model} se cargue.", tokens=tokens, model=mid))
+    return ok(_("Prompt «{name}» guardado: {tokens} tokens. Se precarga solo cada vez que {model} se cargue.",
+                name=profile, tokens=tokens, model=mid))
 
 
 def text_prompt_restore(body):
     mid = _loaded_model(body)
     if not mid:
         return fail(_("El modelo tiene que estar cargado."))
-    tokens, err = PC.restore(mid)
+    tokens, err = PC.restore(mid, profile=PC.slug(body.get("name")))
     if err:
         return fail(_("No se pudo restaurar el prompt: {err}", err=err))
     return ok(_("Prompt restaurado: {tokens} tokens.", tokens=tokens) if tokens
@@ -162,7 +164,8 @@ def text_prompt_restore(body):
 
 
 def text_prompt_delete(body):
-    n = PC.delete(str(body.get("id", "")))
+    name = body.get("name")
+    n = PC.delete(str(body.get("id", "")), PC.slug(name) if name else None)
     return ok(_("Prompt guardado borrado.") if n else _("No había un prompt guardado."))
 
 

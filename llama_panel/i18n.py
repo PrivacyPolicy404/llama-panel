@@ -65,6 +65,8 @@ EN = {
     "{model} descargado: la VRAM queda libre.": "{model} unloaded: VRAM is free.",
     "El modelo tiene que estar cargado.": "The model has to be loaded.",
     "No se pudo guardar el prompt: {err}": "Could not save the prompt: {err}",
+    "Prompt «{name}» guardado: {tokens} tokens. Se precarga solo cada vez que {model} se cargue.":
+        "Prompt «{name}» saved: {tokens} tokens. It is preloaded every time {model} loads.",
     "Prompt guardado: {tokens} tokens. Se restaura solo cada vez que {model} se cargue.":
         "Prompt saved: {tokens} tokens. It is restored automatically every time {model} loads.",
     "No se pudo restaurar el prompt: {err}": "Could not restore the prompt: {err}",

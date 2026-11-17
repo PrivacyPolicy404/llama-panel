@@ -1167,6 +1167,9 @@ distintos (por ejemplo Cline y un asistente de voz)? Dos prompts de sistema de ~
   RAM. Luego A, B, A responden en 1.08 / 1.12 / 1.14 s. Los clientes no cambian nada (mismo servidor, mismo modelo).
 - El estado pesa ~0.6 GB por prompt de ~7.8K, casi fijo (no ~0.1 GB como saldría de escalar solo la caché KV):
   entran ~10 prompts en los 8 GiB por defecto.
+- **Implementado** (`prompt_cache.prime`): perfiles con nombre por modelo y precarga al cargar el modelo. Prueba de
+  punta a punta: guardar «voz» desde el panel, recargar Flash-Next (21 s), el log dice «precargados: voz (7781
+  tokens), principal (7101 tokens)» y el prompt de voz responde en 1.07 s.
 
 ---
 

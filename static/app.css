@@ -345,3 +345,7 @@ details.global[open] summary { margin-bottom: 12px; }
 .mode-grid .mode-hint.over { color: var(--warning); }
 .mode-grid :disabled { opacity: .45; }
 .global-edit { border-top: 0; padding: 12px 0 4px; }
+.prompts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.prompt-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 8px; }
+.chip-x { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 11px; }
+.chip-x:hover { color: var(--critical-text); }

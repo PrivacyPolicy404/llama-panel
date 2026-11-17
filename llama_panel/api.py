@@ -24,7 +24,7 @@ def state():
     models = router_models() if st["text"] == "active" else {}
     for mid, m in models.items():
         if m["status"] == "loaded":
-            m["prompt"] = PC.info(mid)  # prompt inicial guardado para la configuracion vigente, o None
+            m["prompts"] = PC.profiles(mid)  # prompts iniciales guardados (perfiles) de la configuracion vigente
     return {
         "svc": st,
         "hw": hardware.latest(),

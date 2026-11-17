@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Named saved prompts per model (for example `cline` and `voice`), preloaded into llama-server's RAM prompt cache
+  when the model loads: switching clients costs ~1 s instead of ~1 min.
+- Global settings with the same controls as the per-model ones.
+- The AI mode dashboard is bilingual (it follows the language used in the web panel) and its prompt/context bars
+  move smoothly instead of jumping one 2048-token batch at a time.
+- Install: lingering on (the panel starts at boot), messages in the system language, custom port kept in the unit.
+- Fixes: empty paths in `paths.env`, personal default folder, AI mode button hidden when not installed, saved
+  prompts no longer invalidated when equivalent settings are reordered.
+
 ## 0.1.0 — 2026-11-16
 
 First public release. / Primera versión pública.

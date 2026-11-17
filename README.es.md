@@ -32,8 +32,9 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   MoE en RAM, pedidos en paralelo, caché KV, flash attention, tanda del prompt, hilos, MTP, razonamiento), cada uno
   con una explicación corta y valores propios para el modo IA si está instalado. Lo demás va en las opciones extra,
   que mandan sobre los controles (el panel muestra cuáles pisan); "Guardar y aplicar" recarga solo lo necesario.
-- Prompt inicial guardado: con un cliente tipo agente (Cline, etc.), "Guardar prompt" escribe a disco el prompt fijo
-  ya procesado y el panel lo restaura solo cada vez que el modelo se carga (un minuto de espera menos por sesión).
+- Prompts iniciales guardados: con clientes tipo agente o de voz (Cline, un asistente de voz…), "Guardar prompt…"
+  guarda con un nombre el prompt fijo ya procesado. Al cargar el modelo el panel los precarga todos en el caché de
+  prompts en RAM de llama-server: cada cliente arranca en ~1 s en vez de ~1 min y se puede alternar entre ellos.
 - Elegir el modelo de imagen y sus flags de KoboldCpp, con progreso de la generación en curso.
 - Rendimiento: tokens/s por respuesta (prompt y generación, aceptación MTP) y duración de cada imagen.
 - Registros en vivo de cada servicio, con filtro.

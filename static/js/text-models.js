@@ -194,8 +194,8 @@ export function renderTextModels() {
           </div>
           <span class="status model-state" data-mstate><i></i><b>${t('Sin cargar')}</b></span>
           <div class="model-actions">
-            <button class="btn ghost small" data-psave hidden title="${esc(t('Guarda a disco el prompt que el modelo ya procesó (por ejemplo, las instrucciones y herramientas de un agente). Se restaura solo cada vez que el modelo se carga.'))}">${t('Guardar prompt')}</button>
-            <button class="btn ghost small" data-pdel hidden>${t('Borrar prompt')}</button>
+            <span class="prompts" data-prompts></span>
+            <button class="btn ghost small" data-psave hidden title="${esc(t('Guarda con un nombre el prompt que el modelo ya procesó (por ejemplo, las instrucciones y herramientas de Cline o de un asistente de voz). Al cargar el modelo se precargan todos: cada cliente arranca en ~1 s en vez de ~1 min.'))}">${t('Guardar prompt…')}</button>
             <button class="btn small" data-load>${t('Cargar')}</button>
             <button class="btn ghost small" data-toggle aria-expanded="false">${t('Ajustes')}</button>
           </div>
@@ -224,8 +224,14 @@ export function renderTextModels() {
     });
     renderOpts(row);
     $('[data-load]', row).onclick = e => loadModel(m.id, e.currentTarget);
-    $('[data-psave]', row).onclick = e => promptAction('save', m.id, e.currentTarget);
-    $('[data-pdel]', row).onclick = e => promptAction('delete', m.id, e.currentTarget);
+    $('[data-psave]', row).onclick = e => {
+      const name = prompt(t('Nombre para este prompt (por ejemplo cline o voz). Si ya existe, se reemplaza:'), 'principal');
+      if (name !== null) promptAction('save', m.id, e.currentTarget, name);
+    };
+    $('[data-prompts]', row).onclick = e => {
+      const del = e.target.closest('[data-pdel]');
+      if (del && confirm(t('¿Borrar el prompt guardado «{name}»?', { name: del.dataset.pdel }))) promptAction('delete', m.id, del, del.dataset.pdel);
+    };
     box.append(row);
   }
   updateTextStates();
@@ -240,18 +246,16 @@ export function updateTextStates() {
     setStatus($('[data-mstate]', row), modelStatus(ms, textOn));
     const loaded = textOn && ms?.status === 'loaded';
     row.classList.toggle('loaded', loaded);
-    const saved = loaded ? ms.prompt : null;
-    const psave = $('[data-psave]', row), pdel = $('[data-pdel]', row);
-    psave.hidden = !loaded;
-    pdel.hidden = !saved;
-    if (saved) {
-      const k = saved.tokens ? fix(saved.tokens / 1000) + 'K tokens' : gb(saved.bytes);
-      psave.textContent = t('Prompt guardado · {size}', { size: k });
-      pdel.title = t('Guardado el {date} ({size}). Clic en "Prompt guardado" lo reemplaza por lo que el modelo tiene procesado ahora.',
-        { date: new Date(saved.saved_at * 1000).toLocaleString(locale()), size: gb(saved.bytes) });
-    } else {
-      psave.textContent = t('Guardar prompt');
-    }
+    const saved = loaded ? (ms.prompts || []) : [];
+    $('[data-psave]', row).hidden = !loaded;
+    const chips = $('[data-prompts]', row);
+    const html = saved.map(p => {
+      const k = p.tokens ? fix(p.tokens / 1000) + 'K' : gb(p.bytes);
+      const tip = t('Prompt guardado «{name}»: {size}, del {date}. Se precarga al cargar el modelo.',
+        { name: p.name, size: gb(p.bytes), date: new Date(p.saved_at * 1000).toLocaleString(locale()) });
+      return `<span class="badge accent prompt-chip" title="${esc(tip)}">${esc(p.name)} · ${k}<button class="chip-x" data-pdel="${esc(p.name)}" title="${esc(t('Borrar'))}">✕</button></span>`;
+    }).join('');
+    if (chips.dataset.html !== html) { chips.innerHTML = html; chips.dataset.html = html; }  // no redibujar en cada sondeo
     const btn = $('[data-load]', row);
     if (btn.classList.contains('busy')) continue;
     const st = textOn && ms ? ms.status : 'unloaded';
@@ -262,8 +266,8 @@ export function updateTextStates() {
   }
 }
 
-async function promptAction(what, id, btn) {
-  report(await withBusy(btn, () => post('/api/text/prompt/' + what, { id })));
+async function promptAction(what, id, btn, name) {
+  report(await withBusy(btn, () => post('/api/text/prompt/' + what, { id, name })));
   await hooks.pollState();
 }
 

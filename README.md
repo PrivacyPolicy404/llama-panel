@@ -33,8 +33,9 @@ They are written in Spanish; each one starts with an English summary of the main
   MoE experts in RAM, parallel requests, KV cache, flash attention, prompt batch, threads, MTP, reasoning), each
   with a short explanation and separate values for AI mode if it is installed. Anything else goes in the extra
   options, which win over the controls (the panel shows which ones they override); "Save and apply" reloads only what is needed.
-- Saved initial prompt: with an agent-style client (Cline, etc.), "Save prompt" writes the already-processed fixed
-  prompt to disk and the panel restores it every time the model loads (about a minute less waiting per session).
+- Saved initial prompts: with agent or voice clients (Cline, a voice assistant…), "Save prompt…" stores the
+  already-processed fixed prompt under a name. When the model loads the panel preloads all of them into llama-server's
+  RAM prompt cache, so each client starts in ~1 s instead of ~1 min and you can switch between them freely.
 - Picks the image model and its KoboldCpp flags, with the progress of the current generation.
 - Performance: tokens/s per response (prompt and generation, MTP acceptance) and duration of each image.
 - Live logs of each service, with a filter.
