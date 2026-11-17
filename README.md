@@ -1,6 +1,6 @@
 # llama-panel
 
-**English** · [Castellano](README.es.md)
+**English** · [Castellano](README.es.md) · [![tests](https://github.com/PrivacyPolicy404/llama-panel/actions/workflows/tests.yml/badge.svg)](https://github.com/PrivacyPolicy404/llama-panel/actions/workflows/tests.yml)
 
 A small home web panel to start and stop models on demand on a GPU with little VRAM (Vulkan):
 
@@ -121,6 +121,14 @@ LLAMA_SERVER_BIN=~/llama.cpp/build/bin/llama-server
 The `scripts/install-*.sh` scripts are optional, run once with `sudo` and have `--uninstall`.
 Each one installs a helper in `/usr/local/sbin` and a rule in `/etc/sudoers.d` that lets your user run **only** that
 helper without a password. AI mode **closes the graphical session** when turned on; read each script's header first.
+
+> [!WARNING]
+> **AI mode is meant for a dedicated machine that you use remotely** (a home server with its own monitor, used
+> through the browser or SSH from another computer). It stops the display manager: **the graphical session closes
+> and anything open and unsaved in it is lost**. If you turn it on from the same PC you are sitting at, you are
+> left without a desktop until you leave AI mode, either from the panel on another device (phone, laptop) or on
+> that same PC: press Ctrl+Alt+F2, log in and run `sudo llama-modo-ia off`.
+> If you use the panel on your everyday desktop PC, don't install AI mode: everything else works without it.
 
 In AI mode the desktop is stopped to free the VRAM it was using, and tty1 shows this text dashboard
 (`llama_panel/kiosk.py`, in Spanish; to see it over SSH without turning anything on: `python3 -m llama_panel.kiosk --once`):

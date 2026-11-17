@@ -1,0 +1,39 @@
+name: Bug report
+description: Something doesn't work / Algo no funciona
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only the AMD RX 580 + Vulkan setup is tested. Reports from other hardware are welcome, but fixes may take a while.
+        Solo está probado en AMD RX 580 + Vulkan. Los reportes de otro hardware suman, pero el arreglo puede tardar.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Qué pasó
+      description: What you did, what you expected and what you got. / Qué hiciste, qué esperabas y qué pasó.
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver / GPU y driver
+      placeholder: "AMD RX 580 8 GB, Mesa 25.2 RADV"
+    validations:
+      required: true
+  - type: input
+    id: llamacpp
+    attributes:
+      label: llama.cpp version / versión de llama.cpp
+      description: Shown in the Setup tab, or `llama-server --version`. / Aparece en la pestaña Configuración.
+      placeholder: "upstream b7123 / fork ot-host-buffers"
+  - type: input
+    id: os
+    attributes:
+      label: Distro and desktop / Distro y escritorio
+      placeholder: "Kubuntu 24.04, KDE (SDDM)"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Registros
+      description: "`journalctl --user -u llama-panel -n 100` and/or `journalctl --user -u llama-router -n 100`"
+      render: text

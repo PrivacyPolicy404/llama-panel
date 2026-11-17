@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Instala el "modo IA": apagar el escritorio (el gestor de sesión: SDDM, GDM, LightDM...) y mostrar un dashboard de texto en tty1,
-# para dejarle toda la VRAM a los modelos. Correr UNA vez con sudo:
+# para dejarle toda la VRAM a los modelos.
+#
+# ATENCIÓN: pensado para una máquina dedicada que se usa de forma remota (servidor con su propio monitor).
+# Activarlo cierra la sesión gráfica de esta máquina y se pierde lo abierto sin guardar. Para volver sin otro
+# dispositivo: Ctrl+Alt+F2, iniciar sesión y correr  sudo llama-modo-ia off
+#
+# Correr UNA vez con sudo:
 #
 #   sudo ~/llama-panel/scripts/install-modo-ia.sh             # instalar
 #   sudo ~/llama-panel/scripts/install-modo-ia.sh --uninstall # desinstalar
@@ -114,6 +120,10 @@ systemctl daemon-reload
 echo "Modo IA instalado para $USER_NAME."
 echo "  Probar: sudo -n $HELPER status   (no debería pedir contraseña)"
 echo "  Usar:   botón «Modo IA» en el panel"
+echo
+echo "ATENCIÓN: activar el modo IA cierra la sesión gráfica de ESTA máquina (se pierde lo abierto sin guardar)."
+echo "  Pensado para un servidor dedicado que se maneja desde otro equipo. Para volver sin otro dispositivo:"
+echo "  Ctrl+Alt+F2, iniciar sesión y correr  sudo $HELPER off"
 if [ "$NEED_RELOGIN" = 1 ]; then
     echo
     echo "IMPORTANTE: se agregó $USER_NAME a los grupos render y video. Reiniciar la máquina para que el panel y los"

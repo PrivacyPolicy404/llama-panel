@@ -1,6 +1,6 @@
 # llama-panel
 
-[English](README.md) · **Castellano**
+[English](README.md) · **Castellano** · [![tests](https://github.com/PrivacyPolicy404/llama-panel/actions/workflows/tests.yml/badge.svg)](https://github.com/PrivacyPolicy404/llama-panel/actions/workflows/tests.yml)
 
 Panel web casero para levantar y bajar modelos on demand en una GPU con poca VRAM (Vulkan):
 
@@ -120,6 +120,14 @@ LLAMA_SERVER_BIN=~/llama.cpp/build/bin/llama-server
 Los scripts de `scripts/install-*.sh` son opcionales, se corren una vez con `sudo` y tienen `--uninstall`.
 Cada uno instala un ayudante en `/usr/local/sbin` y una regla en `/etc/sudoers.d` que deja correr **solo** ese
 ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse; leé el encabezado de cada script antes.
+
+> [!WARNING]
+> **El modo IA está pensado para una máquina dedicada que se usa de forma remota** (un servidor casero con su
+> propio monitor, manejado desde el navegador o por SSH desde otra computadora). Apaga el gestor de sesión: **se
+> cierra la sesión gráfica y se pierde lo que haya abierto sin guardar**. Si lo activás desde la misma PC en la que
+> estás sentado, quedás sin escritorio hasta salir del modo IA, ya sea desde el panel en otro dispositivo
+> (celular, laptop) o en esa misma PC: Ctrl+Alt+F2, iniciar sesión y correr `sudo llama-modo-ia off`.
+> Si usás el panel en tu PC de escritorio de todos los días, no instales el modo IA: todo lo demás funciona sin él.
 
 En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muestra este dashboard de texto
 (`llama_panel/kiosk.py`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`):

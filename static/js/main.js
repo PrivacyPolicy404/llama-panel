@@ -33,12 +33,12 @@ function renderAiMode() {
   if (!b || !ai || b.dataset.armed || b.classList.contains('busy')) return;
   b.dataset.action = ai.active ? 'ai_mode_off' : 'ai_mode_on';
   b.textContent = ai.active ? t('Salir del modo IA') : t('Modo IA');
-  b.dataset.confirm = ai.active ? '' : t('¿Apagar el escritorio? Tocá de nuevo');
+  b.dataset.confirm = ai.active ? '' : t('¿Cerrar la sesión gráfica de la máquina del panel? Tocá de nuevo');
   b.classList.toggle('on', ai.active);
   b.title = !ai.installed ? t('No instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh')
     : !ai.active && ai.gpu_ok === false ? t('Falta acceso permanente a la GPU: correr de nuevo el instalador del modo IA y reiniciar')
     : ai.active ? t('Vuelve a prender el escritorio')
-    : t('Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla');
+    : t('Cierra la sesión gráfica de la máquina del panel (se pierde lo abierto sin guardar) para dejarle toda la VRAM a los modelos, y muestra un dashboard en su pantalla. Pensado para un servidor dedicado');
 }
 
 async function loadConfig() {

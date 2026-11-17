@@ -53,9 +53,9 @@ export const EN = {
   'Sin conexión con el panel': 'No connection to the panel',
   'Modo IA': 'AI mode',
   'Salir del modo IA': 'Leave AI mode',
-  '¿Apagar el escritorio? Tocá de nuevo': 'Turn off the desktop? Tap again',
-  'Apaga el escritorio para dejarle toda la VRAM a los modelos y muestra un dashboard en la pantalla':
-    'Turns off the desktop to leave all the VRAM to the models and shows a dashboard on the screen',
+  '¿Cerrar la sesión gráfica de la máquina del panel? Tocá de nuevo': "Close the graphical session on the panel's machine? Tap again",
+  'Cierra la sesión gráfica de la máquina del panel (se pierde lo abierto sin guardar) para dejarle toda la VRAM a los modelos, y muestra un dashboard en su pantalla. Pensado para un servidor dedicado':
+    "Closes the graphical session on the panel's machine (unsaved work is lost) to leave all the VRAM to the models, and shows a dashboard on its screen. Meant for a dedicated server",
   'Vuelve a prender el escritorio': 'Turns the desktop back on',
   'No instalado: correr una vez sudo ~/llama-panel/scripts/install-modo-ia.sh':
     'Not installed: run once  sudo ~/llama-panel/scripts/install-modo-ia.sh',
