@@ -7,6 +7,7 @@ This is the exact panel configuration that runs
 | | |
 |---|---|
 | Generation | ~20 tok/s with a short prompt, 19.8 at 12K of context, 18.4 at 30K, ~18 at 61K |
+| By kind of text (AI mode, 64K Q8_0 cache) | 18.5–22 tok/s: code is fastest (MTP accepts ~80 %), prose slowest (~60 %) |
 | Prompt processing | ~134 tok/s (3K tokens), 92 tok/s (61K) |
 | Context | 8K with the desktop running, 64K in AI mode |
 | Without any tuning | 12.8 tok/s, 62 tok/s prompt, 8K |
