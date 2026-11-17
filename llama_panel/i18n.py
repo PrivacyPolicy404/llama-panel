@@ -293,6 +293,7 @@ EN = {
     "El compañero está contestando otra cosa; esperá un momento.": "The buddy is answering something else; wait a moment.",
     "El compañero necesita un nombre.": "The buddy needs a name.",
     "Herramienta desconocida.": "Unknown tool.",
+    "Compartir ubicación aproximada con el compañero": "Share approximate location with the buddy",
     "Memoria guardada.": "Memory saved.",
     "Mensaje vacío.": "Empty message.",
     "No hay un modelo de texto cargado: cargá uno o elegí cuál usar en los ajustes del compañero.":

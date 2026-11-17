@@ -152,6 +152,7 @@ export const EN = {
   'Guarda con un nombre el prompt que el modelo ya procesó (por ejemplo, las instrucciones y herramientas de Cline o de un asistente de voz). Al cargar el modelo se precargan todos: cada cliente arranca en ~1 s en vez de ~1 min.':
     "Saves under a name the prompt the model already processed (for example, Cline's or a voice assistant's instructions and tools). When the model loads all of them are preloaded: each client starts in ~1 s instead of ~1 min.",
   'Nombre para este prompt (por ejemplo cline o voz). Si ya existe, se reemplaza:': 'Name for this prompt (for example cline or voice). If it exists, it is replaced:',
+  'Compartir ubicación aproximada con el compañero': 'Share approximate location with the buddy',
   '¿Borrar el prompt guardado «{name}»?': 'Delete the saved prompt «{name}»?',
   'Prompt guardado «{name}»: {size}, del {date}. Se precarga al cargar el modelo.': 'Saved prompt «{name}»: {size}, from {date}. It is preloaded when the model loads.',
   'Borrar': 'Delete',

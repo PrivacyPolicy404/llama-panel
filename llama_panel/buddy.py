@@ -292,6 +292,7 @@ def chat(body):
 
 def _run(body, events, cancel):
     cfg = load_config()
+    BT.set_user_context(body.get("user_context"))
     speak = bool(body.get("speak", cfg["speak"])) and voice.Speaker.available()
     sentences = queue.Queue()
     tts = threading.Thread(target=_speak_loop, args=(sentences, events, cancel), daemon=True) if speak else None
@@ -316,6 +317,7 @@ def _run(body, events, cancel):
     except Exception as e:  # noqa: BLE001
         events.put({"type": "error", "msg": str(e)})
     finally:
+        BT.clear_user_context()
         if tts:
             sentences.put(None)
             tts.join()
