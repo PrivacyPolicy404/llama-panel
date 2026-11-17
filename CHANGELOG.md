@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The buddy speaks on its own: timers and reminders (a new `avisar` tool), homelab warnings (temperature,
+  failed services, RAM, disk) and a morning summary, delivered to the web panel and `clients/dani.py` through
+  server-sent events; only the client used last plays the audio. `POST /api/buddy/say` for automations.
 - Optional panel password (Setup tab, Access): browser login with a 30-day session, named tokens for programs
   (`dani.py --token`, OpenAI clients), no password asked from the machine itself or through an SSH tunnel, and
   slower answers after each failed login. Only hashes are stored.

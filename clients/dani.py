@@ -30,20 +30,26 @@ import urllib.parse
 import wave
 
 MIN_SECONDS = 0.3
+# Id de este programa: el panel le habla los avisos (timers, alertas) al cliente que se usó último
+CLIENT = "pc-" + os.urandom(4).hex()
 
 
 # ---------- panel ----------
-def chat(server, audio_wav, token="", cancel=None, on_conn=None):
-    """Manda el audio y va devolviendo los eventos de la respuesta (dicts). `cancel` corta la lectura."""
+def _conn(server, timeout):
     u = urllib.parse.urlsplit(server)
     conn_cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
-    conn = conn_cls(u.hostname, u.port or (443 if u.scheme == "https" else 80), timeout=600)
+    return conn_cls(u.hostname, u.port or (443 if u.scheme == "https" else 80), timeout=timeout)
+
+
+def chat(server, audio_wav, token="", cancel=None, on_conn=None):
+    """Manda el audio y va devolviendo los eventos de la respuesta (dicts). `cancel` corta la lectura."""
+    conn = _conn(server, 600)
     if on_conn:
         on_conn(conn)
     headers = {"Content-Type": "application/json", "X-Lang": "es"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    body = json.dumps({"audio": base64.b64encode(audio_wav).decode(), "speak": True})
+    body = json.dumps({"audio": base64.b64encode(audio_wav).decode(), "speak": True, "client": CLIENT})
     try:
         conn.request("POST", "/api/buddy/chat", body, headers)
         resp = conn.getresponse()
@@ -202,6 +208,43 @@ class Session:
         self.conn = conn
 
 
+# ---------- lo que Dani dice por su cuenta ----------
+ICONS = {"timer": "⏰", "alerta": "⚠️", "resumen": "☀️"}
+
+
+def listen(args, player):
+    """Queda suscripto a los avisos del panel (timers, alertas del homelab, el resumen de la mañana). Si el panel se
+    reinicia o se corta la red, vuelve a conectarse solo."""
+    headers = {"Authorization": f"Bearer {args.token}"} if args.token else {}
+    seen, backoff = set(), 1
+    while True:
+        conn = _conn(args.server, 60)  # el panel manda un "ping" cada 15 s
+        try:
+            conn.request("GET", f"/api/buddy/events?client={CLIENT}", headers=headers)
+            resp = conn.getresponse()
+            if resp.status == 401:
+                print("[avisos] el panel pide contraseña: usá --token", flush=True)
+                return
+            for line in resp:
+                backoff = 1
+                if not line.startswith(b"data: "):
+                    continue
+                ev = json.loads(line[6:])
+                if ev.get("type") != "say" or ev["id"] in seen:
+                    continue
+                seen.add(ev["id"])
+                print(f"\n{ICONS.get(ev['kind'], '💬')} Dani: {ev['text']}", flush=True)
+                if ev.get("speak"):
+                    for w in ev.get("audio") or []:
+                        player.play(base64.b64decode(w))
+        except (OSError, ValueError):
+            pass
+        finally:
+            conn.close()
+        time.sleep(backoff)
+        backoff = min(30, backoff * 2)
+
+
 # ---------- tecla ----------
 def parse_key(name):
     from pynput import keyboard
@@ -244,6 +287,7 @@ def run_hotkey(args, session):
             return
         session.send(to_wav(pcm, rec.rate))
 
+    threading.Thread(target=listen, args=(args, session.player), daemon=True).start()
     print(f"Dani escucha mientras mantengas apretada la tecla «{args.key}». Ctrl+C para salir.", flush=True)
     with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
         listener.join()
@@ -260,6 +304,8 @@ def main():
     ap.add_argument("--list-devices", action="store_true")
     ap.add_argument("--file", help="mandar este WAV en vez de grabar (prueba)")
     ap.add_argument("--save", help="guardar las respuestas en esta carpeta en vez de reproducirlas (prueba)")
+    ap.add_argument("--listen-only", action="store_true",
+                    help="solo escuchar los avisos de Dani (timers, alertas), sin tecla ni micrófono")
     ap.add_argument("-v", "--verbose", action="store_true", help="mostrar tiempos")
     args = ap.parse_args()
 
@@ -278,6 +324,10 @@ def main():
         time.sleep(0.3)
         return
     try:
+        if args.listen_only:
+            print("Escuchando los avisos de Dani. Ctrl+C para salir.", flush=True)
+            listen(args, session.player)
+            return
         run_hotkey(args, session)
     except KeyboardInterrupt:
         pass

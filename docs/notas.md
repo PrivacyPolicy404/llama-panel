@@ -261,6 +261,16 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
 - **Trampa (pruebas):** probar a Dani con frases inventadas («me gusta el mate amargo») deja datos falsos en
   `memoria.md`, que después aparecen en las charlas reales. Vaciar la memoria al terminar de probar. La personalidad
   de fábrica pide usar `recordar` solo para datos duraderos: antes anotaba hasta «le pidió un chiste».
+- **Dani por su cuenta** (`proactive.py`): los clientes (web y `dani.py`) se suscriben a `GET /api/buddy/events`
+  (SSE, ping cada 15 s) y el audio va solo al que se usó último (`client` en cada charla). Timers en
+  `buddy/avisos.json` (sobreviven a reinicios; la frase la escribe Dani al crearlo, al sonar no hace falta el modelo).
+  Avisos con histéresis y una hora mínima entre repeticiones: GPU ≥85 °C (se rearma <78), CPU ≥90, RAM libre ≤3 GB,
+  disco ≤5 %, servicio que pasa a `failed` (texto, imágenes, Home Assistant). Resumen a la hora de `morning`
+  (por defecto 09:00, durante 6 h, una vez por día en `buddy/estado.json`): lo escribe el modelo solo si ya hay uno
+  cargado y Dani está libre (`buddy.monologue`), si no uno armado con los datos. Lo dicho por su cuenta entra al
+  historial (si está contestando, después: en medio de una llamada a herramienta rompería la charla).
+  Desde Home Assistant: `rest_command` con `POST http://127.0.0.1:8090/api/buddy/say` y `{"text": "..."}`
+  (local no pide contraseña).
 - **Contraseña del panel** (`auth.py`, opcional; `~/.config/llama-panel/auth.json` 600, solo hashes): sin ella todo
   abierto como antes. Con ella, 127.0.0.1/::1 pasan sin pedir (kiosco, herramientas locales, túnel SSH), el
   navegador usa una cookie de sesión de 30 días y los programas un token. Probado de punta a punta en un servidor

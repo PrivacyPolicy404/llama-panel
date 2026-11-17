@@ -107,6 +107,43 @@ def olvidar(texto):
     return f"Olvidado ({len(lines) - len(keep)} dato/s)."
 
 
+# ---------- avisos (proactive.py) ----------
+@tool("avisar", "Programa un aviso: a la hora indicada vas a decir `aviso` en voz alta, aunque el usuario no te "
+      "hable. Para timers (\"avisame en 20 minutos\") usá minutos; para una hora del día, hora. Escribí `aviso` como "
+      "lo vas a decir en ese momento, con tu estilo.", "memoria",
+      {"aviso": {"type": "string", "description": "Lo que vas a decir cuando llegue el momento."},
+       "minutos": {"type": "number", "description": "Dentro de cuántos minutos."},
+       "hora": {"type": "string", "description": "A qué hora del día, HH:MM (24 h). Si ya pasó, mañana."}},
+      ["aviso"])
+def avisar(aviso, minutos=None, hora=None):
+    from . import proactive
+    try:
+        item = proactive.add_timer(aviso, minutos, hora if minutos is None else None)
+    except ValueError as e:
+        return f"No se pudo: {e}."
+    at = datetime.fromtimestamp(item["at"])
+    mins = round((item["at"] - time.time()) / 60)
+    return f"Listo: aviso {item['id']} a las {at:%H:%M} (en {mins} min)."
+
+
+@tool("ver_avisos", "Lista los avisos y timers pendientes, con su id.", "lectura")
+def ver_avisos():
+    from . import proactive
+    items = proactive.timers()
+    if not items:
+        return "No hay avisos pendientes."
+    return [{"id": x["id"], "cuando": f"{datetime.fromtimestamp(x['at']):%d/%m %H:%M}", "aviso": x["text"]}
+            for x in items]
+
+
+@tool("cancelar_aviso", "Cancela avisos pendientes por id o por una parte del texto.", "memoria",
+      {"aviso": {"type": "string", "description": "id del aviso o parte de su texto"}}, ["aviso"])
+def cancelar_aviso(aviso):
+    from . import proactive
+    n = proactive.cancel_timer(aviso)
+    return f"Cancelado ({n})." if n else "No encontré ese aviso."
+
+
 # ---------- Home Assistant ----------
 # Solo estos tipos de dispositivo se pueden controlar: nada de script/automation/shell_command (hacen cualquier cosa)
 HA_CONTROL = ("light", "switch", "fan", "scene", "media_player")

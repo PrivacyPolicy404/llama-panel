@@ -360,3 +360,20 @@ def auth_token(body):
 def auth_revoke(body):
     from . import auth
     return ok(_("Token revocado.")) if auth.revoke_token(str(body.get("name", ""))) else fail(_("No existe ese token."))
+
+
+# ---------- Dani por su cuenta ----------
+def buddy_say(body):
+    """Hace hablar a Dani (pruebas, o una automatización de Home Assistant con un rest_command)."""
+    from . import proactive
+    text = str(body.get("text", "")).strip()[:1000]
+    if not text:
+        return fail(_("Mensaje vacío."))
+    n = proactive.say(text, str(body.get("kind") or "aviso")[:20])
+    return ok(_("Dicho a {n} cliente(s).", n=n) if n else _("No hay nadie conectado: queda esperando."))
+
+
+def buddy_timer_cancel(body):
+    from . import proactive
+    n = proactive.cancel_timer(str(body.get("id", "")))
+    return ok(_("Aviso cancelado.")) if n else fail(_("No existe ese aviso."))

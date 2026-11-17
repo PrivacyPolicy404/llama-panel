@@ -58,7 +58,10 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces,
   enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones). Se le habla desde cualquier
   pestaña (barra espaciadora, botón flotante) y, con `clients/dani.py` en tu PC, desde cualquier programa manteniendo
-  apretada una tecla (el panel lo sirve en `/clients/dani.py`).
+  apretada una tecla (el panel lo sirve en `/clients/dani.py`). También habla por su cuenta: timers y recordatorios
+  que le pedís, avisos del homelab (GPU o CPU muy calientes, un servicio caído, poca RAM o disco) y un resumen a la
+  mañana. El audio sale solo por el cliente que se usó último y, si no hay nadie conectado, los mensajes esperan.
+  `POST /api/buddy/say` lo hace decir algo (por ejemplo, desde una automatización de Home Assistant).
 
 ## Estructura
 
@@ -85,6 +88,7 @@ llama_panel/
   voice.py            whisper.cpp (voz a texto) y Piper (texto a voz); tts_worker.py corre en el venv de Piper
   audio_models.py     modelos de Whisper y voces de Piper en disco, y cuáles se usan
   audio_api.py        /v1/audio/speech y /v1/audio/transcriptions compatibles con OpenAI
+  proactive.py        lo que el compañero dice por su cuenta: timers, avisos del homelab, resumen, eventos a los clientes
   auth.py             contraseña opcional del panel: sesiones del navegador, tokens para programas, local sin pedir
 static/
   index.html, app.css

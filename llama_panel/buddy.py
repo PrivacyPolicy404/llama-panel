@@ -10,6 +10,7 @@ charla queda en memoria (se pierde al reiniciar el panel; lo que importa va a me
 import http.client
 import json
 import queue
+import re
 import threading
 import time
 
@@ -32,9 +33,12 @@ DEFAULT_PERSONA = (
     "en el momento ni para la charla."
 )
 # Se guardan las herramientas apagadas (no las prendidas): una herramienta nueva queda disponible sin tocar nada
-DEFAULT_CONFIG = {"name": "Dani", "persona": DEFAULT_PERSONA, "model": "", "speak": True, "tools_off": []}
+DEFAULT_CONFIG = {"name": "Dani", "persona": DEFAULT_PERSONA, "model": "", "speak": True, "tools_off": [],
+                  "alerts": True, "morning": "09:00"}  # avisos del homelab y hora del resumen (proactive.py)
+MORNING_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 
 _history = []
+_spontaneous = []  # lo que Dani dijo por su cuenta mientras contestaba otra cosa: entra al historial después
 _session = {"memory": None}  # memoria leída al empezar la charla (ver system_prompt)
 _busy = threading.Lock()
 
@@ -61,8 +65,12 @@ def save_config(body):
     tools = body.get("tools", cfg["tools"])
     if not isinstance(tools, list) or any(t not in BT.TOOLS for t in tools):
         return False, _("Herramienta desconocida.")
+    morning = str(body.get("morning", cfg["morning"]) or "").strip()
+    if morning and not MORNING_RE.match(morning):
+        return False, _("La hora del resumen va como HH:MM (vacía = nunca).")
     cfg.update(name=name, persona=persona, model=str(body.get("model", cfg["model"])).strip(),
-               speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)))
+               speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)),
+               alerts=bool(body.get("alerts", cfg["alerts"])), morning=morning)
     cfg.pop("tools")
     if cfg["persona"] == DEFAULT_PERSONA:
         cfg["persona"] = ""  # sin editar: no congelar una copia de la personalidad de fábrica
@@ -95,7 +103,8 @@ def trim_history(history, max_turns=MAX_TURNS):
 
 def state():
     cfg = load_config()
-    shown = [{"role": m["role"], "content": m.get("content") or "",
+    from . import proactive
+    shown = [{"role": m["role"], "content": m.get("content") or "", "spont": bool(m.get("spont")),
               "tools": [c["function"]["name"] for c in m.get("tool_calls") or []]}
              for m in _history if m["role"] in ("user", "assistant") and (m.get("content") or m.get("tool_calls"))]
     return {"config": cfg, "default_persona": DEFAULT_PERSONA, "memory": BT.read_memory(), "history": shown,
@@ -103,6 +112,7 @@ def state():
                        "available": BT.available(n)} for n, t in BT.TOOLS.items()],
             "voice": {"stt": voice.stt_available(), "tts": voice.Speaker.available()},
             "ha": _ha_state(),
+            "timers": proactive.timers(), "clients": proactive.HUB.clients(),
             "busy": _busy.locked()}
 
 
@@ -122,6 +132,70 @@ def save_ha_token(value):
     good, msg = HA.check()
     return (True, _("Home Assistant conectado: {msg}", msg=msg)) if good \
         else (False, _("Token guardado, pero Home Assistant no responde: {msg}", msg=msg))
+
+
+def add_spontaneous(text):
+    """Algo que Dani dijo por su cuenta (un timer, un aviso): queda en el historial para poder seguir la charla
+    ("¿por qué?"). Si está contestando, espera: meterlo entre una llamada a herramienta y su resultado la rompería."""
+    msg = {"role": "assistant", "content": text, "spont": True}
+    if _busy.acquire(blocking=False):
+        try:
+            _history.append(msg)
+        finally:
+            _busy.release()
+    else:
+        _spontaneous.append(msg)
+
+
+def _for_model(history):
+    """El historial tal como lo recibe el modelo (sin las marcas propias del panel)."""
+    keys = ("role", "content", "tool_calls", "tool_call_id")
+    return [{k: m[k] for k in keys if k in m} for m in history]
+
+
+def monologue(instruction, max_steps=3):
+    """Dani escribe algo por su cuenta (el resumen de la mañana) con las herramientas de solo lectura. Solo si ya hay
+    un modelo cargado y no está contestando: nunca prende el servidor ni apaga las imágenes por esto. Devuelve el
+    texto o None (no lo agrega al historial: eso lo hace proactive.say)."""
+    from . import services
+    if services.svc_state() != "active":
+        return None
+    loaded = [k for k, v in services.router_models().items() if v["status"] == "loaded"]
+    if not loaded or not _busy.acquire(blocking=False):
+        return None
+    try:
+        cfg = load_config()
+        model = cfg["model"] if cfg["model"] in loaded else loaded[0]
+        tools = [n for n in cfg["tools"] if BT.TOOLS[n]["level"] == "lectura"]
+        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"] or BT.read_memory())}]
+        messages += _for_model(_history)
+        messages.append({"role": "user", "content": f"[Mensaje automático del panel, no lo escribió el usuario.] "
+                                                    f"{instruction}"})
+        text = ""
+        for _step in range(max_steps):
+            req = {"model": model, "messages": messages, "stream": True, "max_tokens": MAX_TOKENS,
+                   "chat_template_kwargs": {"enable_thinking": False}, "tools": BT.schemas(tools)}
+            text, calls = "", None
+            for kind, data in stream_completion(C.backend_port("text"), req, threading.Event()):
+                if kind == "text":
+                    text += data
+                else:
+                    calls = data
+            if not calls:
+                break
+            messages.append({"role": "assistant", "content": text or None, "tool_calls": [
+                {"id": c["id"] or f"m{i}", "type": "function", "function": {"name": c["name"],
+                                                                         "arguments": c["arguments"] or "{}"}}
+                for i, c in enumerate(calls)]})
+            for i, c in enumerate(calls):
+                result, _ok = BT.run(c["name"], c["arguments"], tools)
+                messages.append({"role": "tool", "tool_call_id": c["id"] or f"m{i}", "content": result})
+        return text.strip() or None
+    except Exception as e:  # noqa: BLE001
+        print(f"monólogo: {e}", flush=True)
+        return None
+    finally:
+        _busy.release()
 
 
 def reset():
@@ -196,6 +270,8 @@ def chat(body):
     if not _busy.acquire(blocking=False):
         yield {"type": "error", "msg": _("El compañero está contestando otra cosa; esperá un momento.")}
         return
+    from . import proactive
+    proactive.HUB.touch(str(body.get("client") or "")[:64])  # este cliente es el que habla los avisos
     events = queue.Queue()
     cancel = threading.Event()
     worker = threading.Thread(target=_run, args=(body, events, cancel), daemon=True)
@@ -252,12 +328,14 @@ def _converse(cfg, text, events, cancel, sentences):
     port, model = _endpoint_and_model(cfg)
     if _session["memory"] is None or not _history:
         _session["memory"] = BT.read_memory()
+    while _spontaneous:
+        _history.append(_spontaneous.pop(0))
     _history.append({"role": "user", "content": text})
     trim_history(_history)
     t0 = time.time()
     first = None
     for _step in range(MAX_STEPS):
-        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + list(_history)
+        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + _for_model(_history)
         req = {"model": model, "messages": messages, "stream": True, "max_tokens": MAX_TOKENS,
                "chat_template_kwargs": {"enable_thinking": False}}
         if cfg["tools"]:

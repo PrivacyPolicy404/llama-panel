@@ -59,6 +59,9 @@ They are written in Spanish; each one starts with an English summary of the main
   example an SSH tunnel). With a Home Assistant token it can also list and switch lights, plugs, fans, scenes and
   media players (never scripts or automations). You can talk to it from any tab (space bar, floating button) and, with
   `clients/dani.py` on your PC, from any program by holding a key (the panel serves it at `/clients/dani.py`).
+  It also speaks on its own: timers and reminders it sets for you, warnings about the homelab (GPU or CPU too hot, a
+  service down, low RAM or disk) and a morning summary. Only the client used last plays the audio, and messages wait
+  if nobody is connected. `POST /api/buddy/say` makes it say something (for example from a Home Assistant automation).
 
 ## Layout
 
@@ -85,6 +88,7 @@ llama_panel/
   voice.py            whisper.cpp (speech to text) and Piper (text to speech); tts_worker.py runs in Piper's venv
   audio_models.py     Whisper models and Piper voices on disk, and which ones are in use
   audio_api.py        OpenAI-compatible /v1/audio/speech and /v1/audio/transcriptions
+  proactive.py        what the buddy says on its own: timers, homelab warnings, morning summary, events to clients
   auth.py             optional panel password: browser sessions, tokens for programs, local requests allowed
 static/
   index.html, app.css

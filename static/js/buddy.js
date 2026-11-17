@@ -13,6 +13,18 @@ let abort = null;        // charla en curso (para cortarla)
 const audioQueue = [];
 let playing = null;
 
+// Id de esta pestana del navegador: el panel le habla los avisos al cliente que se uso ultimo (llama_panel/proactive.py)
+const CLIENT = (() => {
+  const make = () => 'web-' + Math.random().toString(36).slice(2, 10);
+  try {
+    let id = sessionStorage.getItem('dani-client');
+    if (!id) { id = make(); sessionStorage.setItem('dani-client', id); }
+    return id;
+  } catch { return make(); }
+})();
+const KIND_ICON = { timer: '⏰', alerta: '⚠️', resumen: '☀️', aviso: '💬' };
+const seen = new Set();
+
 const LEVELS = { lectura: 'solo mira', memoria: 'escribe su memoria', accion: 'cambia cosas', peligrosa: 'peligrosa' };
 
 export async function loadBuddy() {
@@ -26,12 +38,54 @@ export async function initBuddy() {
   await loadBuddy();
   if (!B) return;
   drawFab();
+  listen();
   addEventListener('keydown', e => {
     // barra espaciadora para hablar en todo el panel, salvo escribiendo en un campo
     if (e.code !== 'Space' || e.repeat || e.target.matches('input, textarea, select, [contenteditable]')) return;
     e.preventDefault(); startRec();
   });
   addEventListener('keyup', e => { if (e.code === 'Space' && rec) { e.preventDefault(); stopRec(); } });
+}
+
+// Lo que Dani dice por su cuenta (timers, avisos, el resumen de la manana) llega por server-sent events
+function listen() {
+  const es = new EventSource('/api/buddy/events?client=' + encodeURIComponent(CLIENT));
+  es.onmessage = e => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    if (ev.type !== 'say' || seen.has(ev.id)) return;
+    seen.add(ev.id);
+    const icon = KIND_ICON[ev.kind] || '💬';
+    if (!abort) {  // en medio de una respuesta no se mete en el log: queda en el historial
+      $('.buddy-empty')?.remove();
+      $('#buddy-log')?.insertAdjacentHTML('beforeend', bubble('assistant', ev.text, [], icon));
+      scroll();
+    }
+    fab('speaking', `${icon} ${ev.text}`);
+    if (ev.speak && ev.audio?.length) {
+      for (const w of ev.audio) audioQueue.push(wavUrl(w));
+      playNext();
+    } else if (!playing) fab('idle', `${icon} ${ev.text}`);
+    loadBuddyTimers();
+  };
+}
+
+async function loadBuddyTimers() {
+  try { B = await getJSON('/api/buddy'); } catch { return; }
+  renderTimers();
+}
+
+function renderTimers() {
+  const box = $('#buddy-timers');
+  if (!box) return;
+  const hm = s => new Date(s * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  box.innerHTML = B.timers.map(x => `
+    <div class="path-row"><span>⏰ <b>${esc(hm(x.at))}</b> ${esc(x.text)}</span>
+      <button class="btn ghost small" data-cancel="${esc(x.id)}">${t('Cancelar')}</button></div>`).join('') ||
+    `<p class="muted">${t('Ningún aviso pendiente. Pedile «avisame en 20 minutos…».')}</p>`;
+  for (const b of $$('#buddy-timers [data-cancel]')) {
+    b.onclick = async () => { report(await post('/api/buddy/timer/cancel', { id: b.dataset.cancel })); loadBuddyTimers(); };
+  }
 }
 
 export function buddyTab(tab) {
@@ -102,7 +156,13 @@ function draw() {
           <button class="btn ghost small" id="buddy-cfg-default">${t('Volver a la personalidad de fábrica')}</button>
         </label>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
+        <div class="field"><span>${t('Por su cuenta')}</span>
+          <label class="check"><input type="checkbox" id="buddy-cfg-alerts"> ${t('Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco')}</label>
+          <label class="check">${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
+          <p class="hint">${t('El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.')}</p>
+        </div>
         <button class="btn" id="buddy-cfg-save">${t('Guardar')}</button>
+        <div class="field"><span>${t('Avisos pendientes')}</span><div id="buddy-timers" class="buddy-tools"></div></div>
         <label class="field"><span>Home Assistant <span class="muted" id="buddy-ha-state"></span></span>
           <input type="password" id="buddy-ha-token" autocomplete="off" placeholder="${esc(t('token de acceso de larga duración'))}">
           <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
@@ -145,21 +205,25 @@ function fillSettings() {
     <label class="check" title="${esc(tl.description)}"><input type="checkbox" value="${esc(tl.name)}" ${c.tools.includes(tl.name) ? 'checked' : ''}>
       <span class="mono">${esc(tl.name)}</span> <span class="muted">${esc(t(LEVELS[tl.level] || tl.level))}${tl.available ? '' : ' · ' + esc(t('no disponible'))}</span></label>`).join('');
   $('#buddy-mem').value = B.memory;
+  $('#buddy-cfg-alerts').checked = c.alerts;
+  $('#buddy-cfg-morning').value = c.morning || '';
+  renderTimers();
   const ha = B.ha;
   $('#buddy-ha-state').textContent = !ha.configured ? `· ${t('sin conectar')} (${ha.url})` : ha.ok ? `· ✓ ${t('conectado')}` : `· ✗ ${ha.msg}`;
 }
 
 function renderHistory() {
   if (abort) return;  // no pisar la respuesta que se esta escribiendo
-  $('#buddy-log').innerHTML = B.history.map(m => bubble(m.role, m.content, m.tools)).join('') ||
+  $('#buddy-log').innerHTML = B.history.map(m => bubble(m.role, m.content, m.tools, m.spont ? '💬' : '')).join('') ||
     `<p class="muted buddy-empty">${esc(t('Decile hola a {name}.', { name: B.config.name }))}</p>`;
   scroll();
 }
 
-function bubble(role, text, tools = []) {
+function bubble(role, text, tools = [], icon = '') {
   const chips = tools.map(n => `<span class="buddy-tool">🔧 ${esc(n)}</span>`).join('');
   if (!text && !chips) return '';
-  return `<div class="buddy-msg ${role}">${chips}${text ? `<div class="buddy-text">${esc(text)}</div>` : ''}</div>`;
+  const tag = icon ? `<span class="buddy-tool" title="${esc(t('Lo dijo por su cuenta'))}">${icon}</span>` : '';
+  return `<div class="buddy-msg ${role}${icon ? ' spont' : ''}">${tag}${chips}${text ? `<div class="buddy-text">${esc(text)}</div>` : ''}</div>`;
 }
 
 const scroll = () => { const l = $('#buddy-log'); l.scrollTop = l.scrollHeight; };
@@ -174,6 +238,7 @@ function bind() {
     const body = {
       name: $('#buddy-cfg-name').value, persona: $('#buddy-cfg-persona').value, model: $('#buddy-cfg-model').value,
       speak: $('#buddy-speak').checked, tools: $$('#buddy-cfg-tools input:checked').map(i => i.value),
+      alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value,
     };
     report(await withBusy(e.currentTarget, () => post('/api/buddy/config', body)));
     B = await getJSON('/api/buddy'); fillSettings();
@@ -268,7 +333,7 @@ async function send(body) {
     const r = await fetch('/api/buddy/chat', {
       method: 'POST', signal: abort.signal,
       headers: { 'Content-Type': 'application/json', 'X-Lang': lang() },
-      body: JSON.stringify({ ...body, speak: $('#buddy-speak').checked }),
+      body: JSON.stringify({ ...body, speak: $('#buddy-speak').checked, client: CLIENT }),
     });
     const reader = r.body.getReader(), dec = new TextDecoder();
     let buf = '';

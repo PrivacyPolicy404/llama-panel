@@ -327,6 +327,15 @@ export const EN = {
   'cambia cosas': 'changes things',
   'peligrosa': 'dangerous',
   'Vos': 'You',
+  'Cancelar': 'Cancel',
+  'Ningún aviso pendiente. Pedile «avisame en 20 minutos…».': 'No pending reminders. Ask "remind me in 20 minutes…".',
+  'Lo dijo por su cuenta': 'Said on its own',
+  'Por su cuenta': 'On its own',
+  'Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco': 'Warn if the GPU or CPU run hot, a service fails, or RAM or disk run low',
+  'Resumen de la mañana a las': 'Morning summary at',
+  'El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.':
+    'The model writes the summary if one is already loaded; otherwise a short one from the data. Empty = no summary.',
+  'Avisos pendientes': 'Pending reminders',
   'Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.':
     'If the panel has a password, add <code>--token</code> with one created in Setup, Access.',
   'Desde tu PC, con una tecla': 'From your PC, with a key',

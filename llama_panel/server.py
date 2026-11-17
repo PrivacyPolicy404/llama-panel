@@ -9,8 +9,9 @@ from . import auth
 from . import config as C
 from . import gate
 from . import hardware
+from . import proactive
 from . import prompt_cache
-from .api import GET_ROUTES, POST_ROUTES, POST_STREAM_ROUTES
+from .api import GET_ROUTES, GET_STREAM_ROUTES, POST_ROUTES, POST_STREAM_ROUTES
 from .audio_api import RAW_POST_ROUTES
 from .i18n import _, remember_ui_lang, set_lang
 from .install import sync_units
@@ -104,6 +105,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("index.html")
         if u.path.startswith("/static/"):
             return self._static(u.path[len("/static/"):])
+        if u.path in GET_STREAM_ROUTES:
+            return self._stream(GET_STREAM_ROUTES[u.path](urllib.parse.parse_qs(u.query)))
         if u.path == "/clients/dani.py":  # el programa para hablarle a Dani desde la PC (clients/dani.py)
             return self._send(200, (C.APP_DIR / "clients" / "dani.py").read_bytes(), "text/x-python")
         route = GET_ROUTES.get(u.path)
@@ -191,4 +194,5 @@ def serve():
     hardware.start_sampler()
     prompt_cache.start_watcher()
     gate.start_background()
+    proactive.start()
     ThreadingHTTPServer(("0.0.0.0", C.PANEL_PORT), Handler).serve_forever()

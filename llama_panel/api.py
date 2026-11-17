@@ -5,6 +5,7 @@ from . import actions
 from . import audio_models as AM
 from . import auth
 from . import buddy
+from . import proactive
 from . import config as C
 from . import gate
 from . import hardware
@@ -124,12 +125,18 @@ POST_ROUTES = {
     "/api/buddy/reset": lambda b: _result(buddy.reset()),
     "/api/buddy/ha": lambda b: _result(buddy.save_ha_token(b.get("token", ""))),
     "/api/audio/use": actions.audio_use,
+    "/api/buddy/say": actions.buddy_say,
+    "/api/buddy/timer/cancel": actions.buddy_timer_cancel,
     "/api/auth/token": actions.auth_token,
     "/api/auth/revoke": actions.auth_revoke,
     "/api/audio/preview": actions.audio_preview,
 }
 
 # Rutas que contestan de a partes (server-sent events)
+GET_STREAM_ROUTES = {
+    "/api/buddy/events": proactive.events,  # lo que Dani dice por su cuenta
+}
+
 POST_STREAM_ROUTES = {
     "/api/buddy/chat": buddy.chat,
 }
