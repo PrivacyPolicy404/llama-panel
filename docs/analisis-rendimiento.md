@@ -1144,6 +1144,30 @@ desde `paths.env`: al reiniciar, el panel reescribió solo el unit del router. M
   (falta el parche 1). Esperado; quedó anotado en `docs/flash-next-rx580.md`.
 - Resultados: `~/llama-panel-results/2026-11-17-compat-{oficial,fork}.json`.
 
+### 5.34 Varios prompts iniciales: cambiar entre Cline y voz sin el minuto de prompt (2026-11-17)
+
+**Pregunta:** con un solo slot (`parallel = 1`), ¿cuánto cuesta alternar entre dos clientes con prompts fijos largos
+distintos (por ejemplo Cline y un asistente de voz)? Dos prompts de sistema de ~7.8K tokens (A y B), Flash-Next
+`-hcq8`, modo IA, temp por defecto, `max_tokens` 8. Crudos en `~/llama-panel-results/2026-11-17-perfiles-*.json`.
+
+| Situación | Prompt (tokens nuevos) | Tiempo |
+|---|---|---|
+| A en frío | 7787 | **61.1 s** |
+| B en frío, después A otra vez **sin hacer nada** | 19 (7769 de caché) | **1.06 s** |
+| Guardar el slot a archivo | | 0.24 s (0.61 GB) |
+| Restaurar desde archivo en el caché de páginas / NVMe frío | | 0.20 / 0.33 s |
+| Pedido después de restaurar | 19 | 1.06–1.07 s |
+
+- **El caché de prompts en RAM de llama-server ya alterna solo** (`--cache-ram`, 8 GiB por defecto; con
+  `--cache-idle-slots`, al llegar otro pedido guarda el slot en RAM). Lo que no hace: sobrevivir a una recarga del
+  modelo (el proceso del modelo se va y el caché con él), y una conversación larga (entradas de hasta 4.3 GiB en el
+  log, por los checkpoints de DeltaNet y el estado del borrador) puede desalojar a los demás.
+- **Precargar ese caché desde disco funciona:** después de recargar el modelo, por cada prompt guardado se restaura el
+  archivo (0.32–0.36 s) y se manda un pedido mínimo (~1.2 s), que hace que el servidor guarde el slot restaurado en
+  RAM. Luego A, B, A responden en 1.08 / 1.12 / 1.14 s. Los clientes no cambian nada (mismo servidor, mismo modelo).
+- El estado pesa ~0.6 GB por prompt de ~7.8K, casi fijo (no ~0.1 GB como saldría de escalar solo la caché KV):
+  entran ~10 prompts en los 8 GiB por defecto.
+
 ---
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
