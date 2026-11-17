@@ -48,6 +48,15 @@ export function translateDom(root) {
 }
 
 export const EN = {
+  'Desactivado': 'Disabled',
+  'Espacio (sólo en Compañero)': 'Space (Buddy tab only)',
+  'Ctrl + Shift + Espacio (todo el panel)': 'Ctrl + Shift + Space (whole panel)',
+  'F9 (todo el panel)': 'F9 (whole panel)',
+  'Mantené apretado para hablar': 'Hold to talk',
+  'Mantené apretado para hablar · Atajo: {key}': 'Hold to talk · Shortcut: {key}',
+  'Atajo para hablar en este navegador': 'Push-to-talk shortcut in this browser',
+  'Desactivado por defecto. Los atajos nunca se capturan mientras usás un campo, botón o enlace. Para hablar desde cualquier programa usá dani.py.':
+    'Disabled by default. Shortcuts are never captured while using a field, button or link. To talk from any program, use dani.py.',
   // index.html
   'Panel IA': 'AI Panel',
   'Sin conexión con el panel': 'No connection to the panel',

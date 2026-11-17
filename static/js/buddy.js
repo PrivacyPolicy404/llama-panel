@@ -1,7 +1,7 @@
 // Pestana Compañero: charla con el agente (llama_panel/buddy.py) por texto o voz.
-// Voz: se graba mientras se mantiene apretado el boton (o la barra espaciadora) y el panel lo pasa a texto con
+// Voz: se graba mientras se mantiene apretado el boton (o el atajo elegido) y el panel lo pasa a texto con
 // Whisper; la respuesta llega en eventos y cada oracion trae su audio de Piper, que se reproduce en orden.
-// Funciona desde cualquier pestana: la barra espaciadora vale en todo el panel y hay un boton flotante con el estado.
+// El atajo es local a este navegador; para cualquier programa se usa clients/dani.py.
 import { $, $$, esc, getJSON, post, report, toast, withBusy } from './util.js';
 import { S } from './state.js';
 import { lang, t } from './i18n.js';
@@ -12,6 +12,14 @@ let rec = null;          // grabacion en curso
 let abort = null;        // charla en curso (para cortarla)
 const audioQueue = [];
 let playing = null;
+let hotkeyDown = false;
+const HOTKEY_KEY = 'buddy-push-to-talk';
+const HOTKEYS = {
+  off: { label: 'Desactivado' },
+  buddy_space: { code: 'Space', scope: 'buddy', label: 'Espacio (sólo en Compañero)' },
+  all_ctrl_shift_space: { code: 'Space', ctrl: true, shift: true, scope: 'all', label: 'Ctrl + Shift + Espacio (todo el panel)' },
+  all_f9: { code: 'F9', scope: 'all', label: 'F9 (todo el panel)' },
+};
 
 // Id de esta pestana del navegador: el panel le habla los avisos al cliente que se uso ultimo (llama_panel/proactive.py)
 const CLIENT = (() => {
@@ -40,11 +48,45 @@ export async function initBuddy() {
   drawFab();
   listen();
   addEventListener('keydown', e => {
-    // barra espaciadora para hablar en todo el panel, salvo escribiendo en un campo
-    if (e.code !== 'Space' || e.repeat || e.target.matches('input, textarea, select, [contenteditable]')) return;
-    e.preventDefault(); startRec();
+    if (e.repeat || !hotkeyMatches(e) || isInteractive(e.target)) return;
+    e.preventDefault();
+    hotkeyDown = true;
+    startRec(true);
   });
-  addEventListener('keyup', e => { if (e.code === 'Space' && rec) { e.preventDefault(); stopRec(); } });
+  addEventListener('keyup', e => {
+    const hotkey = HOTKEYS[hotkeyValue()];
+    if (!hotkeyDown || !hotkey?.code || e.code !== hotkey.code) return;
+    e.preventDefault();
+    hotkeyDown = false;
+    stopRec();
+  });
+}
+
+function hotkeyValue() {
+  try {
+    const value = localStorage.getItem(HOTKEY_KEY);
+    return HOTKEYS[value] ? value : 'off';
+  } catch { return 'off'; }
+}
+
+function hotkeyMatches(e) {
+  const h = HOTKEYS[hotkeyValue()];
+  return h?.code && (h.scope === 'all' || S.tab === 'buddy') && e.code === h.code &&
+    !!e.ctrlKey === !!h.ctrl && !!e.shiftKey === !!h.shift && !!e.altKey === !!h.alt && !!e.metaKey === !!h.meta;
+}
+
+function isInteractive(target) {
+  return target instanceof Element &&
+    !!target.closest('input, textarea, select, button, a, [contenteditable], [role="button"]');
+}
+
+function hotkeyLabel() {
+  return t(HOTKEYS[hotkeyValue()].label);
+}
+
+function micTitle() {
+  return hotkeyValue() === 'off' ? t('Mantené apretado para hablar') :
+    t('Mantené apretado para hablar · Atajo: {key}', { key: hotkeyLabel() });
 }
 
 // Lo que Dani dice por su cuenta (timers, avisos, el resumen de la manana) llega por server-sent events
@@ -100,7 +142,7 @@ function drawFab() {
   document.body.insertAdjacentHTML('beforeend', `
     <div class="buddy-fab" id="buddy-fab">
       <div class="buddy-fab-bubble" hidden><b></b><span></span></div>
-      <button class="buddy-fab-mic" title="${esc(t('Mantené apretado para hablar (o la barra espaciadora)'))}">🎤</button>
+      <button class="buddy-fab-mic" title="${esc(micTitle())}">🎤</button>
     </div>`);
   const mic = $('#buddy-fab .buddy-fab-mic');
   if (!window.isSecureContext) {
@@ -138,7 +180,7 @@ function draw() {
         <div class="buddy-log" id="buddy-log" aria-live="polite"></div>
         <div class="buddy-input">
           <button class="btn buddy-mic" id="buddy-mic" ${secure ? '' : 'disabled'}
-            title="${esc(t('Mantené apretado para hablar (o la barra espaciadora)'))}">🎤</button>
+            title="${esc(micTitle())}">🎤</button>
           <input type="text" id="buddy-text" placeholder="${esc(t('Escribile algo…'))}" autocomplete="off">
           <button class="btn" id="buddy-send">${t('Enviar')}</button>
           <button class="btn ghost" id="buddy-stop" hidden>${t('Callar')}</button>
@@ -156,6 +198,11 @@ function draw() {
           <button class="btn ghost small" id="buddy-cfg-default">${t('Volver a la personalidad de fábrica')}</button>
         </label>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
+        <label class="field"><span>${t('Atajo para hablar en este navegador')}</span>
+          <select id="buddy-hotkey">${Object.entries(HOTKEYS).map(([value, h]) =>
+            `<option value="${value}">${esc(t(h.label))}</option>`).join('')}</select>
+          <p class="hint">${t('Desactivado por defecto. Los atajos nunca se capturan mientras usás un campo, botón o enlace. Para hablar desde cualquier programa usá dani.py.')}</p>
+        </label>
         <label class="check"><input type="checkbox" id="buddy-share-location"> ${t('Compartir ubicación aproximada con el compañero')}</label>
         <div class="field"><span>${t('Por su cuenta')}</span>
           <label class="check"><input type="checkbox" id="buddy-cfg-alerts"> ${t('Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco')}</label>
@@ -209,6 +256,7 @@ function fillSettings() {
   $('#buddy-cfg-alerts').checked = c.alerts;
   $('#buddy-cfg-morning').value = c.morning || '';
   $('#buddy-share-location').checked = localStorage.getItem('buddy-share-location') === '1';
+  $('#buddy-hotkey').value = hotkeyValue();
   renderTimers();
   const ha = B.ha;
   $('#buddy-ha-state').textContent = !ha.configured ? `· ${t('sin conectar')} (${ha.url})` : ha.ok ? `· ✓ ${t('conectado')}` : `· ✗ ${ha.msg}`;
@@ -247,6 +295,12 @@ function bind() {
   };
   $('#buddy-speak').onchange = () => post('/api/buddy/config', { speak: $('#buddy-speak').checked });
   $('#buddy-share-location').onchange = e => localStorage.setItem('buddy-share-location', e.target.checked ? '1' : '0');
+  $('#buddy-hotkey').onchange = e => {
+    localStorage.setItem(HOTKEY_KEY, e.target.value);
+    const title = micTitle();
+    $('#buddy-mic').title = title;
+    $('#buddy-fab .buddy-fab-mic').title = title;
+  };
   $('#buddy-ha-save').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/ha', { token: $('#buddy-ha-token').value })));
     $('#buddy-ha-token').value = '';
@@ -260,12 +314,13 @@ function bind() {
 }
 
 // ---------- microfono ----------
-async function startRec() {
+async function startRec(fromHotkey = false) {
   if (rec || !window.isSecureContext) return;
   stopAudio(); abort?.abort();  // hablarle encima lo calla
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch { toast(t('No hay permiso para usar el micrófono.'), 'error'); return; }
+  if (fromHotkey && !hotkeyDown) { stream.getTracks().forEach(tr => tr.stop()); return; }
   const chunks = [];
   const mr = new MediaRecorder(stream);
   rec = { mr, stream, t0: Date.now() };

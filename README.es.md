@@ -52,12 +52,14 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 - Pestaña **Modelos de audio**: elegir el modelo de Whisper y la voz de Piper (cada voz se puede escuchar antes).
   Otros programas los usan con `http://<máquina>:8090/v1/audio/speech` y `/v1/audio/transcriptions` (formato OpenAI).
 - Pestaña **Compañero**: un agente con personalidad, memoria y herramientas que usa el modelo de texto cargado. Se le
-  puede hablar: mantenés apretado el micrófono (o la barra espaciadora), whisper.cpp pasa la voz a texto en el CPU y
+  puede hablar: mantenés apretado el micrófono (o activás un atajo por dispositivo), whisper.cpp pasa la voz a texto
+  en el CPU y
   Piper lee cada oración de la respuesta mientras se genera la siguiente. Sus herramientas declaran qué pueden hacer y
   cada llamada queda registrada. La voz se instala sin sudo con `scripts/install-voice.sh` (el micrófono necesita
   https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces,
   enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones). Se le habla desde cualquier
-  pestaña (barra espaciadora, botón flotante). Puede hacer una búsqueda web breve por turno para verificar datos
+  pestaña con el botón flotante o una combinación de teclas segura y opcional. Puede hacer una búsqueda web breve por
+  turno para verificar datos
   actuales. El idioma y la zona horaria vienen del navegador; compartir la ubicación aproximada es opcional, se
   habilita por dispositivo y no se guarda. Con `clients/dani.py` en tu PC, se le habla desde cualquier programa manteniendo
   apretada una tecla (el panel lo sirve en `/clients/dani.py`). También habla por su cuenta: timers y recordatorios
