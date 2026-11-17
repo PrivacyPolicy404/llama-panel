@@ -141,6 +141,32 @@ git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
 cd ~/llama-panel && python3 panel.py --install
 ```
 
+El Compañero todavía es experimental y no está en `main`. Para probar la prerelease desde un clon nuevo, usá su rama:
+
+```bash
+git clone --branch experimental/companion https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
+cd ~/llama-panel
+python3 panel.py --install
+sudo apt install curl ffmpeg cmake build-essential python3-venv  # Ubuntu/Debian
+scripts/install-voice.sh
+```
+
+`install-voice.sh` no necesita root. Compila [whisper.cpp v1.9.5](https://github.com/ggml-org/whisper.cpp/tree/v1.9.5)
+para usar el CPU, crea un entorno virtual aislado para Piper, descarga estos modelos de audio predeterminados y
+verifica sus hashes SHA-256 antes de instalarlos:
+
+| Uso | Modelo predeterminado | Origen | Descarga | Licencia | SHA-256 verificado |
+|---|---|---:|---:|---|---|
+| Voz a texto | Whisper `small-q8_0` | [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-small-q8_0.bin) | 264 MB | MIT | `49c8fb02…17f779f` |
+| Texto a voz | Piper `es_AR-daniela-high` (22,05 kHz) | [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_AR/daniela/high) | 114 MB | MIT | `7ceb1fc0…cc985` |
+
+La pestaña Modelos de audio detecta otros modelos Whisper GGML de la
+[colección oficial](https://huggingface.co/ggerganov/whisper.cpp) y voces del
+[catálogo oficial de Piper](https://huggingface.co/rhasspy/piper-voices). Una voz Piper necesita el archivo `.onnx`
+y su `.onnx.json` correspondiente. Los modelos adicionales van en `~/.local/share/llama-panel/voice/`, o en las
+carpetas indicadas por `LLAMA_AUDIO_DIRS` en `~/.config/llama-panel/paths.env`. El micrófono del navegador requiere
+HTTPS o `localhost` (sirve un túnel SSH).
+
 Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-img`) y arranca el panel en
 `http://<máquina>:8090`. Si no encuentra `llama-server` o modelos, abre la pestaña **Configuración**: ahí se eligen
 las carpetas de modelos (con sugerencias al escribir y cuántos modelos hay en cada una) y los programas
@@ -162,9 +188,10 @@ KOBOLD_BIN=~/koboldcpp/koboldcpp
 LLAMA_SERVER_BIN=~/llama.cpp/build/bin/llama-server
 ```
 
-Los scripts de `scripts/install-*.sh` son opcionales, se corren una vez con `sudo` y tienen `--uninstall`.
-Cada uno instala un ayudante en `/usr/local/sbin` y una regla en `/etc/sudoers.d` que deja correr **solo** ese
-ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse; leé el encabezado de cada script antes.
+Los scripts root `scripts/install-gpu-mclk.sh` y `scripts/install-modo-ia.sh` son opcionales, se corren una vez con
+`sudo` y tienen `--uninstall`. Cada uno instala un ayudante en `/usr/local/sbin` y una regla en `/etc/sudoers.d` que
+deja correr **solo** ese ayudante sin contraseña. `install-voice.sh` es distinto: instala todo dentro de la cuenta del
+usuario y no necesita `sudo`. El modo IA **cierra la sesión gráfica** al activarse; leé el encabezado de cada script.
 
 > [!WARNING]
 > **El modo IA está pensado para una máquina dedicada que se usa de forma remota** (un servidor casero con su
