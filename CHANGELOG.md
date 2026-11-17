@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Buddy conversations are now persisted, selectable and deletable, with one active conversation shared by the web UI
+  and `dani.py`; turns sent with the global PC shortcut appear live in the browser. Audio and ephemeral location are
+  never stored, and `contexto_usuario` is redacted from the tool audit log.
 - Replaced the invasive global Space push-to-talk binding with a per-device keyboard or side-mouse-button shortcut
   recorder and a choice of Buddy-only or whole-panel scope. Unsafe bare keys are rejected for the whole panel and
   interactive controls are never intercepted.

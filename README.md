@@ -63,7 +63,8 @@ They are written in Spanish; each one starts with an English summary of the main
   run one short web search per turn to verify current facts. Language and timezone come from the browser; approximate
   location is optional, enabled per device, and never saved. The browser shortcut works while a llama-panel tab has
   focus. To talk from any program, download `clients/dani.py` onto the PC with the keyboard and microphone and leave
-  it running there; the panel serves the client at `/clients/dani.py`.
+  it running there; the panel serves the client at `/clients/dani.py`. Conversations are saved as text, survive panel
+  restarts and have one shared active conversation: a turn sent through `dani.py` appears live in the browser.
   It also speaks on its own: timers and reminders it sets for you, warnings about the homelab (GPU or CPU too hot, a
   service down, low RAM or disk) and a morning summary. Only the client used last plays the audio, and messages wait
   if nobody is connected. `POST /api/buddy/say` makes it say something (for example from a Home Assistant automation).

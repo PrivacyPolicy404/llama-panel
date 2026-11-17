@@ -39,6 +39,15 @@ class HubTest(unittest.TestCase):
         self.assertTrue(q.empty())
         self.assertEqual(len(hub.pending), 0)
 
+    def test_broadcasts_state_events_without_audio(self):
+        hub = P.Hub()
+        _, web = hub.subscribe("web")
+        _, pc = hub.subscribe("pc")
+        event = {"type": "conversation", "conversation_id": "abc"}
+        self.assertEqual(hub.broadcast(event), 2)
+        self.assertEqual(web.get_nowait(), event)
+        self.assertEqual(pc.get_nowait(), event)
+
 
 class Timers(unittest.TestCase):
     def setUp(self):
