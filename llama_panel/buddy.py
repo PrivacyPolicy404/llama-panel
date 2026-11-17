@@ -4,8 +4,8 @@ Una charla: el usuario manda texto o audio (Whisper lo pasa a texto), el modelo 
 completa va a Piper mientras se genera la siguiente, y si el modelo pide herramientas (buddy_tools) se ejecutan y se
 le devuelve el resultado. La interfaz recibe eventos: lo que se escuchó, texto, herramientas, audio y el final.
 
-Todo vive en BUDDY_DIR: config.json (nombre, personalidad, modelo), memoria.md y herramientas.log. El historial de la
-charla queda en memoria (se pierde al reiniciar el panel; lo que importa va a memoria.md con la herramienta recordar).
+Todo vive en BUDDY_DIR: config.json, memoria.md, herramientas.log y conversations/ (transcripciones e historial).
+La conversación activa es compartida por la web y clients/dani.py y se restaura al reiniciar el panel.
 """
 import http.client
 import json
@@ -13,6 +13,7 @@ import queue
 import re
 import threading
 import time
+import uuid
 
 from . import buddy_tools as BT
 from . import config as C
@@ -41,6 +42,154 @@ _history = []
 _spontaneous = []  # lo que Dani dijo por su cuenta mientras contestaba otra cosa: entra al historial después
 _session = {"memory": None}  # memoria leída al empezar la charla (ver system_prompt)
 _busy = threading.Lock()
+_conversation_lock = threading.Lock()
+_conversation_state = {"root": None, "active": None, "items": []}
+
+
+# ---------- conversaciones persistentes ----------
+def _conversations_dir():
+    return C.BUDDY_DIR / "conversations"
+
+
+def _index_file():
+    return C.BUDDY_DIR / "conversations.json"
+
+
+def _new_item():
+    now = round(time.time(), 3)
+    return {"id": uuid.uuid4().hex[:12], "title": "Charla nueva", "created_at": now, "updated_at": now}
+
+
+def _valid_id(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[a-f0-9]{12}", value))
+
+
+def _ensure_conversation():
+    """Carga una vez por BUDDY_DIR (los tests lo cambian) la conversación activa, o crea la primera."""
+    root = str(C.BUDDY_DIR)
+    if _conversation_state["root"] == root and _conversation_state["active"]:
+        return
+    with _conversation_lock:
+        if _conversation_state["root"] == root and _conversation_state["active"]:
+            return
+        try:
+            data = json.loads(_index_file().read_text())
+        except (OSError, ValueError):
+            data = {}
+        items = [x for x in data.get("items", []) if isinstance(x, dict) and _valid_id(x.get("id"))]
+        active = data.get("active") if _valid_id(data.get("active")) else None
+        if not items:
+            items = [_new_item()]
+        if active not in {x["id"] for x in items}:
+            active = items[0]["id"]
+        _conversation_state.update(root=root, active=active, items=items)
+        _history.clear()
+        _history.extend(_read_conversation(active))
+        _write_index()
+
+
+def _read_conversation(cid):
+    try:
+        data = json.loads((_conversations_dir() / f"{cid}.json").read_text())
+        messages = data.get("messages", [])
+        return messages if isinstance(messages, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _atomic_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    tmp.replace(path)
+
+
+def _write_index():
+    _atomic_json(_index_file(), {"active": _conversation_state["active"],
+                                 "items": _conversation_state["items"]})
+
+
+def _safe_messages(messages):
+    """Copia persistible: nunca audio ni el resultado del contexto efímero del navegador."""
+    private_ids = set()
+    out = []
+    for msg in messages:
+        clean = {k: v for k, v in msg.items() if k in ("role", "content", "tool_calls", "tool_call_id", "spont", "source")}
+        calls = clean.get("tool_calls") or []
+        for call in calls:
+            if (call.get("function") or {}).get("name") == "contexto_usuario":
+                private_ids.add(call.get("id"))
+        if clean.get("role") == "tool" and clean.get("tool_call_id") in private_ids:
+            clean["content"] = "Contexto efímero no guardado."
+        elif clean.get("role") == "tool" and isinstance(clean.get("content"), str):
+            clean["content"] = clean["content"][:4000]
+        out.append(clean)
+    return out
+
+
+def _save_conversation():
+    _ensure_conversation()
+    cid = _conversation_state["active"]
+    now = round(time.time(), 3)
+    users = [m for m in _history if m.get("role") == "user" and m.get("content")]
+    for item in _conversation_state["items"]:
+        if item["id"] == cid:
+            item["updated_at"] = now
+            if users and item.get("title") == "Charla nueva":
+                item["title"] = " ".join(users[0]["content"].split())[:70]
+            break
+    _atomic_json(_conversations_dir() / f"{cid}.json", {"id": cid, "messages": _safe_messages(_history)})
+    _conversation_state["items"].sort(key=lambda x: x.get("updated_at", 0), reverse=True)
+    _write_index()
+
+
+def _broadcast_conversation():
+    from . import proactive
+    proactive.HUB.broadcast({"type": "conversation", "conversation_id": _conversation_state["active"]})
+
+
+def conversation_list():
+    _ensure_conversation()
+    return [{k: x.get(k) for k in ("id", "title", "created_at", "updated_at")}
+            for x in _conversation_state["items"]]
+
+
+def use_conversation(cid):
+    _ensure_conversation()
+    if _busy.locked():
+        return False, _("El compañero está ocupado.")
+    if cid not in {x["id"] for x in _conversation_state["items"]}:
+        return False, _("No existe esa conversación.")
+    _save_conversation()
+    _conversation_state["active"] = cid
+    _history.clear()
+    _history.extend(_read_conversation(cid))
+    _session["memory"] = None
+    _write_index()
+    _broadcast_conversation()
+    return True, _("Conversación abierta.")
+
+
+def delete_conversation(cid):
+    _ensure_conversation()
+    if _busy.locked():
+        return False, _("El compañero está ocupado.")
+    items = [x for x in _conversation_state["items"] if x["id"] != cid]
+    if len(items) == len(_conversation_state["items"]):
+        return False, _("No existe esa conversación.")
+    try:
+        (_conversations_dir() / f"{cid}.json").unlink()
+    except OSError:
+        pass
+    _conversation_state["items"] = items or [_new_item()]
+    if cid == _conversation_state["active"]:
+        _conversation_state["active"] = _conversation_state["items"][0]["id"]
+        _history.clear()
+        _history.extend(_read_conversation(_conversation_state["active"]))
+        _session["memory"] = None
+    _write_index()
+    _broadcast_conversation()
+    return True, _("Conversación eliminada.")
 
 
 # ---------- configuración ----------
@@ -102,12 +251,15 @@ def trim_history(history, max_turns=MAX_TURNS):
 
 
 def state():
+    _ensure_conversation()
     cfg = load_config()
     from . import proactive
     shown = [{"role": m["role"], "content": m.get("content") or "", "spont": bool(m.get("spont")),
+              "source": m.get("source") or "",
               "tools": [c["function"]["name"] for c in m.get("tool_calls") or []]}
              for m in _history if m["role"] in ("user", "assistant") and (m.get("content") or m.get("tool_calls"))]
     return {"config": cfg, "default_persona": DEFAULT_PERSONA, "memory": BT.read_memory(), "history": shown,
+            "conversations": conversation_list(), "active_conversation": _conversation_state["active"],
             "tools": [{"name": n, "level": t["level"], "description": t["schema"]["function"]["description"],
                        "available": BT.available(n)} for n, t in BT.TOOLS.items()],
             "voice": {"stt": voice.stt_available(), "tts": voice.Speaker.available()},
@@ -140,7 +292,10 @@ def add_spontaneous(text):
     msg = {"role": "assistant", "content": text, "spont": True}
     if _busy.acquire(blocking=False):
         try:
+            _ensure_conversation()
             _history.append(msg)
+            _save_conversation()
+            _broadcast_conversation()
         finally:
             _busy.release()
     else:
@@ -158,6 +313,7 @@ def monologue(instruction, max_steps=3):
     un modelo cargado y no está contestando: nunca prende el servidor ni apaga las imágenes por esto. Devuelve el
     texto o None (no lo agrega al historial: eso lo hace proactive.say)."""
     from . import services
+    _ensure_conversation()
     if services.svc_state() != "active":
         return None
     loaded = [k for k, v in services.router_models().items() if v["status"] == "loaded"]
@@ -168,7 +324,7 @@ def monologue(instruction, max_steps=3):
         model = cfg["model"] if cfg["model"] in loaded else loaded[0]
         tools = [n for n in cfg["tools"] if BT.TOOLS[n]["level"] == "lectura"]
         messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"] or BT.read_memory())}]
-        messages += _for_model(_history)
+        messages += _for_model(trim_history(list(_history)))
         messages.append({"role": "user", "content": f"[Mensaje automático del panel, no lo escribió el usuario.] "
                                                     f"{instruction}"})
         text = ""
@@ -199,8 +355,21 @@ def monologue(instruction, max_steps=3):
 
 
 def reset():
+    _ensure_conversation()
+    if _busy.locked():
+        return False, _("El compañero está ocupado.")
+    if not _history:
+        _session["memory"] = None
+        _broadcast_conversation()
+        return True, _("Charla nueva.")
+    _save_conversation()
+    item = _new_item()
+    _conversation_state["items"].insert(0, item)
+    _conversation_state["active"] = item["id"]
     _history.clear()
     _session["memory"] = None
+    _save_conversation()
+    _broadcast_conversation()
     return True, _("Charla nueva.")
 
 
@@ -291,6 +460,7 @@ def chat(body):
 
 
 def _run(body, events, cancel):
+    _ensure_conversation()
     cfg = load_config()
     BT.set_user_context(body.get("user_context"))
     speak = bool(body.get("speak", cfg["speak"])) and voice.Speaker.available()
@@ -313,10 +483,13 @@ def _run(body, events, cancel):
         if not text:
             events.put({"type": "error", "msg": _("Mensaje vacío.")})
             return
-        _converse(cfg, text, events, cancel, sentences if speak else None)
+        source = "pc" if str(body.get("client") or "").startswith("pc-") else "web"
+        _converse(cfg, text, events, cancel, sentences if speak else None, source)
     except Exception as e:  # noqa: BLE001
         events.put({"type": "error", "msg": str(e)})
     finally:
+        _save_conversation()
+        _broadcast_conversation()
         BT.clear_user_context()
         if tts:
             sentences.put(None)
@@ -326,18 +499,20 @@ def _run(body, events, cancel):
         _busy.release()
 
 
-def _converse(cfg, text, events, cancel, sentences):
+def _converse(cfg, text, events, cancel, sentences, source="web"):
     port, model = _endpoint_and_model(cfg)
     if _session["memory"] is None or not _history:
         _session["memory"] = BT.read_memory()
     while _spontaneous:
         _history.append(_spontaneous.pop(0))
-    _history.append({"role": "user", "content": text})
-    trim_history(_history)
+    _history.append({"role": "user", "content": text, "source": source})
+    _save_conversation()
+    _broadcast_conversation()
     t0 = time.time()
     first = None
     for _step in range(MAX_STEPS):
-        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + _for_model(_history)
+        model_history = trim_history(list(_history))
+        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + _for_model(model_history)
         req = {"model": model, "messages": messages, "stream": True, "max_tokens": MAX_TOKENS,
                "chat_template_kwargs": {"enable_thinking": False}}
         if cfg["tools"]:

@@ -1,6 +1,6 @@
 """Captura del panel con Firefox sin pantalla (WebDriver), para revisar cambios de la interfaz por SSH.
 
-Uso: python3 tools/ui_shot.py SALIDA.png [URL] [--lang es|en] [--js "codigo"] [--click SELECTOR ...]
+Uso: python3 tools/ui_shot.py SALIDA.png [URL] [--lang es|en] [--js "codigo"] [--wait SEG] [--click SELECTOR ...]
   - Espera a que la pagina dibuje los modelos (o 15 s), ejecuta los --click en orden y guarda la captura.
   - --js: imprime lo que devuelve (ej. "return document.querySelectorAll('.opt.bad').length").
 Usa el geckodriver del snap de Firefox; la captura se escribe primero en ~/snap/firefox/common (el snap no ve /tmp).
@@ -28,13 +28,15 @@ def main():
     args = sys.argv[1:]
     out = args.pop(0)
     url = args.pop(0) if args and not args[0].startswith("--") else "http://127.0.0.1:8090/#text"
-    js, clicks, lang, width, height = None, [], None, 1400, 2000
+    js, clicks, lang, wait_after, width, height = None, [], None, 0, 1400, 2000
     while args:
         a = args.pop(0)
         if a == "--js":
             js = args.pop(0)
         elif a == "--lang":
             lang = args.pop(0)
+        elif a == "--wait":
+            wait_after = float(args.pop(0))
         elif a == "--click":
             clicks.append(args.pop(0))
         elif a == "--size":
@@ -67,6 +69,8 @@ def main():
                 time.sleep(0.8)
             if js:
                 print(json.dumps(call("POST", f"/session/{sid}/execute/sync", {"script": js, "args": []}), ensure_ascii=False))
+            if wait_after:
+                time.sleep(wait_after)
             png = base64.b64decode(call("GET", f"/session/{sid}/screenshot"))
             open(out, "wb").write(png)
         finally:

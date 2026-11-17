@@ -79,6 +79,8 @@ class Tools(unittest.TestCase):
         self.assertIn("aproximada", out["location_precision"])
         BT.clear_user_context()
         self.assertEqual(json.loads(BT.run("contexto_usuario", "{}")[0])["location"], "no compartida")
+        logs = [json.loads(x) for x in (C.BUDDY_DIR / "herramientas.log").read_text().splitlines()]
+        self.assertEqual(logs[0]["result"], "[redactado: contexto efímero]")
 
     def test_web_search_has_fixed_endpoint_and_one_call_per_turn(self):
         page = b'''<a class="result-link" href="https://example.com/news">Titulo</a>
@@ -145,6 +147,59 @@ class History(unittest.TestCase):
         before = list(h)
         buddy.trim_history(h, max_turns=12)
         self.assertEqual(h, before)
+
+
+class Conversations(unittest.TestCase):
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        p = mock.patch.object(C, "BUDDY_DIR", Path(d.name))
+        p.start()
+        self.addCleanup(p.stop)
+        buddy._conversation_state.update(root=None, active=None, items=[])
+        buddy._history.clear()
+        buddy._session["memory"] = None
+
+    def test_persists_restores_and_switches_active_conversation(self):
+        buddy.reset()
+        first = buddy._conversation_state["active"]
+        buddy._history.extend([{"role": "user", "content": "Primera charla", "source": "pc"},
+                               {"role": "assistant", "content": "Hola"}])
+        buddy._save_conversation()
+        buddy.reset()
+        second = buddy._conversation_state["active"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(len(buddy.conversation_list()), 2)
+        self.assertTrue(buddy.use_conversation(first)[0])
+        self.assertEqual(buddy._history[0]["content"], "Primera charla")
+        self.assertEqual(buddy._history[0]["source"], "pc")
+        buddy._conversation_state.update(root=None, active=None, items=[])
+        buddy._history.clear()
+        buddy._ensure_conversation()
+        self.assertEqual(buddy._conversation_state["active"], first)
+        self.assertEqual(buddy._history[-1]["content"], "Hola")
+
+    def test_ephemeral_context_is_redacted_on_disk(self):
+        buddy.reset()
+        buddy._history.extend([
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "private1", "type": "function",
+              "function": {"name": "contexto_usuario", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "private1", "content": '{"location":{"city":"Buenos Aires"}}'},
+        ])
+        buddy._save_conversation()
+        saved = json.loads((buddy._conversations_dir() / f"{buddy._conversation_state['active']}.json").read_text())
+        self.assertEqual(saved["messages"][-1]["content"], "Contexto efímero no guardado.")
+
+    def test_delete_active_selects_another(self):
+        buddy.reset()
+        old = buddy._conversation_state["active"]
+        buddy._history.append({"role": "user", "content": "algo"})
+        buddy._save_conversation()
+        buddy.reset()
+        current = buddy._conversation_state["active"]
+        self.assertTrue(buddy.delete_conversation(current)[0])
+        self.assertNotEqual(buddy._conversation_state["active"], current)
+        self.assertIn(old, {x["id"] for x in buddy.conversation_list()})
 
 
 # ---------- el bucle, contra un modelo falso ----------

@@ -185,6 +185,7 @@ function listen() {
 function onAlert(e) {
   let ev;
   try { ev = JSON.parse(e.data); } catch { return; }
+  if (ev.type === 'conversation') { loadBuddy(); return; }
   if (ev.type !== 'say' || seen.has(ev.id)) return;
   seen.add(ev.id);
   const icon = KIND_ICON[ev.kind] || '💬';
@@ -262,9 +263,11 @@ function draw() {
         <div class="buddy-head">
           <b id="buddy-name"></b>
           <span class="muted" id="buddy-voice"></span>
+          <select id="buddy-conversation" title="${esc(t('Conversación activa'))}"></select>
           <span class="spacer"></span>
           <label class="check"><input type="checkbox" id="buddy-speak"> ${t('Hablar en voz alta')}</label>
           <button class="btn ghost small" id="buddy-reset">${t('Charla nueva')}</button>
+          <button class="btn ghost small" id="buddy-conversation-delete" title="${esc(t('Eliminar conversación activa'))}">×</button>
         </div>
         <div class="buddy-log" id="buddy-log" aria-live="polite"></div>
         <div class="buddy-input">
@@ -342,6 +345,8 @@ function fillSettings() {
   ].join(' · ');
   $('#buddy-cfg-name').value = c.name;
   $('#buddy-cfg-persona').value = c.persona;
+  $('#buddy-conversation').innerHTML = B.conversations.map(x =>
+    `<option value="${esc(x.id)}" ${x.id === B.active_conversation ? 'selected' : ''}>${esc(t(x.title))}</option>`).join('');
   const models = (S.config?.text_models || []).map(m => m.id);
   $('#buddy-cfg-model').innerHTML = `<option value="">${esc(t('El que esté cargado'))}</option>` +
     models.map(m => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('');
@@ -360,15 +365,16 @@ function fillSettings() {
 
 function renderHistory() {
   if (abort) return;  // no pisar la respuesta que se esta escribiendo
-  $('#buddy-log').innerHTML = B.history.map(m => bubble(m.role, m.content, m.tools, m.spont ? '💬' : '')).join('') ||
+  $('#buddy-log').innerHTML = B.history.map(m => bubble(m.role, m.content, m.tools, m.spont ? '💬' : '', m.source)).join('') ||
     `<p class="muted buddy-empty">${esc(t('Decile hola a {name}.', { name: B.config.name }))}</p>`;
   scroll();
 }
 
-function bubble(role, text, tools = [], icon = '') {
+function bubble(role, text, tools = [], icon = '', source = '') {
   const chips = tools.map(n => `<span class="buddy-tool">🔧 ${esc(n)}</span>`).join('');
   if (!text && !chips) return '';
-  const tag = icon ? `<span class="buddy-tool" title="${esc(t('Lo dijo por su cuenta'))}">${icon}</span>` : '';
+  const tag = icon ? `<span class="buddy-tool" title="${esc(t('Lo dijo por su cuenta'))}">${icon}</span>` :
+    source === 'pc' ? `<span class="buddy-tool" title="${esc(t('Enviado desde el cliente de PC'))}">PC</span>` : '';
   return `<div class="buddy-msg ${role}${icon ? ' spont' : ''}">${tag}${chips}${text ? `<div class="buddy-text">${esc(text)}</div>` : ''}</div>`;
 }
 
@@ -379,6 +385,23 @@ function bind() {
   $('#buddy-text').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send({ text: e.target.value }); } };
   $('#buddy-stop').onclick = () => { abort?.abort(); stopAudio(); };
   $('#buddy-reset').onclick = async e => { report(await withBusy(e.currentTarget, () => post('/api/buddy/reset'))); loadBuddy(); };
+  $('#buddy-conversation').onchange = async e => {
+    report(await post('/api/buddy/conversation/use', { id: e.target.value }));
+    await loadBuddy();
+  };
+  $('#buddy-conversation-delete').onclick = async e => {
+    if (!e.currentTarget.dataset.armed) {
+      e.currentTarget.dataset.armed = '1';
+      e.currentTarget.textContent = t('¿Eliminar?');
+      setTimeout(() => { if (e.currentTarget.dataset.armed) {
+        delete e.currentTarget.dataset.armed; e.currentTarget.textContent = '×';
+      } }, 3000);
+      return;
+    }
+    delete e.currentTarget.dataset.armed;
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/conversation/delete', { id: B.active_conversation })));
+    await loadBuddy();
+  };
   $('#buddy-cfg-default').onclick = () => { $('#buddy-cfg-persona').value = B.default_persona; };
   $('#buddy-cfg-save').onclick = async e => {
     const body = {

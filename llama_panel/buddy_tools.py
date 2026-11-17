@@ -363,7 +363,8 @@ def run(name, arguments, enabled=None):
             result, ok = f"Argumentos inválidos: {e}", False
         except Exception as e:  # noqa: BLE001
             result, ok = f"Falló: {e}", False
-    _log({"t": round(t0, 2), "tool": name, "args": arguments, "ok": ok, "result": result[:500],
+    logged_result = "[redactado: contexto efímero]" if name == "contexto_usuario" else result[:500]
+    _log({"t": round(t0, 2), "tool": name, "args": arguments, "ok": ok, "result": logged_result,
           "ms": round((time.time() - t0) * 1000)})
     return result, ok
 

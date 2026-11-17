@@ -155,6 +155,8 @@ POST_ROUTES = {
     "/api/buddy/config": lambda b: _result(buddy.save_config(b)),
     "/api/buddy/memory": lambda b: _result(buddy.save_memory(b.get("text", ""))),
     "/api/buddy/reset": lambda b: _result(buddy.reset()),
+    "/api/buddy/conversation/use": lambda b: _result(buddy.use_conversation(str(b.get("id", "")))),
+    "/api/buddy/conversation/delete": lambda b: _result(buddy.delete_conversation(str(b.get("id", "")))),
     "/api/buddy/ha": lambda b: _result(buddy.save_ha_token(b.get("token", ""))),
     "/api/audio/use": actions.audio_use,
     "/api/buddy/say": actions.buddy_say,

@@ -89,6 +89,14 @@ class Hub:
             s["q"].put(ev)
         return len(subs)
 
+    def broadcast(self, event):
+        """Evento de estado sin audio (por ejemplo, cambió la conversación activa)."""
+        with self.lock:
+            subs = list(self.subs.values())
+        for sub in subs:
+            sub["q"].put(event)
+        return len(subs)
+
 
 HUB = Hub()
 
