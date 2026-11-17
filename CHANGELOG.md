@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Talk to the buddy from any tab (space bar and a floating button) and from any program on your PC with
+  `clients/dani.py`, a push-to-talk client with a global key that the panel serves at `/clients/dani.py`.
 - Audio engine (CPU) next to text and images: an Audio models tab to pick the Whisper model and the Piper voice
   (with a preview), and OpenAI-compatible `/v1/audio/speech` and `/v1/audio/transcriptions` on the panel port.
 - Buddy tab: an agent with personality, memory and tools on the loaded text model, with voice (whisper.cpp to

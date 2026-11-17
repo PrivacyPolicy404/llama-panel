@@ -73,7 +73,10 @@ class Tools(unittest.TestCase):
 class HomeAssistantTools(unittest.TestCase):
     def setUp(self):
         self.calls = []
-        for p in (mock.patch("llama_panel.homeassistant.call", lambda *a: self.calls.append(a)),
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        for p in (mock.patch.object(C, "BUDDY_DIR", Path(d.name)),  # el registro de herramientas, fuera del real
+                  mock.patch("llama_panel.homeassistant.call", lambda *a: self.calls.append(a)),
                   mock.patch("llama_panel.homeassistant.configured", lambda: True)):
             p.start()
             self.addCleanup(p.stop)

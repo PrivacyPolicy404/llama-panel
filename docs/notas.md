@@ -258,6 +258,12 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   - **Trampa: el prompt tiene que quedar fijo.** Personalidad y herramientas son ~1200 tokens: si cambian, Flash-Next
     los reprocesa a ~58 tok/s (~20 s). Por eso la memoria se lee al empezar cada charla (no en cada mensaje), el
     prompt no lleva la hora y el historial se recorta de a mitades.
+- **Trampa (pruebas):** probar a Dani con frases inventadas («me gusta el mate amargo») deja datos falsos en
+  `memoria.md`, que después aparecen en las charlas reales. Vaciar la memoria al terminar de probar. La personalidad
+  de fábrica pide usar `recordar` solo para datos duraderos: antes anotaba hasta «le pidió un chiste».
+- `clients/dani.py` (en la PC, Python con `sounddevice` y `pynput`): tecla global para hablar (Ctrl derecho), pitido
+  al empezar y terminar, la respuesta suena oración por oración y apretar de nuevo la corta. Probado acá con
+  `--file` / `--save` (sin micrófono): pregunta en voz a respuesta en audio, de punta a punta.
 - El micrófono del navegador solo anda en https o `localhost`: desde la laptop, túnel SSH
   (`ssh -L 8090:localhost:8090 …`) y abrir `http://localhost:8090`.
 - **Home Assistant** (2026-11-17): contenedor de Podman sin root, versión fijada 2026.11.2, red del host, puerto 8123,

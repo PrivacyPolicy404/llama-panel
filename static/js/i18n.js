@@ -327,6 +327,9 @@ export const EN = {
   'cambia cosas': 'changes things',
   'peligrosa': 'dangerous',
   'Vos': 'You',
+  'Desde tu PC, con una tecla': 'From your PC, with a key',
+  'Para hablarle desde cualquier programa (sin el navegador): mantené apretado Ctrl derecho. En Windows, en PowerShell:':
+    'To talk to it from any program (without the browser): hold right Ctrl. On Windows, in PowerShell:',
   'Te escucho…': 'Listening…',
   'Pensando…': 'Thinking…',
   'Escuchando lo que dijiste…': 'Understanding what you said…',

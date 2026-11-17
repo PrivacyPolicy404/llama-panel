@@ -55,7 +55,8 @@ They are written in Spanish; each one starts with an English summary of the main
   sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
   call is logged. Voice setup without sudo: `scripts/install-voice.sh` (the microphone needs https or localhost, for
   example an SSH tunnel). With a Home Assistant token it can also list and switch lights, plugs, fans, scenes and
-  media players (never scripts or automations).
+  media players (never scripts or automations). You can talk to it from any tab (space bar, floating button) and, with
+  `clients/dani.py` on your PC, from any program by holding a key (the panel serves it at `/clients/dani.py`).
 
 ## Layout
 
@@ -85,6 +86,7 @@ llama_panel/
 static/
   index.html, app.css
   js/                 native ES modules, no build (main.js starts everything; i18n.js has the translations)
+clients/dani.py       talk to the buddy from your PC with a global push-to-talk key (Windows, Linux, macOS)
 tests/                stdlib unittest
 scripts/
   update-llama.sh     updates llama.cpp keeping the patches (--check only reports)

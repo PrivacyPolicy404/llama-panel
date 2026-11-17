@@ -77,8 +77,9 @@ def fecha_y_hora():
 
 
 # ---------- memoria ----------
-@tool("recordar", "Guarda un dato que valga la pena recordar en próximas charlas (gustos, planes, datos de la casa "
-      "o del usuario). Una oración corta por dato.", "memoria",
+@tool("recordar", "Guarda para próximas charlas un dato duradero que el usuario contó (un gusto, un plan, un dato de "
+      "la casa) o algo que pidió que recuerdes. No sirve para pedidos del momento (un chiste, una pregunta) ni para "
+      "resumir la charla. Una oración corta por dato.", "memoria",
       {"dato": {"type": "string", "description": "Lo que hay que recordar, en una oración."}}, ["dato"])
 def recordar(dato):
     dato = " ".join(str(dato).split())[:300]

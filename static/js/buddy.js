@@ -108,6 +108,12 @@ function draw() {
           <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
         </label>
         <button class="btn ghost" id="buddy-ha-save">${t('Guardar token')}</button>
+        <div class="field"><span>${t('Desde tu PC, con una tecla')}</span>
+          <p class="hint">${t('Para hablarle desde cualquier programa (sin el navegador): mantené apretado Ctrl derecho. En Windows, en PowerShell:')}</p>
+          <pre class="buddy-cmd">py -m pip install sounddevice pynput
+iwr ${esc(location.origin)}/clients/dani.py -OutFile dani.py
+py dani.py --server ${esc(location.origin)}</pre>
+        </div>
         <label class="field"><span>${t('Memoria')}</span>
           <textarea id="buddy-mem" rows="6" spellcheck="false"></textarea>
           <p class="hint">${t('Lo que anota con «recordar». Se lee al empezar cada charla.')}</p>

@@ -54,7 +54,9 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   Piper lee cada oración de la respuesta mientras se genera la siguiente. Sus herramientas declaran qué pueden hacer y
   cada llamada queda registrada. La voz se instala sin sudo con `scripts/install-voice.sh` (el micrófono necesita
   https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces,
-  enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones).
+  enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones). Se le habla desde cualquier
+  pestaña (barra espaciadora, botón flotante) y, con `clients/dani.py` en tu PC, desde cualquier programa manteniendo
+  apretada una tecla (el panel lo sirve en `/clients/dani.py`).
 
 ## Estructura
 
@@ -84,6 +86,7 @@ llama_panel/
 static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo; i18n.js tiene las traducciones)
+clients/dani.py       hablarle al compañero desde tu PC con una tecla global (Windows, Linux, macOS)
 tests/                unittest de la stdlib
 scripts/
   update-llama.sh     actualiza llama.cpp manteniendo los parches (--check solo informa)

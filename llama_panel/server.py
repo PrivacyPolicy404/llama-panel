@@ -60,6 +60,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("index.html")
         if u.path.startswith("/static/"):
             return self._static(u.path[len("/static/"):])
+        if u.path == "/clients/dani.py":  # el programa para hablarle a Dani desde la PC (clients/dani.py)
+            return self._send(200, (C.APP_DIR / "clients" / "dani.py").read_bytes(), "text/x-python")
         route = GET_ROUTES.get(u.path)
         if not route:
             return self._error(404, "no encontrado")
