@@ -8,6 +8,15 @@ Panel web casero para levantar y bajar modelos on demand en una GPU con poca VRA
 
 Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build.
 
+Está hecho y medido para una máquina concreta (AMD RX 580 de 8 GB solo con Vulkan, 64 GB de RAM, Linux con systemd).
+La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendimiento.md)) y las notas de hardware
+([docs/notas.md](docs/notas.md)) explican cada configuración con números; pueden servir en otras GPU con poca VRAM.
+
+> **Seguridad:** el panel (8090), llama-server (8080) y KoboldCpp (5001) escuchan en todas las interfaces y **no
+> tienen autenticación**: cualquiera que llegue a esos puertos puede cargar, bajar y configurar modelos. Pensado
+> solo para una red local de confianza. No los expongas a internet; si hace falta acceso remoto, usá una VPN o un
+> túnel SSH, o limitá los puertos con el firewall.
+
 ## Qué hace
 
 - Monitor de VRAM, uso de GPU, temperatura/consumo/ventilador y RAM, con historia de los últimos minutos.
@@ -41,14 +50,23 @@ static/
   js/                 módulos ES nativos, sin build (main.js arranca todo)
 tests/                unittest de la stdlib
 scripts/
-  update-llama.sh     actualiza llama.cpp manteniendo el parche (--check solo informa)
-patches/              parche local de llama.cpp y cómo reaplicarlo
+  update-llama.sh     actualiza llama.cpp manteniendo los parches (--check solo informa)
+  install-gpu-mclk.sh opcional, con sudo: reloj de la VRAM al máximo mientras corre un modelo
+  install-modo-ia.sh  opcional, con sudo: "modo IA" (apaga el escritorio, dashboard en tty1)
+patches/              parches locales de llama.cpp y cómo reaplicarlos
 tools/bench/          benchmark, uso de CPU/GPU, tamaños de GGUF y test de humo de los modelos
 tools/                utilidades de GGUF (hc en Q8_0, borrador MTP con salida recortada)
 docs/notas.md         hardware, mediciones, por qué cada configuración, trampas conocidas
 .claude/skills/       skill llama-cpp-update (revisar novedades y actualizar llama.cpp)
-CLAUDE.md             contexto y convenciones para Claude Code
 ```
+
+## Requisitos
+
+- Linux con systemd (servicios de usuario) y Python 3.
+- `llama-server` compilado con Vulkan; por defecto se busca en `~/llama.cpp/build/bin/llama-server`.
+  Para usar las configuraciones de los modelos MoE grandes hace falta el fork (ver abajo).
+- Opcional, para imágenes: [KoboldCpp](https://github.com/LostRuins/koboldcpp) (por defecto `~/koboldcpp/koboldcpp`).
+- Modelos `.gguf` en `~/models` y de imagen en `~/imgmodels`, o donde digan las rutas configuradas.
 
 ## Instalación
 
@@ -59,12 +77,28 @@ python3 panel.py --install
 Crea los servicios systemd de usuario (`llama-panel`, `llama-router`, `kobold-img`) y arranca el panel.
 La configuración del usuario vive en `~/.config/llama-panel/` (fuera del repo).
 
+Las rutas se cambian con variables de entorno o, más cómodo, en `~/.config/llama-panel/paths.env`
+(una variable de entorno con el mismo nombre tiene prioridad):
+
+```ini
+LLAMA_MODELS_DIR=/mnt/datos/models
+LLAMA_EXTRA_MODELS_DIRS=~/models-nvme
+LLAMA_IMG_DIR=/mnt/datos/imgmodels
+KOBOLD_BIN=~/koboldcpp/koboldcpp
+LLAMA_SERVER_BIN=~/llama.cpp/build/bin/llama-server
+```
+
+Después de cambiar `KOBOLD_BIN` o `LLAMA_SERVER_BIN` hay que volver a correr `--install` (quedan escritos en los units).
+
+Los scripts de `scripts/install-*.sh` son opcionales, se corren una vez con `sudo` y tienen `--uninstall`.
+Cada uno instala un ayudante en `/usr/local/sbin` y una regla en `/etc/sudoers.d` que deja correr **solo** ese
+ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse; leé el encabezado de cada script antes.
+
 ## llama.cpp: por qué un fork
 
 El servidor de texto usa el fork [PrivacyPolicy404/llama.cpp](https://github.com/PrivacyPolicy404/llama.cpp)
-(rama `ot-host-buffers`): el llama.cpp oficial más un parche chico.
-
-El parche existe por los modelos MoE grandes que no entran en la VRAM, como Qwen3.8-Flash-Next (125B):
+(rama `ot-host-buffers`): el llama.cpp oficial más parches locales.
+El principal existe por los modelos MoE grandes que no entran en la VRAM, como Qwen3.8-Flash-Next (125B):
 
 - Sus expertos viven en la RAM. Si están en memoria *fija* (pinned), la GPU los copia más rápido y el prompt se procesa ~20 % más rápido.
 - En amdgpu la memoria fija tiene un tope (GTT) de la mitad de la RAM: 31 GiB en esta máquina. Los expertos de Flash-Next ocupan 31.6 GiB:
@@ -75,7 +109,7 @@ El parche existe por los modelos MoE grandes que no entran en la VRAM, como Qwen
 Sin el parche ese modelo no carga con la configuración del panel; el resto de los modelos no lo necesita.
 Detalles, números y cómo reaplicarlo: [patches/README.md](patches/README.md).
 
-Para actualizar llama.cpp sin perder el parche: `scripts/update-llama.sh` (con `--check` solo informa cuántos commits nuevos hay).
+Para actualizar llama.cpp sin perder los parches: `scripts/update-llama.sh` (con `--check` solo informa cuántos commits nuevos hay).
 La versión queda fija hasta que se corre el script.
 
 ## Desarrollo
@@ -130,3 +164,7 @@ Mide 256 tokens forzados por trabajo; no evalúa la calidad de un subagente ni l
 Los modelos de texto se buscan en `LLAMA_MODELS_DIR` y en las carpetas de `LLAMA_EXTRA_MODELS_DIRS` (separadas por `:`, por defecto `~/models-nvme`). Los modelos partidos en shards (`-00001-of-0000N.gguf`) cuentan como uno solo.
 
 Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
+
+## Licencia
+
+[MIT](LICENSE). llama.cpp y KoboldCpp tienen sus propias licencias.

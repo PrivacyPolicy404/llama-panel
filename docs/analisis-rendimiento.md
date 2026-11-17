@@ -437,7 +437,7 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   Ver `smoke-normal.log` en los artefactos. Los 33 tests del panel también pasaron.
 - Reproducir: `python3 tools/bench/ctx_stability.py --ai-mode --output ~/llama-panel-results/64k-corrida-2`.
   **Cierra KDE**; requiere servidores y modo IA apagados. Artefactos de esta corrida:
-  `/home/gen/llama-panel-results/2026-11-15-64k-stability/` (respuestas, tokens, muestras, presets, versiones y logs).
+  `~/llama-panel-results/2026-11-15-64k-stability/` (respuestas, tokens, muestras, presets, versiones y logs).
   Panel base `016758b`, fork `9d77a39`; no se recompiló ni actualizó llama.cpp.
 
 ---
@@ -480,7 +480,7 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   durante el prompt ese total sigue siendo estimado a partir del progreso redondeado. La ETA descuenta la caché.
   Comprobación adicional: 39 muestras con prefijo reutilizado y contexto residente nunca menor que la caché.
   Pasan **46 tests**, incluido el caso real 58.836 reutilizados + 4416 nuevos y el cálculo de ETA.
-- Artefactos: `/home/gen/llama-panel-results/2026-11-15-64k-quality/`, con rúbrica, corpus, pedidos, respuestas,
+- Artefactos: `~/llama-panel-results/2026-11-15-64k-quality/`, con rúbrica, corpus, pedidos, respuestas,
   telemetría, resumen y registros; `cache-recovery/` conserva el control adicional. Base del panel `e224aa5`, fork
   `9d77a39`; el dashboard se corrigió durante la validación adicional. Servidores apagados, límites restaurados,
   settings intactos y modo IA conservado activo, como estaba al empezar.
@@ -534,8 +534,8 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
   cacheadas, no una aceleración grande de dos tareas nuevas. Antes de habilitar subagentes concurrentes en Cline,
   comparar tareas completas del cliente y aceptar/configurar el límite de 32K por slot. La sesión de Cline
   inspeccionada tenía `enable_spawn = false`; no se cambió esa configuración.
-- Artefactos: `/home/gen/llama-panel-results/2026-11-15-parallel2-r1/` y
-  `/home/gen/llama-panel-results/2026-11-15-parallel2-conversation/` (resumen en `summary.json`). El intento preliminar
+- Artefactos: `~/llama-panel-results/2026-11-15-parallel2-r1/` y
+  `~/llama-panel-results/2026-11-15-parallel2-conversation/` (resumen en `summary.json`). El intento preliminar
   descartado está en `2026-11-15-parallel2/`. Settings intactos, modo IA conservado y modelo original recargado con
   `parallel = 1`; como se avisó, se perdió la caché anterior de Cline. Base del panel `ce3432f`, fork `9d77a39`.
 
@@ -545,7 +545,7 @@ Lo grande es el CPU (expertos) + los 49 cambios de turno GPU↔CPU: ~35 ms.
 
 **Revisión estática, sin nuevas mediciones ni cambios de motor/configuración.** Fork `9d77a39`; Strata
 [`baf1636`](https://github.com/Niko1221/Strata/tree/baf16363b4403ef0ed4f538f5d5ed11c43fb9535), clonado para lectura
-en `/home/gen/strata-review`. Strata es MIT y no tiene backend Vulkan para Polaris. Sí se pueden adaptar ideas
+en `~/strata-review`. Strata es MIT y no tiene backend Vulkan para Polaris. Sí se pueden adaptar ideas
 CPU y de planificación; no corresponde descartar todo por depender de CUDA/HIP en su implementación actual.
 
 **Primer experimento propuesto: calibrar la atención dispersa Q8 para Polaris.** En `ggml-vulkan.cpp:8596–8613`,

@@ -10,20 +10,46 @@ APP_DIR = Path(__file__).resolve().parent.parent  # raiz del repo
 STATIC_DIR = APP_DIR / "static"
 
 CFG_DIR = Path(os.environ.get("LLAMA_PANEL_DIR", HOME / ".config" / "llama-panel"))
+PATHS_ENV = CFG_DIR / "paths.env"
+
+
+def _read_env_file(path):
+    """Lee un archivo CLAVE=valor (con # para comentarios). Vacio si no existe."""
+    out = {}
+    try:
+        text = path.read_text()
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip().strip("\"'")
+    return out
+
+
+_LOCAL = _read_env_file(PATHS_ENV)
+
+
+def _env(name, default):
+    """Variable de entorno; si no, la de paths.env; si no, el valor por defecto."""
+    return os.environ.get(name) or _LOCAL.get(name) or str(default)
+
+
 SETTINGS_FILE = CFG_DIR / "settings.json"
 PRESET_FILE = CFG_DIR / "presets.ini"
 IMG_ENV = CFG_DIR / "kobold.env"
 # Estados de slot guardados (prompt inicial ya procesado): ~0.5 GB por modelo, van a un disco rapido
 SLOTS_DIR = Path(os.environ.get("LLAMA_PANEL_SLOTS_DIR", HOME / ".cache" / "llama-panel" / "slots"))
 
-MODELS_DIR = Path(os.environ.get("LLAMA_MODELS_DIR", "/mnt/hdd1/gen/models"))
+MODELS_DIR = Path(_env("LLAMA_MODELS_DIR", HOME / "models")).expanduser()
 # Carpetas extra separadas por ":" (por ejemplo, un NVMe para modelos que necesitan lectura rapida)
 EXTRA_MODELS_DIRS = [Path(p).expanduser() for p in
-                     os.environ.get("LLAMA_EXTRA_MODELS_DIRS", str(HOME / "models-nvme")).split(":") if p]
+                     _env("LLAMA_EXTRA_MODELS_DIRS", HOME / "models-nvme").split(":") if p]
 MODELS_DIRS = [MODELS_DIR] + [d for d in EXTRA_MODELS_DIRS if d != MODELS_DIR]
-IMG_DIR = Path(os.environ.get("LLAMA_IMG_DIR", "/mnt/hdd1/gen/imgmodels"))
-LLAMA_SERVER = os.environ.get("LLAMA_SERVER_BIN", str(HOME / "llama.cpp/build/bin/llama-server"))
-KOBOLD_BIN = os.environ.get("KOBOLD_BIN", "/mnt/hdd1/gen/koboldcpp/koboldcpp")
+IMG_DIR = Path(_env("LLAMA_IMG_DIR", HOME / "imgmodels")).expanduser()
+LLAMA_SERVER = str(Path(_env("LLAMA_SERVER_BIN", HOME / "llama.cpp/build/bin/llama-server")).expanduser())
+KOBOLD_BIN = str(Path(_env("KOBOLD_BIN", HOME / "koboldcpp/koboldcpp")).expanduser())
 
 SERVICE = "llama-router"
 IMG_SERVICE = "kobold-img"

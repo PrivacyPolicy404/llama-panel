@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 bench-*.log
 util.log
+
+# Contexto local para Claude Code (no se publica)
+CLAUDE.md
