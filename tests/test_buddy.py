@@ -69,6 +69,33 @@ class Tools(unittest.TestCase):
         self.assertEqual(json.loads(lines[0])["tool"], "rm_rf")
 
 
+class HomeAssistantTools(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        for p in (mock.patch("llama_panel.homeassistant.call", lambda *a: self.calls.append(a)),
+                  mock.patch("llama_panel.homeassistant.configured", lambda: True)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_only_allowed_domains(self):
+        out, ok = BT.run("casa_controlar", '{"id": "script.borrar_todo", "accion": "prender"}')
+        self.assertIn("No tengo permiso", out)
+        self.assertEqual(self.calls, [])
+
+    def test_light_with_brightness_and_spanish_color(self):
+        BT.run("casa_controlar", '{"id": "light.living", "accion": "prender", "brillo_pct": 140, "color": "Rojo"}')
+        BT.run("casa_controlar", '{"id": "light.living", "accion": "prender", "color": "blanco cálido"}')
+        self.assertEqual(self.calls[0], ("light", "turn_on", {"entity_id": "light.living", "brightness_pct": 100,
+                                                              "color_name": "red"}))
+        self.assertEqual(self.calls[1][2]["color_temp_kelvin"], 2700)
+
+    def test_not_offered_without_token(self):
+        with mock.patch("llama_panel.homeassistant.configured", lambda: False):
+            names = [t["function"]["name"] for t in BT.schemas()]
+            self.assertNotIn("casa_controlar", names)
+            self.assertIn("no está disponible", BT.run("casa_controlar", '{"id": "light.x", "accion": "apagar"}')[0])
+
+
 class History(unittest.TestCase):
     def test_trims_the_older_half_at_once(self):
         h = []

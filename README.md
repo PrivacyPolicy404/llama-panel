@@ -50,7 +50,8 @@ They are written in Spanish; each one starts with an English summary of the main
   hold the mic button (or the space bar), whisper.cpp turns your voice into text on the CPU and Piper reads each
   sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
   call is logged. Voice setup without sudo: `scripts/install-voice.sh` (the microphone needs https or localhost, for
-  example an SSH tunnel).
+  example an SSH tunnel). With a Home Assistant token it can also list and switch lights, plugs, fans, scenes and
+  media players (never scripts or automations).
 
 ## Layout
 

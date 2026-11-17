@@ -253,6 +253,14 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
     prompt no lleva la hora y el historial se recorta de a mitades.
 - El micrófono del navegador solo anda en https o `localhost`: desde la laptop, túnel SSH
   (`ssh -L 8090:localhost:8090 …`) y abrir `http://localhost:8090`.
+- **Home Assistant** (2026-11-17): contenedor de Podman sin root, versión fijada 2026.11.2, red del host, puerto 8123,
+  configuración en `~/homeassistant/config`, servicio `homeassistant` (Quadlet en
+  `~/.config/containers/systemd/homeassistant.container`). ~385 MB de RAM. El compañero lo usa con un token en
+  `~/.config/llama-panel/buddy/homeassistant.token` (600) y solo controla `light`, `switch`, `fan`, `scene` y
+  `media_player` (`buddy_tools.HA_CONTROL`): nada de scripts ni automatizaciones.
+- **Red:** la máquina sale por la conexión compartida de la laptop (192.168.137.1, red de Windows). Los dispositivos de
+  la casa están del otro lado de ese NAT: no se descubren solos (al bridge de Hue se le llega por IP) y si la laptop se
+  apaga o suspende, Home Assistant queda sin la casa.
 
 ## Modo IA
 

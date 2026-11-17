@@ -30,8 +30,8 @@ DEFAULT_PERSONA = (
     "la hora) usá las herramientas en vez de inventar. Si el usuario te cuenta algo que vale la pena recordar para "
     "otra charla, guardalo con la herramienta recordar sin hacer mucho lío."
 )
-DEFAULT_CONFIG = {"name": "Dani", "persona": DEFAULT_PERSONA, "model": "", "speak": True,
-                  "tools": sorted(BT.TOOLS)}
+# Se guardan las herramientas apagadas (no las prendidas): una herramienta nueva queda disponible sin tocar nada
+DEFAULT_CONFIG = {"name": "Dani", "persona": DEFAULT_PERSONA, "model": "", "speak": True, "tools_off": []}
 
 _history = []
 _session = {"memory": None}  # memoria leída al empezar la charla (ver system_prompt)
@@ -45,7 +45,8 @@ def load_config():
     except (OSError, ValueError):
         data = {}
     cfg = {**DEFAULT_CONFIG, **data}
-    cfg["tools"] = [t for t in cfg["tools"] if t in BT.TOOLS]
+    cfg.pop("tools", None)
+    cfg["tools"] = [t for t in BT.TOOLS if t not in cfg["tools_off"]]
     return cfg
 
 
@@ -59,7 +60,8 @@ def save_config(body):
     if not isinstance(tools, list) or any(t not in BT.TOOLS for t in tools):
         return False, _("Herramienta desconocida.")
     cfg.update(name=name, persona=persona, model=str(body.get("model", cfg["model"])).strip(),
-               speak=bool(body.get("speak", cfg["speak"])), tools=sorted(tools))
+               speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)))
+    cfg.pop("tools")
     C.BUDDY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = C.BUDDY_DIR / "config.tmp"
     tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
@@ -93,10 +95,29 @@ def state():
               "tools": [c["function"]["name"] for c in m.get("tool_calls") or []]}
              for m in _history if m["role"] in ("user", "assistant") and (m.get("content") or m.get("tool_calls"))]
     return {"config": cfg, "default_persona": DEFAULT_PERSONA, "memory": BT.read_memory(), "history": shown,
-            "tools": [{"name": n, "level": t["level"], "description": t["schema"]["function"]["description"]}
-                      for n, t in BT.TOOLS.items()],
+            "tools": [{"name": n, "level": t["level"], "description": t["schema"]["function"]["description"],
+                       "available": BT.available(n)} for n, t in BT.TOOLS.items()],
             "voice": {"stt": voice.stt_available(), "tts": voice.Speaker.available()},
+            "ha": _ha_state(),
             "busy": _busy.locked()}
+
+
+def _ha_state():
+    from . import homeassistant as HA
+    good, msg = HA.check()
+    return {"url": HA.HA_URL, "configured": HA.configured(), "ok": good, "msg": msg}
+
+
+def save_ha_token(value):
+    from . import homeassistant as HA
+    value = str(value or "").strip()
+    if not value:
+        HA.token_file().unlink(missing_ok=True)
+        return True, _("Token de Home Assistant borrado.")
+    HA.save_token(value)
+    good, msg = HA.check()
+    return (True, _("Home Assistant conectado: {msg}", msg=msg)) if good \
+        else (False, _("Token guardado, pero Home Assistant no responde: {msg}", msg=msg))
 
 
 def reset():

@@ -298,6 +298,13 @@ export const EN = {
   'escribe su memoria': 'writes its memory',
   'cambia cosas': 'changes things',
   'peligrosa': 'dangerous',
+  'token de acceso de larga duración': 'long-lived access token',
+  'En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.':
+    'In Home Assistant: your profile, Security, "Long-lived access tokens". Preferably from a non-admin user. It is kept in a separate file only your user can read.',
+  'Guardar token': 'Save token',
+  'sin conectar': 'not connected',
+  'conectado': 'connected',
+  'no disponible': 'not available',
   // encendido a demanda
   'Encendido a demanda': 'On-demand start',
   'Prender texto o imágenes según lo que pida cada cliente': 'Start text or images depending on what each client asks for',

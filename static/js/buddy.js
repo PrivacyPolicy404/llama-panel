@@ -54,6 +54,11 @@ function draw() {
         </label>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
         <button class="btn" id="buddy-cfg-save">${t('Guardar')}</button>
+        <label class="field"><span>Home Assistant <span class="muted" id="buddy-ha-state"></span></span>
+          <input type="password" id="buddy-ha-token" autocomplete="off" placeholder="${esc(t('token de acceso de larga duración'))}">
+          <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
+        </label>
+        <button class="btn ghost" id="buddy-ha-save">${t('Guardar token')}</button>
         <label class="field"><span>${t('Memoria')}</span>
           <textarea id="buddy-mem" rows="6" spellcheck="false"></textarea>
           <p class="hint">${t('Lo que anota con «recordar». Se lee al empezar cada charla.')}</p>
@@ -82,8 +87,10 @@ function fillSettings() {
     models.map(m => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('');
   $('#buddy-cfg-tools').innerHTML = B.tools.map(tl => `
     <label class="check" title="${esc(tl.description)}"><input type="checkbox" value="${esc(tl.name)}" ${c.tools.includes(tl.name) ? 'checked' : ''}>
-      <span class="mono">${esc(tl.name)}</span> <span class="muted">${esc(t(LEVELS[tl.level] || tl.level))}</span></label>`).join('');
+      <span class="mono">${esc(tl.name)}</span> <span class="muted">${esc(t(LEVELS[tl.level] || tl.level))}${tl.available ? '' : ' · ' + esc(t('no disponible'))}</span></label>`).join('');
   $('#buddy-mem').value = B.memory;
+  const ha = B.ha;
+  $('#buddy-ha-state').textContent = !ha.configured ? `· ${t('sin conectar')} (${ha.url})` : ha.ok ? `· ✓ ${t('conectado')}` : `· ✗ ${ha.msg}`;
 }
 
 function renderHistory() {
@@ -116,6 +123,11 @@ function bind() {
     B = await getJSON('/api/buddy'); fillSettings();
   };
   $('#buddy-speak').onchange = () => post('/api/buddy/config', { speak: $('#buddy-speak').checked });
+  $('#buddy-ha-save').onclick = async e => {
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/ha', { token: $('#buddy-ha-token').value })));
+    $('#buddy-ha-token').value = '';
+    B = await getJSON('/api/buddy'); fillSettings();
+  };
   $('#buddy-mem-save').onclick = async e => report(await withBusy(e.currentTarget, () => post('/api/buddy/memory', { text: $('#buddy-mem').value })));
 
   const mic = $('#buddy-mic');

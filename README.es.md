@@ -49,7 +49,8 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   puede hablar: mantenés apretado el micrófono (o la barra espaciadora), whisper.cpp pasa la voz a texto en el CPU y
   Piper lee cada oración de la respuesta mientras se genera la siguiente. Sus herramientas declaran qué pueden hacer y
   cada llamada queda registrada. La voz se instala sin sudo con `scripts/install-voice.sh` (el micrófono necesita
-  https o localhost, por ejemplo un túnel SSH).
+  https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces,
+  enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones).
 
 ## Estructura
 

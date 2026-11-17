@@ -107,6 +107,7 @@ POST_ROUTES = {
     "/api/buddy/config": lambda b: _result(buddy.save_config(b)),
     "/api/buddy/memory": lambda b: _result(buddy.save_memory(b.get("text", ""))),
     "/api/buddy/reset": lambda b: _result(buddy.reset()),
+    "/api/buddy/ha": lambda b: _result(buddy.save_ha_token(b.get("token", ""))),
 }
 
 # Rutas que contestan de a partes (server-sent events)

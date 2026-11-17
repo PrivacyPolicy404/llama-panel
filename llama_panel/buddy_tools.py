@@ -20,9 +20,11 @@ MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agost
           "noviembre", "diciembre"]
 
 
-def tool(name, description, level, params=None, required=()):
+def tool(name, description, level, params=None, required=(), needs=None):
+    """`needs`: función que dice si la herramienta se puede usar ahora (por ejemplo, si hay token de Home Assistant);
+    si no, no se le ofrece al modelo."""
     def deco(fn):
-        TOOLS[name] = {"fn": fn, "level": level, "schema": {
+        TOOLS[name] = {"fn": fn, "level": level, "needs": needs, "schema": {
             "type": "function", "function": {
                 "name": name, "description": description,
                 "parameters": {"type": "object", "properties": params or {}, "required": list(required)}}}}
@@ -104,9 +106,81 @@ def olvidar(texto):
     return f"Olvidado ({len(lines) - len(keep)} dato/s)."
 
 
+# ---------- Home Assistant ----------
+# Solo estos tipos de dispositivo se pueden controlar: nada de script/automation/shell_command (hacen cualquier cosa)
+HA_CONTROL = ("light", "switch", "fan", "scene", "media_player")
+HA_SHOW = HA_CONTROL + ("sensor", "binary_sensor", "climate", "weather")
+COLORS = {"rojo": "red", "verde": "green", "azul": "blue", "amarillo": "yellow", "naranja": "orange",
+          "violeta": "violet", "morado": "purple", "rosa": "pink", "blanco": "white", "celeste": "lightblue",
+          "turquesa": "turquoise", "cian": "cyan", "magenta": "magenta"}
+
+
+def ha_ready():
+    from . import homeassistant as HA
+    return HA.configured()
+
+
+@tool("casa_dispositivos", "Lista los dispositivos de la casa (luces, enchufes, escenas, sensores) con su estado e id.",
+      "lectura", needs=ha_ready)
+def casa_dispositivos():
+    from . import homeassistant as HA
+    out = []
+    for e in HA.states():
+        domain = e["entity_id"].split(".")[0]
+        if domain not in HA_SHOW or e["state"] in ("unavailable", "unknown") and domain.endswith("sensor"):
+            continue
+        a = e.get("attributes") or {}
+        item = {"id": e["entity_id"], "nombre": a.get("friendly_name"), "estado": e["state"]}
+        if domain == "light" and a.get("brightness") is not None:
+            item["brillo_pct"] = round(a["brightness"] * 100 / 255)
+        if a.get("unit_of_measurement"):
+            item["unidad"] = a["unit_of_measurement"]
+        out.append(item)
+    return out or "No hay dispositivos todavía en Home Assistant."
+
+
+@tool("casa_controlar", "Prende, apaga o cambia una luz, enchufe, ventilador, escena o reproductor de la casa. Usá el "
+      "id de casa_dispositivos.", "accion",
+      {"id": {"type": "string", "description": "id del dispositivo, por ejemplo light.living"},
+       "accion": {"type": "string", "enum": ["prender", "apagar", "alternar"]},
+       "brillo_pct": {"type": "integer", "description": "Solo luces: brillo de 1 a 100."},
+       "color": {"type": "string", "description": "Solo luces: color en castellano (rojo, azul, blanco cálido…)."}},
+      ["id", "accion"], needs=ha_ready)
+def casa_controlar(id, accion, brillo_pct=None, color=None):
+    from . import homeassistant as HA
+    domain = str(id).split(".")[0]
+    if domain not in HA_CONTROL:
+        return f"No tengo permiso para controlar {id}: solo {', '.join(HA_CONTROL)}."
+    service = {"prender": "turn_on", "apagar": "turn_off", "alternar": "toggle"}.get(accion)
+    if not service:
+        return "Acción inválida: prender, apagar o alternar."
+    data = {"entity_id": id}
+    if domain == "light" and service == "turn_on":
+        if brillo_pct is not None:
+            data["brightness_pct"] = max(1, min(100, int(brillo_pct)))
+        if color:
+            c = str(color).lower().strip()
+            if "cálid" in c or "calid" in c:
+                data["color_temp_kelvin"] = 2700
+            elif "frí" in c or "fri" in c:
+                data["color_temp_kelvin"] = 5500
+            else:
+                data["color_name"] = COLORS.get(c, c)
+    HA.call(domain, service, data)
+    return f"Listo: {accion} {id}."
+
+
 # ---------- ejecución ----------
+def available(name):
+    needs = TOOLS[name].get("needs")
+    try:
+        return needs is None or bool(needs())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def schemas(enabled=None):
-    return [t["schema"] for name, t in TOOLS.items() if enabled is None or name in enabled]
+    return [t["schema"] for name, t in TOOLS.items() if (enabled is None or name in enabled) and available(name)]
 
 
 def run(name, arguments, enabled=None):
@@ -116,6 +190,8 @@ def run(name, arguments, enabled=None):
     entry = TOOLS.get(name)
     if not entry or (enabled is not None and name not in enabled):
         result, ok = f"No existe la herramienta {name}.", False
+    elif not available(name):
+        result, ok = f"La herramienta {name} no está disponible ahora.", False
     else:
         try:
             args = json.loads(arguments or "{}") if isinstance(arguments, str) else (arguments or {})
