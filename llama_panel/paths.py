@@ -107,6 +107,16 @@ def _bin_check(path, optional=""):
     return {"ok": True, "msg": _("encontrado")}
 
 
+def img_check(path):
+    """La carpeta de imagenes es opcional: si falta, no es un error."""
+    p = _expand(path)
+    if p is None:
+        return {"ok": None, "msg": _("sin carpeta (opcional)")}
+    if not p.exists():
+        return {"ok": None, "msg": _("no existe (opcional: solo para imágenes)")}
+    return _dir_check(path, lambda f: Path(f).suffix.lower() in IMG_EXT, "archivos de modelo de imagen")
+
+
 def check(values):
     """Estado de cada campo: {"ok": True/False/None (opcional y ausente), "msg": texto}."""
     dirs = [d for d in values.get("text_dirs") or [] if str(d).strip()]
@@ -117,9 +127,7 @@ def check(values):
         server["msg"] = _("llama.cpp {version}", version=v) if v else _("encontrado (no respondió a --version)")
     return {
         "text_dirs": text,
-        "img_dir": _dir_check(values.get("img_dir"), lambda f: Path(f).suffix.lower() in IMG_EXT,
-                              "archivos de modelo de imagen") if str(values.get("img_dir") or "").strip()
-        else {"ok": None, "msg": _("sin carpeta (opcional)")},
+        "img_dir": img_check(values.get("img_dir")),
         "llama_server": server,
         "kobold": _bin_check(values.get("kobold"), "opcional: solo para imágenes"),
     }

@@ -47,7 +47,7 @@ SLOTS_DIR = Path(os.environ.get("LLAMA_PANEL_SLOTS_DIR", HOME / ".cache" / "llam
 MODELS_DIR = Path(_env("LLAMA_MODELS_DIR", HOME / "models")).expanduser()
 # Carpetas extra separadas por ":" (por ejemplo, un NVMe para modelos que necesitan lectura rapida)
 EXTRA_MODELS_DIRS = [Path(p).expanduser() for p in
-                     _env("LLAMA_EXTRA_MODELS_DIRS", HOME / "models-nvme").split(":") if p]
+                     _env("LLAMA_EXTRA_MODELS_DIRS", "").split(":") if p]
 MODELS_DIRS = [MODELS_DIR] + [d for d in EXTRA_MODELS_DIRS if d != MODELS_DIR]
 IMG_DIR = Path(_env("LLAMA_IMG_DIR", HOME / "imgmodels")).expanduser()
 LLAMA_SERVER = str(Path(_env("LLAMA_SERVER_BIN", HOME / "llama.cpp/build/bin/llama-server")).expanduser())

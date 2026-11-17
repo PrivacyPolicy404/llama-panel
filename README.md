@@ -214,8 +214,7 @@ It needs AI mode on and Flash-Next loaded and idle. It unloads the panel's model
 isolated router and restores the initial load. It doesn't change settings. With 64K total, two slots get 32K each.
 It measures 256 forced tokens per job; it doesn't evaluate the quality of a subagent or the timing of its tools.
 
-Text models are looked up in `LLAMA_MODELS_DIR` and in the folders of `LLAMA_EXTRA_MODELS_DIRS` (separated by `:`,
-default `~/models-nvme`). Models split into shards (`-00001-of-0000N.gguf`) count as one.
+Text models are looked up in `LLAMA_MODELS_DIR` and in the folders of `LLAMA_EXTRA_MODELS_DIRS` (separated by `:`). Models split into shards (`-00001-of-0000N.gguf`) count as one.
 
 Optional environment variables: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`,
 `KOBOLD_BIN`, `LLAMA_GPU_NAME`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
