@@ -3,6 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
+import urllib.error
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from unittest import mock
@@ -51,6 +52,7 @@ class Tools(unittest.TestCase):
         p = mock.patch.object(C, "BUDDY_DIR", Path(d.name))
         p.start()
         self.addCleanup(p.stop)
+        BT._CACHE.clear()
 
     def test_remember_and_forget(self):
         self.assertEqual(BT.run("recordar", '{"dato": "Le gusta el mate amargo."}')[0], "Anotado.")
@@ -94,6 +96,49 @@ class Tools(unittest.TestCase):
         self.assertEqual(json.loads(out)["resultados"][0]["url"], "https://example.com/news")
         self.assertEqual(opened.call_args.args[0].full_url, BT.SEARCH_URL)
         self.assertIn("Ya hiciste", BT.run("buscar_web", '{"consulta":"otra"}')[0])
+        BT.set_user_context({})  # otro turno: la misma consulta sale de caché sin red
+        with mock.patch.object(BT.urllib.request, "urlopen") as cached_open:
+            cached = json.loads(BT.run("buscar_web", '{"consulta":"dato actual"}')[0])
+        self.assertTrue(cached["cache"])
+        cached_open.assert_not_called()
+        BT.clear_user_context()
+
+    def test_failed_search_allows_one_retry_but_not_more(self):
+        page = b'<a class="result-link" href="https://example.com">Dato</a><td class="result-snippet">Ok.</td>'
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = page
+        BT.set_user_context({})
+        with mock.patch.object(BT.urllib.request, "urlopen",
+                               side_effect=[urllib.error.URLError("timeout"), response]):
+            self.assertFalse(BT.run("buscar_web", '{"consulta":"primera"}')[1])
+            self.assertTrue(BT.run("buscar_web", '{"consulta":"segunda"}')[1])
+        self.assertIn("Ya hiciste", BT.run("buscar_web", '{"consulta":"tercera"}')[0])
+        BT.clear_user_context()
+
+    def test_weather_by_place_and_shared_location(self):
+        forecast = {"current": {"time": "2026-11-17T18:00", "temperature_2m": 24.5,
+                                 "apparent_temperature": 23.9, "relative_humidity_2m": 40,
+                                 "precipitation": 0, "weather_code": 1, "wind_speed_10m": 12},
+                    "daily": {"time": ["2026-11-17", "2026-11-18"], "temperature_2m_min": [15, 16],
+                              "temperature_2m_max": [28, 30], "precipitation_probability_max": [5, 10],
+                              "weather_code": [1, 2]}}
+        geocode = {"results": [{"name": "Mendoza", "admin1": "Mendoza", "country": "Argentina",
+                                  "latitude": -32.89, "longitude": -68.84}]}
+        BT.set_user_context({})
+        with mock.patch.object(BT, "_get_json", side_effect=[geocode, forecast]) as get:
+            out = json.loads(BT.run("clima", '{"ubicacion":"Mendoza, Argentina"}')[0])
+        self.assertEqual(out["actual"]["temperatura_c"], 24.5)
+        self.assertEqual(out["hoy"]["estado"], "mayormente despejado")
+        self.assertEqual(get.call_count, 2)
+        with mock.patch.object(BT, "_get_json") as cached_get:
+            cached = json.loads(BT.run("clima", '{"ubicacion":"Mendoza, Argentina"}')[0])
+        self.assertTrue(cached["cache"])
+        cached_get.assert_not_called()
+        BT.set_user_context({"location": {"latitude": -34.60, "longitude": -58.38}})
+        with mock.patch.object(BT, "_get_json", return_value=forecast) as get:
+            out = json.loads(BT.run("clima", '{}')[0])
+        self.assertEqual(out["ubicacion"], "ubicación aproximada compartida")
+        self.assertEqual(get.call_count, 1)  # con coordenadas del cliente no hace geocoding
         BT.clear_user_context()
 
 

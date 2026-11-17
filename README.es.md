@@ -61,7 +61,9 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   pestaña con el botón flotante o una combinación de teclas segura y opcional. Puede hacer una búsqueda web breve por
   turno para verificar datos
   actuales. El idioma y la zona horaria vienen del navegador; compartir la ubicación aproximada es opcional, se
-  habilita por dispositivo y no se guarda. El atajo del navegador funciona mientras una pestaña de llama-panel tiene
+  habilita por dispositivo y no se guarda. El clima actual y el pronóstico de dos días usan la
+  [API de Open-Meteo](https://open-meteo.com/en/docs), no scraping web. El atajo del navegador funciona mientras una
+  pestaña de llama-panel tiene
   el foco. Para hablar desde cualquier programa, descargá `clients/dani.py` en la PC con teclado y micrófono y dejalo
   corriendo ahí; el panel sirve el cliente en `/clients/dani.py`. Las conversaciones se guardan como texto, sobreviven
   reinicios y tienen una conversación activa compartida: un turno enviado con `dani.py` aparece en vivo en el navegador.

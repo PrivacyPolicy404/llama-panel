@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a dedicated Open-Meteo weather tool for current conditions and a two-day forecast. General web search now
+  allows one retry after a network failure and uses a six-second timeout, while still capping successful searches.
 - Buddy conversations are now persisted, selectable and deletable, with one active conversation shared by the web UI
   and `dani.py`; turns sent with the global PC shortcut appear live in the browser. Audio and ephemeral location are
   never stored, and `contexto_usuario` is redacted from the tool audit log.
