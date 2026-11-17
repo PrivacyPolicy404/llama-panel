@@ -48,7 +48,9 @@ def units():
             "[Unit]\nDescription=Panel de control llama-server\n\n"
             # Sin bytecode: si no, __pycache__ dispararia el watcher de abajo en loop
             f"[Service]\nWorkingDirectory={C.APP_DIR}\nEnvironment=PYTHONDONTWRITEBYTECODE=1\n"
-            f"ExecStart=/usr/bin/python3 {entry}\nRestart=on-failure\nRestartSec=3\n\n"
+            # un puerto distinto del de siempre (LLAMA_PANEL_PORT al instalar) queda fijo en el servicio
+            + (f"Environment=LLAMA_PANEL_PORT={C.PANEL_PORT}\n" if C.PANEL_PORT != 8090 else "")
+            + f"ExecStart=/usr/bin/python3 {entry}\nRestart=on-failure\nRestartSec=3\n\n"
             "[Install]\nWantedBy=default.target\n"
         ),
         # Reinicia el panel cada vez que se guarda codigo Python (static/ se lee en cada pedido)
