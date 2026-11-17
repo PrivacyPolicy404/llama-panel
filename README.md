@@ -139,6 +139,31 @@ git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
 cd ~/llama-panel && python3 panel.py --install
 ```
 
+The Buddy is currently experimental and is not in `main`. To try the prerelease from a fresh clone, use its branch:
+
+```bash
+git clone --branch experimental/companion https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
+cd ~/llama-panel
+python3 panel.py --install
+sudo apt install curl ffmpeg cmake build-essential python3-venv  # Ubuntu/Debian
+scripts/install-voice.sh
+```
+
+`install-voice.sh` does not need root. It builds [whisper.cpp v1.9.5](https://github.com/ggml-org/whisper.cpp/tree/v1.9.5)
+for CPU use, creates an isolated Piper virtual environment, downloads the following default audio models and verifies
+their SHA-256 hashes before installing them:
+
+| Purpose | Default model | Source | Download | License | Verified SHA-256 |
+|---|---|---:|---:|---|---|
+| Speech to text | Whisper `small-q8_0` | [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-small-q8_0.bin) | 264 MB | MIT | `49c8fb02…17f779f` |
+| Text to speech | Piper `es_AR-daniela-high` (22.05 kHz) | [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_AR/daniela/high) | 114 MB | MIT | `7ceb1fc0…cc985` |
+
+Other Whisper GGML models from the [official collection](https://huggingface.co/ggerganov/whisper.cpp) and Piper
+voices from the [official catalog](https://huggingface.co/rhasspy/piper-voices) are detected in the Audio models tab.
+A Piper voice needs both its `.onnx` and matching `.onnx.json` file. Put extra models in
+`~/.local/share/llama-panel/voice/`, or set `LLAMA_AUDIO_DIRS` in `~/.config/llama-panel/paths.env`. The browser
+microphone requires HTTPS or `localhost` (an SSH tunnel works).
+
 This creates the systemd user services (`llama-panel`, `llama-router`, `kobold-img`) and starts the panel at
 `http://<machine>:8090`. If it can't find `llama-server` or any models, it opens the **Setup** tab: there you choose
 the model folders (with suggestions as you type and how many models each one has) and the programs (it shows the
@@ -159,9 +184,11 @@ KOBOLD_BIN=~/koboldcpp/koboldcpp
 LLAMA_SERVER_BIN=~/llama.cpp/build/bin/llama-server
 ```
 
-The `scripts/install-*.sh` scripts are optional, run once with `sudo` and have `--uninstall`.
-Each one installs a helper in `/usr/local/sbin` and a rule in `/etc/sudoers.d` that lets your user run **only** that
-helper without a password. AI mode **closes the graphical session** when turned on; read each script's header first.
+The root-level `scripts/install-gpu-mclk.sh` and `scripts/install-modo-ia.sh` scripts are optional, run once with
+`sudo` and have `--uninstall`. Each installs a helper in `/usr/local/sbin` and a rule in `/etc/sudoers.d` that lets
+your user run **only** that helper without a password. `install-voice.sh` is different: it installs entirely under
+your user account and does not need `sudo`. AI mode **closes the graphical session** when turned on; read each
+script's header first.
 
 > [!WARNING]
 > **AI mode is meant for a dedicated machine that you use remotely** (a home server with its own monitor, used

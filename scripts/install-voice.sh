@@ -3,8 +3,8 @@
 #
 #   ~/llama-panel/scripts/install-voice.sh
 #
-# Hace falta antes: ffmpeg, cmake, un compilador de C++ y python3-venv
-#   (Ubuntu/Debian: sudo apt install ffmpeg cmake build-essential python3-venv)
+# Hace falta antes: curl, ffmpeg, cmake, un compilador de C++ y python3-venv
+#   (Ubuntu/Debian: sudo apt install curl ffmpeg cmake build-essential python3-venv)
 #
 # Instala:
 #   ~/whisper.cpp                                   whisper.cpp $WHISPER_VERSION compilado para el CPU (la GPU es del modelo)
@@ -27,8 +27,12 @@ FILES=(
 )
 
 need() { command -v "$1" >/dev/null || { echo "Falta $1. $2"; exit 1; }; }
+need curl "sudo apt install curl"
+need tar "sudo apt install tar"
+need sha256sum "sudo apt install coreutils"
 need ffmpeg "sudo apt install ffmpeg"
 need cmake "sudo apt install cmake build-essential"
+need c++ "sudo apt install build-essential"
 python3 -c "import ensurepip" 2>/dev/null || { echo "Falta python3-venv: sudo apt install python3-venv"; exit 1; }
 
 # whisper.cpp

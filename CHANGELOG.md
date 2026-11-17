@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Documented the experimental Buddy installation from a fresh clone, its system dependencies, the exact Hugging Face
+  audio model sources, sizes, licenses and verified hashes; the voice installer now diagnoses every required command.
+
 ## 0.2.0-rc.1 (2026-11-17)
 
 Experimental companion prerelease. / Prerelease experimental del Compañero.
