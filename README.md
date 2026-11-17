@@ -61,7 +61,9 @@ They are written in Spanish; each one starts with an English summary of the main
   media players (never scripts or automations). You can talk to it from any tab using the floating button or an
   optional safe key combination. It can
   run one short web search per turn to verify current facts. Language and timezone come from the browser; approximate
-  location is optional, enabled per device, and never saved. The browser shortcut works while a llama-panel tab has
+  location is optional, enabled per device, and never saved. Current weather and a two-day forecast use the
+  [Open-Meteo API](https://open-meteo.com/en/docs) instead of web scraping. The browser shortcut works while a
+  llama-panel tab has
   focus. To talk from any program, download `clients/dani.py` onto the PC with the keyboard and microphone and leave
   it running there; the panel serves the client at `/clients/dani.py`. Conversations are saved as text, survive panel
   restarts and have one shared active conversation: a turn sent through `dani.py` appears live in the browser.
