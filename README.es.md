@@ -152,6 +152,11 @@ El principal existe por los modelos MoE grandes que no entran en la VRAM, como Q
   así entran 44 de 48 capas en el tope.
 
 Sin el parche ese modelo no carga con la configuración del panel; el resto de los modelos no lo necesita.
+
+**¿Querés correr Qwen3.8-Flash-Next a ~20 tok/s en una RX 580?** [docs/flash-next-rx580.md](docs/flash-next-rx580.md)
+(en inglés) tiene la configuración exacta del panel, y la guía del fork
+([docs/rx580.md](https://github.com/PrivacyPolicy404/llama.cpp/blob/ot-host-buffers/docs/rx580.md)) cómo compilarlo
+y preparar los archivos del modelo.
 Detalles, números y cómo reaplicarlo: [patches/README.es.md](patches/README.es.md).
 
 Para actualizar llama.cpp sin perder los parches: `scripts/update-llama.sh` (con `--check` solo informa cuántos commits nuevos hay).

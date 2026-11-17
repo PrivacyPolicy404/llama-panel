@@ -152,6 +152,11 @@ The main one exists because of large MoE models that don't fit in VRAM, such as 
   `-ot ...=Vulkan_Host`: 44 of 48 layers fit under the cap.
 
 Without the patch that model doesn't load with the panel's settings; the other models don't need it.
+
+**Want to run Qwen3.8-Flash-Next at ~20 tok/s on an RX 580?** [docs/flash-next-rx580.md](docs/flash-next-rx580.md)
+has the exact panel configuration, and the fork's guide
+([docs/rx580.md](https://github.com/PrivacyPolicy404/llama.cpp/blob/ot-host-buffers/docs/rx580.md)) how to build it
+and prepare the model files.
 Details, numbers and how to reapply it: [patches/README.md](patches/README.md).
 
 To update llama.cpp without losing the patches: `scripts/update-llama.sh` (`--check` only reports how many new commits
