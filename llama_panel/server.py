@@ -5,6 +5,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import config as C
+from . import gate
 from . import hardware
 from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES
@@ -99,4 +100,5 @@ def serve():
         print(f"no se pudieron revisar los units: {e}", flush=True)
     hardware.start_sampler()
     prompt_cache.start_watcher()
+    gate.start_background()
     ThreadingHTTPServer(("0.0.0.0", C.PANEL_PORT), Handler).serve_forever()

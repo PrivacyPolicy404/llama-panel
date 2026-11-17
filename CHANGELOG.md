@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Optional on-demand start: the panel serves ports 8080 and 5001 and starts text or images depending on what each
+  client asks for, after the requests in progress finish; requests for a model that does not exist go to the
+  loaded one. Optional idle unload after N minutes. Both in the Setup tab.
 - Named saved prompts per model (for example `cline` and `voice`), preloaded into llama-server's RAM prompt cache
   when the model loads: switching clients costs ~1 s instead of ~1 min.
 - Global settings with the same controls as the per-model ones.

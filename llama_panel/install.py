@@ -21,6 +21,7 @@ def units():
     """{nombre_de_archivo: contenido} de todos los units que maneja el panel."""
     entry = C.APP_DIR / "panel.py"
     pkg = C.APP_DIR / "llama_panel"
+    host, port = C.backend("text")  # con el encendido a demanda, solo en la maquina (el panel atiende el 8080)
     return {
         f"{C.SERVICE}.service": (
             "[Unit]\nDescription=llama.cpp router server (Vulkan)\n"
@@ -33,7 +34,7 @@ def units():
             # Flash-Next sin MTP +2.9 %, con MTP +0.8–1.4 % (bitácora 5.21)
             "Environment=GGML_VK_FIRST_SUBMIT_NODES=2\n" + GPU_MCLK +
             f"ExecStart={C.LLAMA_SERVER} --models-preset {C.PRESET_FILE} --models-max 1 "
-            f"--host 0.0.0.0 --port {C.CHAT_PORT}\n"
+            f"--host {host} --port {port}\n"
             "Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"
         ),
         f"{C.IMG_SERVICE}.service": (

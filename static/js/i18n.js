@@ -264,6 +264,21 @@ export const EN = {
   'Nombre de la GPU': 'GPU name',
   'Opcional, solo para mostrar. Detectado: <b>{name}</b>.': 'Optional, display only. Detected: <b>{name}</b>.',
   'Rutas aplicadas.': 'Paths applied.',
+  // encendido a demanda
+  'Encendido a demanda': 'On-demand start',
+  'Prender texto o imágenes según lo que pida cada cliente': 'Start text or images depending on what each client asks for',
+  'El panel atiende los puertos {chat} y {img}: un pedido de imagen con un modelo de texto cargado lo baja y prende el generador, y al revés, siempre después de que terminen los pedidos en curso. Los clientes no cambian de dirección. Al activarlo o desactivarlo se reinician los servicios encendidos. Si el panel se reinicia, se corta lo que esté pasando por él.':
+    'The panel serves ports {chat} and {img}: an image request while a text model is loaded unloads it and starts the generator, and the other way around, always after the requests in progress finish. Clients keep the same address. Turning it on or off restarts the running services. If the panel restarts, whatever is going through it is cut off.',
+  'Descargar después de estos minutos sin uso': 'Unload after this many idle minutes',
+  '0 = nunca': '0 = never',
+  'Baja el modelo de texto o apaga el generador de imágenes para liberar la VRAM. Funciona también sin el encendido a demanda.':
+    'Unloads the text model or stops the image generator to free the VRAM. Also works without on-demand start.',
+  'Atendiendo los puertos {chat} y {img}.': 'Serving ports {chat} and {img}.',
+  'Todavía no atiende los puertos.': 'Not serving the ports yet.',
+  '{n} pedidos de texto en curso': '{n} text requests in progress',
+  '{n} pedidos de imagen en curso': '{n} image requests in progress',
+  '{n} de texto esperando': '{n} text waiting',
+  '{n} de imagen esperando': '{n} image waiting',
   // varios
   'carga {load}': 'load {load}',
   'ventilador {pct} %': 'fan {pct} %',

@@ -5,6 +5,7 @@ Cada funcion devuelve {"ok": bool, "msg": str} para mostrar en la interfaz.
 import time
 
 from . import config as C
+from . import gate
 from . import img_models as IM
 from . import prompt_cache as PC
 from . import services
@@ -28,6 +29,7 @@ def do_action(action):
         return ok(_("Servidor de texto apagado."))
     if action in ("start", "restart"):
         note = free_vram_for("text")
+        gate.touch("text")
         n = len(TM.write_preset())
         out = svc("restart" if action == "restart" else "start")
         msg = _("Servidor de texto reiniciado ({n} modelos).", n=n) if action == "restart" \
@@ -38,6 +40,7 @@ def do_action(action):
         if not m:
             return fail(_("No hay modelos de imagen en {dir}.", dir=C.IMG_DIR))
         note = free_vram_for("img")
+        gate.touch("img")
         out = svc("restart" if action == "img_restart" else "start", C.IMG_SERVICE)
         msg = _("Generador de imágenes reiniciado con {model}.", model=m["id"]) if action == "img_restart" \
             else _("Generador de imágenes encendido con {model}.", model=m["id"])
@@ -90,6 +93,7 @@ def text_load(body):
             router("GET", "/models?reload=1", timeout=10)
         except Exception:  # noqa: BLE001
             pass
+    gate.touch("text")  # recién cargado desde el panel: que la inactividad cuente desde ahora
     others = _unload_others(mid)
     err = _load_with_retry(mid)
     if err:
@@ -268,8 +272,44 @@ def img_use(body):
         C.save_settings(settings)
         m = IM.write_img_env()
     note = free_vram_for("img")
+    gate.touch("img")
     was_on = svc_state(C.IMG_SERVICE) in ("active", "activating")
     out = svc("restart" if was_on else "start", C.IMG_SERVICE)
     msg = _("Generador de imágenes reiniciado con {model}.", model=m["id"]) if was_on \
         else _("Generador de imágenes encendido con {model}.", model=m["id"])
     return ok(f"{msg}{note} {out}".strip())
+
+
+# ---------- encendido a demanda ----------
+def auto_settings(body):
+    """Guarda el encendido a demanda (proxy en 8080/5001) y la descarga por inactividad; si cambia el proxy, mueve los
+    servicios encendidos de puerto (se reinician)."""
+    swap = bool(body.get("swap"))
+    try:
+        idle = int(body.get("idle_min") or 0)
+    except (TypeError, ValueError):
+        idle = -1
+    if not 0 <= idle <= 1440:
+        return fail(_("Los minutos sin uso van de 0 (nunca) a 1440."))
+    with C.SETTINGS_LOCK:
+        settings = C.load_settings()
+        changed = settings["auto"]["swap"] != swap
+        # lo cargado se consulta antes de guardar: todavía en el puerto viejo
+        loaded = [k for k, v in router_models().items() if v["status"] in ("loaded", "loading")] if changed else []
+        settings["auto"] = {"swap": swap, "idle_min": idle}
+        C.save_settings(settings)
+    idle_msg = _("Descarga por inactividad: después de {n} min sin uso.", n=idle) if idle \
+        else _("Descarga por inactividad: apagada.")
+    if not changed:
+        return ok(_("Guardado.") + " " + idle_msg)
+    text_on, img_on = gate.apply_swap(swap, loaded)
+    restarted = _(" Se reiniciaron los servicios encendidos para cambiarlos de puerto.") if text_on or img_on else ""
+    if swap:
+        st = gate.status()
+        if len(st["listening"]) < 2:
+            return fail(_("Guardado, pero el panel no pudo atender los puertos {ports}: {err}",
+                          ports=f"{C.CHAT_PORT}/{C.IMG_PORT}", err=st["error"] or "?"))
+        return ok(_("Encendido a demanda activo: el panel atiende los puertos {ports} y prende lo que pida cada cliente.",
+                    ports=f"{C.CHAT_PORT}/{C.IMG_PORT}") + restarted + " " + idle_msg)
+    return ok(_("Encendido a demanda apagado: los servicios vuelven a atender los puertos {ports}.",
+                ports=f"{C.CHAT_PORT}/{C.IMG_PORT}") + restarted + " " + idle_msg)

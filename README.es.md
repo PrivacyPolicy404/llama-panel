@@ -21,7 +21,8 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 > **Seguridad:** el panel (8090), llama-server (8080) y KoboldCpp (5001) escuchan en todas las interfaces y **no
 > tienen autenticación**: cualquiera que llegue a esos puertos puede cargar, bajar y configurar modelos. Pensado
 > solo para una red local de confianza. No los expongas a internet; si hace falta acceso remoto, usá una VPN o un
-> túnel SSH, o limitá los puertos con el firewall.
+> túnel SSH, o limitá los puertos con el firewall. Con el encendido a demanda, llama-server y KoboldCpp escuchan
+> solo en la máquina (18080 y 15001) y el panel atiende el 8080 y el 5001, también sin autenticación.
 
 ## Qué hace
 
@@ -39,6 +40,11 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 - Rendimiento: tokens/s por respuesta (prompt y generación, aceptación MTP) y duración de cada imagen.
 - Registros en vivo de cada servicio, con filtro.
 - Pestaña **Configuración** para elegir carpetas de modelos y programas desde el navegador.
+- **Encendido a demanda** opcional: el panel atiende los puertos 8080 y 5001 y prende lo que pida cada cliente. Un
+  pedido de imagen con un modelo de texto cargado espera a que terminen los pedidos de texto en curso, lo baja y
+  prende el generador, y al revés; Open WebUI, un asistente de voz o un script usan las dos cosas sin pasar por el
+  panel. Un pedido con un modelo que no existe (un cliente fijado en `gpt-4o`) va al que está cargado. Aparte, la
+  **descarga por inactividad** libera la VRAM después de N minutos sin uso. Las dos cosas están en Configuración.
 
 ## Estructura
 
@@ -50,6 +56,7 @@ llama_panel/
   i18n.py             mensajes del servidor en castellano o inglés
   text_models.py      escaneo de .gguf, presets.ini del router, validación
   prompt_cache.py     prompt inicial guardado: estado del slot a disco y restauración al cargar
+  gate.py             encendido a demanda (proxy en 8080/5001 que alterna texto e imágenes) y descarga por inactividad
   img_models.py       escaneo de imagen, acompañantes (VAE/codificadores), kobold.env
   services.py         systemctl y clientes HTTP del router y de KoboldCpp
   hardware.py         sensores de GPU/RAM y muestreo en segundo plano

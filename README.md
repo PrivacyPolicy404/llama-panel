@@ -22,7 +22,8 @@ They are written in Spanish; each one starts with an English summary of the main
 > **Security:** the panel (8090), llama-server (8080) and KoboldCpp (5001) listen on all interfaces and **have no
 > authentication**: anyone who can reach those ports can load, unload and configure models. It is meant for a
 > trusted local network only. Do not expose them to the internet; for remote access use a VPN or an SSH tunnel,
-> or restrict the ports with a firewall.
+> or restrict the ports with a firewall. With on-demand start on, llama-server and KoboldCpp only listen on
+> localhost (18080 and 15001) and the panel serves 8080 and 5001, still without authentication.
 
 ## What it does
 
@@ -40,6 +41,11 @@ They are written in Spanish; each one starts with an English summary of the main
 - Performance: tokens/s per response (prompt and generation, MTP acceptance) and duration of each image.
 - Live logs of each service, with a filter.
 - A **Setup** tab to choose model folders and programs from the browser.
+- Optional **on-demand start**: the panel takes over ports 8080 and 5001 and starts whatever each client asks for.
+  An image request while a text model is loaded waits for the text requests in progress, unloads it and starts the
+  image generator, and the other way around; Open WebUI, a voice assistant or a script can use both without touching
+  the panel. A request naming a model that does not exist (a client fixed to `gpt-4o`) goes to the loaded one.
+  Separately, **idle unload** frees the VRAM after N minutes without use. Both are in the Setup tab.
 
 ## Layout
 
@@ -51,6 +57,7 @@ llama_panel/
   i18n.py             server messages in Spanish or English
   text_models.py      .gguf scan, router presets.ini, validation
   prompt_cache.py     saved initial prompt: slot state to disk and restore on load
+  gate.py             on-demand start (proxy on 8080/5001 that swaps text and images) and idle unload
   img_models.py       image scan, companions (VAE/encoders), kobold.env
   services.py         systemctl and HTTP clients for the router and KoboldCpp
   hardware.py         GPU/RAM sensors (amdgpu, nvidia-smi) and background sampling

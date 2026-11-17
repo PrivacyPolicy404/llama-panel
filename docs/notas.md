@@ -49,6 +49,18 @@ Límites que importan:
 - `llama-panel` (:8090): este panel. Se reinicia solo al guardar código Python (`llama-panel-reload.path`).
 - `llama-router` (:8080): llama-server en modo router, `--models-max 1`, lee `~/.config/llama-panel/presets.ini`.
 - `kobold-img` (:5001): KoboldCpp + StableUI. Excluyente con el router (`Conflicts=`).
+- **Encendido a demanda** (`gate.py`, ajuste `auto.swap` en settings.json): el router y KoboldCpp pasan a
+  `127.0.0.1:18080` y `:15001` y el panel atiende el 8080 y el 5001. Al cambiarlo se reescriben los units y
+  `kobold.env` y se reinician los servicios encendidos. Un pedido de un lado espera a que el otro no tenga pedidos en
+  curso (hasta 15 min, después 503). Las consultas que una interfaz repite (`/v1/models`, `/props`, el progreso de
+  StableUI) no prenden nada; con el texto apagado, `/v1/models` lo responde el panel con los modelos en disco.
+  - **Trampa:** `/models/sse` (la interfaz web de llama-server abierta en algún navegador) es una suscripción que no
+    termina nunca. Si contara como pedido en curso, bloquearía las imágenes para siempre; por eso todos los GET de la
+    API del router son pasivos. Al agregar rutas, revisar si terminan.
+  - Reiniciar el panel (guardar un `.py`, guardar rutas) corta lo que esté pasando por el proxy en ese momento.
+  - Descarga por inactividad (`auto.idle_min`): cuenta los pedidos del proxy, las cargas desde el panel y lo que
+    se ve trabajando en `/slots` y en el progreso de KoboldCpp. El router sin modelo usa 0.01 GB de VRAM: se descarga
+    el modelo y el router queda prendido.
 
 ## Modelos MoE y sus configuraciones
 
@@ -299,5 +311,6 @@ ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
   30.7–31.2 / 24.2–24.5 tok/s en los dos brazos, misma VRAM; `~/llama-panel-results/2026-11-17-ngl-global.json`).
 - Campos propios para MoE en el panel: hecho en parte (controles de capas en GPU y expertos en RAM, 2026-11-17).
   Falta la caché de expertos (`moe-cache-mib` / `cpu-share`, hoy en opciones extra) y un botón de tuning.
-- Botón "Actualizar desde GitHub" en el panel; descarga automática por inactividad.
+- Botón "Actualizar desde GitHub" en el panel.
+- ~~Descarga automática por inactividad~~ y encendido a demanda: hecho (2026-11-17, bitácora 5.35).
 - Subir el límite de GTT (permitiría fijar las 48 capas de Flash-Next; ganancia estimada: algo más de prompt).

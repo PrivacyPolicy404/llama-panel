@@ -63,9 +63,10 @@ def html_keys():
 
 
 def py_keys():
+    """Textos de _("...") y de gate.event("..."), que se traduce al mostrarlo."""
     keys = set()
     for f in (ROOT / "llama_panel").glob("*.py"):
-        for m in re.finditer(r"\b_\(((?:\s*\"(?:[^\"\\]|\\.)*\")+)", f.read_text()):
+        for m in re.finditer(r"\b(?:_|event)\(((?:\s*\"(?:[^\"\\]|\\.)*\")+)", f.read_text()):
             keys.add(ast.literal_eval("(" + m[1] + ")"))
     return keys
 

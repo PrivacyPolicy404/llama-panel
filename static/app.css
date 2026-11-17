@@ -314,6 +314,11 @@ details.global[open] summary { margin-bottom: 12px; }
 
 /* ---------- configuración ---------- */
 #setup { display: flex; flex-direction: column; gap: 12px; max-width: 860px; }
+#auto { max-width: 860px; margin-top: 12px; }
+.auto-status { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.auto-status:empty { display: none; }
+.auto-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.auto-events .mono { font-family: var(--mono); font-size: 12px; margin-right: 6px; }
 .setup-card { display: flex; flex-direction: column; gap: 10px; }
 .setup-card h4 { margin: 0; font-size: 14px; }
 .setup-card .hint { margin: 0; }

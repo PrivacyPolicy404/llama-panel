@@ -90,7 +90,7 @@ def http_json(port, method, path, body=None, timeout=3):
 
 
 def router(method, path, body=None, timeout=3):
-    return http_json(C.CHAT_PORT, method, path, body, timeout)
+    return http_json(C.backend_port("text"), method, path, body, timeout)
 
 
 def router_error(e):
@@ -129,14 +129,28 @@ def wait_router(timeout=25):
     return False
 
 
+def wait_kobold(timeout=300):
+    """Espera a que KoboldCpp termine de cargar el modelo de imagen. Corta antes si el servicio se cae."""
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            http_json(C.backend_port("img"), "GET", "/api/extra/version", timeout=2)
+            return True
+        except Exception:  # noqa: BLE001
+            if svc_state(C.IMG_SERVICE) in ("inactive", "failed"):
+                return False
+            time.sleep(1)
+    return False
+
+
 def kobold_status():
     """(progreso, perf) de KoboldCpp, o (None, None) si no responde."""
     try:
-        p = http_json(C.IMG_PORT, "GET", "/sdapi/v1/progress", timeout=1.5)
+        p = http_json(C.backend_port("img"), "GET", "/sdapi/v1/progress", timeout=1.5)
         s = p.get("state") or {}
         progress = {"step": s.get("sampling_step", 0), "steps": s.get("sampling_steps", 0),
                     "eta": p.get("eta_relative", 0)}
-        perf = http_json(C.IMG_PORT, "GET", "/api/extra/perf", timeout=1.5)
+        perf = http_json(C.backend_port("img"), "GET", "/api/extra/perf", timeout=1.5)
         return progress, {k: perf.get(k) for k in ("total_img_gens", "queue", "idle", "uptime")}
     except Exception:  # noqa: BLE001
         return None, None

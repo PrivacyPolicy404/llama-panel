@@ -3,6 +3,7 @@ from pathlib import Path
 
 from . import actions
 from . import config as C
+from . import gate
 from . import hardware
 from . import paths
 from .i18n import _
@@ -31,6 +32,7 @@ def state():
         "text": {"models": models},
         "img": img,
         "ai_mode": ai_mode_state(),
+        "auto": gate.status(),
     }
 
 
@@ -93,4 +95,5 @@ POST_ROUTES = {
     "/api/img/use": actions.img_use,
     "/api/paths/check": lambda b: paths.check(b.get("values") or {}),
     "/api/paths": paths.save,
+    "/api/auto": actions.auto_settings,
 }

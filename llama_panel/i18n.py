@@ -237,6 +237,37 @@ EN = {
     " Volver al escritorio: S dos veces · Ctrl+Alt+F2 y  sudo llama-modo-ia off":
         " Back to the desktop: S twice · Ctrl+Alt+F2 and  sudo llama-modo-ia off",
     # opciones de razonamiento (config.REASONING_OPTS)
+    # encendido a demanda (gate.py)
+    "El generador de imágenes no responde. Mirá la pestaña Registros.":
+        "The image generator is not responding. Check the Logs tab.",
+    "El generador de imágenes no arrancó. Mirá la pestaña Registros.":
+        "The image generator did not start. Check the Logs tab.",
+    "El generador de imágenes está ocupado; probá de nuevo en un rato.": "The image generator is busy; try again later.",
+    "El servidor de texto está respondiendo; probá de nuevo en un rato.": "The text server is busy; try again later.",
+    "El servicio no respondió.": "The service did not respond.",
+    "El servidor de texto está apagado: se prende con el primer pedido.":
+        "The text server is off: it starts with the first request.",
+    "El generador de imágenes está apagado: se prende con el primer pedido.":
+        "The image generator is off: it starts with the first request.",
+    "No se pudo usar el puerto {port} ({err}). Reiniciá el servicio que lo ocupa.":
+        "Could not use port {port} ({err}). Restart the service that holds it.",
+    "Pedido de texto: servidor de texto encendido en {s} s.": "Text request: text server started in {s} s.",
+    "Pedido de imagen: generador encendido con {model} en {s} s.":
+        "Image request: generator started with {model} in {s} s.",
+    "{min} min sin uso: {models} descargado.": "{min} min idle: {models} unloaded.",
+    "{min} min sin uso: generador de imágenes apagado.": "{min} min idle: image generator stopped.",
+    "Los minutos sin uso van de 0 (nunca) a 1440.": "Idle minutes go from 0 (never) to 1440.",
+    "Descarga por inactividad: después de {n} min sin uso.": "Idle unload: after {n} min without use.",
+    "Descarga por inactividad: apagada.": "Idle unload: off.",
+    "Guardado.": "Saved.",
+    " Se reiniciaron los servicios encendidos para cambiarlos de puerto.":
+        " The running services were restarted to move them to the new port.",
+    "Guardado, pero el panel no pudo atender los puertos {ports}: {err}":
+        "Saved, but the panel could not take ports {ports}: {err}",
+    "Encendido a demanda activo: el panel atiende los puertos {ports} y prende lo que pida cada cliente.":
+        "On-demand start on: the panel serves ports {ports} and starts whatever each client asks for.",
+    "Encendido a demanda apagado: los servicios vuelven a atender los puertos {ports}.":
+        "On-demand start off: the services serve ports {ports} again.",
     "por defecto": "default",
     "auto": "auto",
     "activado": "on",

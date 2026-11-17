@@ -78,7 +78,8 @@ def build_kobold_args(m, extra=""):
     # Vulkan en la GPU 0 salvo que las opciones del modelo elijan otro backend (por ejemplo --usecuda)
     if not any(a in GPU_BACKEND_FLAGS for a in user):
         args += ["--usevulkan", "0"]
-    return args + ["--host", "0.0.0.0", "--port", str(C.IMG_PORT)] + user
+    host, port = C.backend("img")
+    return args + ["--host", host, "--port", str(port)] + user
 
 
 def write_img_env():

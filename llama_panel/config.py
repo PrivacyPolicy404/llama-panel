@@ -60,8 +60,13 @@ SERVICE = "llama-router"
 IMG_SERVICE = "kobold-img"
 PANEL_SERVICE = "llama-panel"
 PANEL_PORT = int(os.environ.get("LLAMA_PANEL_PORT", "8090"))
-CHAT_PORT = 8080
+CHAT_PORT = 8080  # puertos que usan los clientes
 IMG_PORT = 5001
+# Con el encendido a demanda (gate.py) el panel atiende CHAT_PORT e IMG_PORT y los servicios escuchan solo en la
+# maquina, en estos puertos
+INNER_PORTS = {"text": 18080, "img": 15001}
+PUBLIC_PORTS = {"text": CHAT_PORT, "img": IMG_PORT}
+DEFAULT_AUTO = {"swap": False, "idle_min": 0}
 
 # Sin n-gpu-layers: con un valor fijo llama.cpp apaga --fit y un MoE que no entra en la VRAM va a ~2 tok/s
 DEFAULT_GLOBAL = "reasoning-format = deepseek"  # opciones extra globales (texto)
@@ -101,7 +106,37 @@ def load_settings():
     img = data.setdefault("image", {})
     img.setdefault("selected", "")
     img.setdefault("models", {})
+    data["auto"] = {**DEFAULT_AUTO, **(data.get("auto") or {})}
     return data
+
+
+_auto_cache = {"key": None, "val": dict(DEFAULT_AUTO)}
+
+
+def auto_settings():
+    """Ajustes del encendido a demanda ({"swap": bool, "idle_min": int}). Se consulta en cada pedido a los servicios:
+    se relee settings.json solo si cambio."""
+    try:
+        st = SETTINGS_FILE.stat()
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key != _auto_cache["key"]:
+        _auto_cache["val"] = load_settings()["auto"] if key else dict(DEFAULT_AUTO)
+        _auto_cache["key"] = key
+    return _auto_cache["val"]
+
+
+def backend(which):
+    """(host, puerto) donde escucha el servicio "text" o "img": el puerto de siempre en todas las interfaces o, con
+    el encendido a demanda, uno interno solo en la maquina."""
+    if auto_settings().get("swap"):
+        return "127.0.0.1", INNER_PORTS[which]
+    return "0.0.0.0", PUBLIC_PORTS[which]
+
+
+def backend_port(which):
+    return backend(which)[1]
 
 
 def save_settings(data):

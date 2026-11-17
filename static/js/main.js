@@ -9,6 +9,7 @@ import { save } from './save.js';
 import { renderPerf } from './perf.js';
 import { loadLogs } from './logs.js';
 import { loadSetup, needsSetup } from './setup.js';
+import { renderAuto } from './auto.js';
 import { lang, setLang, t, translateDom } from './i18n.js';
 
 async function pollState() {
@@ -22,7 +23,7 @@ async function pollState() {
     if (S.config && S.state.img.selected_key !== undefined && S.state.img.selected_key !== S.config.img_selected && !S.dirtyImg) {
       S.config.img_selected = S.state.img.selected_key;
     }
-    renderTiles(); renderEngines(); updateTextStates(); updateImgStates(); renderAiMode();
+    renderTiles(); renderEngines(); updateTextStates(); updateImgStates(); renderAiMode(); renderAuto();
   } catch {
     $('#conn').hidden = false;
   }

@@ -1171,6 +1171,28 @@ distintos (por ejemplo Cline y un asistente de voz)? Dos prompts de sistema de ~
   punta a punta: guardar «voz» desde el panel, recargar Flash-Next (21 s), el log dice «precargados: voz (7781
   tokens), principal (7101 tokens)» y el prompt de voz responde en 1.07 s.
 
+### 5.35 Encendido a demanda: cuánto cuesta el proxy y cuánto tarda cambiar de lado (2026-11-17)
+
+**Pregunta:** si el panel atiende el 8080 y el 5001 y le pasa los pedidos a los servicios (`gate.py`), ¿la respuesta
+en streaming llega más lenta? ¿Cuánto espera un cliente cuando hay que cambiar entre texto e imágenes?
+
+**Método:** Flash-Next `-hcq8`, modo IA, temperatura 0, 300 tokens en streaming, el mismo pedido por el proxy (8080)
+y directo (18080), alternados tres veces. Se mide desde el primer trozo hasta el último, del lado del cliente.
+
+| Camino | Primer a último trozo (s) | Servidor (tok/s) |
+|---|---|---|
+| Proxy | 14.19 / 14.07 / 14.16 | 21.07 / 21.26 / 21.11 |
+| Directo | 14.12 / 14.14 / 14.07 | 21.17 / 21.15 / 21.25 |
+
+- **El proxy no cambia nada medible** (las dos columnas se cruzan; el MTP con temperatura 0 igual mete algo de ruido).
+- Cambio de lado, con un pedido de texto de 250 tokens en curso y un pedido de imagen (animagine-xl, 512×512, 8
+  pasos) 2 s después: la imagen esperó a que terminara el texto (14 s), KoboldCpp tardó **50 s** en prender (el
+  modelo de 6.9 GB está en el HDD) y la imagen salió a los 80 s del arranque.
+- Vuelta a texto con `"model": "gpt-4o"`: apagar KoboldCpp, prender el router y cargar Flash-Next (el último usado,
+  desde el caché de páginas) llevó **19 s** hasta la respuesta.
+- Descarga por inactividad con 1 minuto: Flash-Next se descargó a los ~70 s (se revisa cada 20 s) y la VRAM bajó de
+  7.1 GB a 0.01 GB con el router prendido.
+
 ---
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
