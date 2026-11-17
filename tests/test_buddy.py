@@ -69,6 +69,31 @@ class Tools(unittest.TestCase):
         self.assertEqual(len(lines), 4)
         self.assertEqual(json.loads(lines[0])["tool"], "rm_rf")
 
+    def test_user_context_is_ephemeral_and_location_is_rounded(self):
+        BT.set_user_context({"language": "es-AR", "timezone": "America/Argentina/Buenos_Aires",
+                             "location": {"latitude": -34.6037, "longitude": -58.3816}})
+        with mock.patch.object(BT, "_get_json", return_value={"address": {"city": "Buenos Aires",
+                                                                           "country": "Argentina"}}):
+            out = json.loads(BT.run("contexto_usuario", "{}")[0])
+        self.assertEqual(out["location"]["city"], "Buenos Aires")
+        self.assertIn("aproximada", out["location_precision"])
+        BT.clear_user_context()
+        self.assertEqual(json.loads(BT.run("contexto_usuario", "{}")[0])["location"], "no compartida")
+
+    def test_web_search_has_fixed_endpoint_and_one_call_per_turn(self):
+        page = b'''<a class="result-link" href="https://example.com/news">Titulo</a>
+                   <td class="result-snippet">Un resultado reciente.</td>'''
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = page
+        BT.set_user_context({})
+        with mock.patch.object(BT.urllib.request, "urlopen", return_value=response) as opened:
+            out, ok = BT.run("buscar_web", '{"consulta":"dato actual"}')
+        self.assertTrue(ok)
+        self.assertEqual(json.loads(out)["resultados"][0]["url"], "https://example.com/news")
+        self.assertEqual(opened.call_args.args[0].full_url, BT.SEARCH_URL)
+        self.assertIn("Ya hiciste", BT.run("buscar_web", '{"consulta":"otra"}')[0])
+        BT.clear_user_context()
+
 
 class HomeAssistantTools(unittest.TestCase):
     def setUp(self):

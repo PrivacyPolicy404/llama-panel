@@ -57,8 +57,10 @@ They are written in Spanish; each one starts with an English summary of the main
   sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
   call is logged. Voice setup without sudo: `scripts/install-voice.sh` (the microphone needs https or localhost, for
   example an SSH tunnel). With a Home Assistant token it can also list and switch lights, plugs, fans, scenes and
-  media players (never scripts or automations). You can talk to it from any tab (space bar, floating button) and, with
-  `clients/dani.py` on your PC, from any program by holding a key (the panel serves it at `/clients/dani.py`).
+  media players (never scripts or automations). You can talk to it from any tab (space bar, floating button). It can
+  run one short web search per turn to verify current facts. Language and timezone come from the browser; approximate
+  location is optional, enabled per device, and never saved. With `clients/dani.py` on your PC, you can talk to it
+  from any program by holding a key (the panel serves it at `/clients/dani.py`).
   It also speaks on its own: timers and reminders it sets for you, warnings about the homelab (GPU or CPU too hot, a
   service down, low RAM or disk) and a morning summary. Only the client used last plays the audio, and messages wait
   if nobody is connected. `POST /api/buddy/say` makes it say something (for example from a Home Assistant automation).

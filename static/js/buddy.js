@@ -156,6 +156,7 @@ function draw() {
           <button class="btn ghost small" id="buddy-cfg-default">${t('Volver a la personalidad de fábrica')}</button>
         </label>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
+        <label class="check"><input type="checkbox" id="buddy-share-location"> ${t('Compartir ubicación aproximada con el compañero')}</label>
         <div class="field"><span>${t('Por su cuenta')}</span>
           <label class="check"><input type="checkbox" id="buddy-cfg-alerts"> ${t('Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco')}</label>
           <label class="check">${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
@@ -207,6 +208,7 @@ function fillSettings() {
   $('#buddy-mem').value = B.memory;
   $('#buddy-cfg-alerts').checked = c.alerts;
   $('#buddy-cfg-morning').value = c.morning || '';
+  $('#buddy-share-location').checked = localStorage.getItem('buddy-share-location') === '1';
   renderTimers();
   const ha = B.ha;
   $('#buddy-ha-state').textContent = !ha.configured ? `· ${t('sin conectar')} (${ha.url})` : ha.ok ? `· ✓ ${t('conectado')}` : `· ✗ ${ha.msg}`;
@@ -244,6 +246,7 @@ function bind() {
     B = await getJSON('/api/buddy'); fillSettings();
   };
   $('#buddy-speak').onchange = () => post('/api/buddy/config', { speak: $('#buddy-speak').checked });
+  $('#buddy-share-location').onchange = e => localStorage.setItem('buddy-share-location', e.target.checked ? '1' : '0');
   $('#buddy-ha-save').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/ha', { token: $('#buddy-ha-token').value })));
     $('#buddy-ha-token').value = '';
@@ -330,10 +333,19 @@ async function send(body) {
   abort = new AbortController();
   $('#buddy-stop').hidden = false;
   try {
+    const userContext = { language: navigator.language || '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '' };
+    if (localStorage.getItem('buddy-share-location') === '1' && navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject,
+          { enableHighAccuracy: false, timeout: 3500, maximumAge: 300000 }));
+        userContext.location = { latitude: Math.round(pos.coords.latitude * 100) / 100,
+          longitude: Math.round(pos.coords.longitude * 100) / 100 };
+      } catch { /* permiso denegado o ubicación no disponible: el backend recibe sólo idioma/zona horaria */ }
+    }
     const r = await fetch('/api/buddy/chat', {
       method: 'POST', signal: abort.signal,
       headers: { 'Content-Type': 'application/json', 'X-Lang': lang() },
-      body: JSON.stringify({ ...body, speak: $('#buddy-speak').checked, client: CLIENT }),
+      body: JSON.stringify({ ...body, speak: $('#buddy-speak').checked, client: CLIENT, user_context: userContext }),
     });
     const reader = r.body.getReader(), dec = new TextDecoder();
     let buf = '';

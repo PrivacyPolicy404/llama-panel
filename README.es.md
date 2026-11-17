@@ -57,7 +57,9 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   cada llamada queda registrada. La voz se instala sin sudo con `scripts/install-voice.sh` (el micrófono necesita
   https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces,
   enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones). Se le habla desde cualquier
-  pestaña (barra espaciadora, botón flotante) y, con `clients/dani.py` en tu PC, desde cualquier programa manteniendo
+  pestaña (barra espaciadora, botón flotante). Puede hacer una búsqueda web breve por turno para verificar datos
+  actuales. El idioma y la zona horaria vienen del navegador; compartir la ubicación aproximada es opcional, se
+  habilita por dispositivo y no se guarda. Con `clients/dani.py` en tu PC, se le habla desde cualquier programa manteniendo
   apretada una tecla (el panel lo sirve en `/clients/dani.py`). También habla por su cuenta: timers y recordatorios
   que le pedís, avisos del homelab (GPU o CPU muy calientes, un servicio caído, poca RAM o disco) y un resumen a la
   mañana. El audio sale solo por el cliente que se usó último y, si no hay nadie conectado, los mensajes esperan.
