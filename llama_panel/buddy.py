@@ -195,6 +195,7 @@ def _run(body, events, cancel):
     sentences = queue.Queue()
     tts = threading.Thread(target=_speak_loop, args=(sentences, events, cancel), daemon=True) if speak else None
     if tts:
+        threading.Thread(target=voice.SPEAKER.warm, daemon=True).start()  # en paralelo con el modelo
         tts.start()
     try:
         text = str(body.get("text") or "").strip()
@@ -237,6 +238,7 @@ def _converse(cfg, text, events, cancel, sentences):
         if cfg["tools"]:
             req["tools"] = BT.schemas(cfg["tools"])
         reply, calls, pending = "", None, ""
+        spoken_first = False
         for kind, data in stream_completion(port, req, cancel):
             if kind == "text":
                 if first is None:
@@ -245,9 +247,10 @@ def _converse(cfg, text, events, cancel, sentences):
                 reply += data
                 events.put({"type": "text", "delta": data})
                 if sentences is not None:
-                    ready, pending = voice.split_sentences(pending + data)
+                    ready, pending = voice.split_sentences(pending + data, first=not spoken_first)
                     for s in ready:
                         sentences.put(s)
+                        spoken_first = True
             else:
                 calls = data
         if cancel.is_set():

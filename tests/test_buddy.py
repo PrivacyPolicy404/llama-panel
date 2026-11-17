@@ -22,6 +22,13 @@ class Voice(unittest.TestCase):
         self.assertEqual(voice.split_sentences(rest, final=True), (["Yo bien, che"], ""))
         self.assertEqual(voice.split_sentences("Sin punto todavía"), ([], "Sin punto todavía"))
 
+    def test_first_piece_goes_out_early(self):
+        self.assertEqual(voice.split_sentences("¡Hola! Acá puedo mirar", first=True), (["¡Hola!"], "Acá puedo mirar"))
+        long = "Acá puedo mirar cómo está la máquina y la hora, y guardarme datos tuyos"
+        self.assertEqual(voice.split_sentences(long, first=True),
+                         (["Acá puedo mirar cómo está la máquina y la hora,"], "y guardarme datos tuyos"))
+        self.assertEqual(voice.split_sentences("Corto, sin más", first=True), ([], "Corto, sin más"))
+
     def test_speakable_drops_markdown_and_emoji(self):
         self.assertEqual(voice.speakable("**Listo** 😄 mirá [esto](http://x) y `ls -la`"), "Listo mirá esto y ls -la")
         self.assertEqual(voice.speakable("```\ncodigo\n```"), "")

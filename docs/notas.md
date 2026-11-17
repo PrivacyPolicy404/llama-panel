@@ -245,6 +245,9 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
     mejora a 8. Con el audio en webm del navegador (ffmpeg incluido): 0.74 s.
   - Primer token: 1.4 s sin herramientas, 3.8 s con una ronda de herramienta. Por voz, ~2.2 s desde que se suelta
     el botón (sin contar Piper).
+  - Piper (`es_AR-daniela-high`, onnxruntime en CPU): 0.13 a 0.21 s por oración, ~12 veces más rápido que el audio;
+    cargar la voz, ~0.6 s (se precarga al empezar la charla). Primer audio con texto: **1.4 s**, antes 5.2 s, al
+    mandar la primera parte apenas aparece ("¡Hola!") o cortarla en una coma si viene larga.
   - **Trampa: el prompt tiene que quedar fijo.** Personalidad y herramientas son ~1200 tokens: si cambian, Flash-Next
     los reprocesa a ~58 tok/s (~20 s). Por eso la memoria se lee al empezar cada charla (no en cada mensaje), el
     prompt no lleva la hora y el historial se recorta de a mitades.

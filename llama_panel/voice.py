@@ -74,11 +74,20 @@ def speakable(text):
 
 
 SENTENCE_END = re.compile(r"(?<=[.!?…:;])\s+|\n+")
+COMMA = re.compile(r",\s+")
 
 
-def split_sentences(buffer, final=False, min_len=24):
+def split_sentences(buffer, final=False, min_len=24, first=False):
     """Corta lo generado hasta ahora en oraciones listas para leer. Devuelve (oraciones, resto). Junta las cortas
-    con la siguiente para que la voz no suene entrecortada."""
+    con la siguiente para que la voz no suene entrecortada, salvo la primera (`first`): esa sale apenas haya algo
+    ("¡Hola!" suena enseguida) y, si viene larga, se corta en una coma. Lo que importa es cuándo empieza a hablar;
+    mientras suena la primera parte se sintetiza la siguiente."""
+    if first:
+        min_len = 1
+        if not final and not SENTENCE_END.search(buffer):
+            m = list(COMMA.finditer(buffer))
+            if m and m[-1].start() >= 30:
+                return [buffer[:m[-1].start() + 1].strip()], buffer[m[-1].end():]
     parts = SENTENCE_END.split(buffer)
     rest = "" if final else parts.pop()
     out, acc = [], ""
@@ -101,6 +110,12 @@ class Speaker:
     def __init__(self):
         self.proc = None
         self.lock = threading.Lock()
+
+    def warm(self):
+        """Arranca Piper de antemano (cargar la voz tarda ~0.6 s): se llama al empezar una charla con voz."""
+        with self.lock:
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
 
     @staticmethod
     def available():
