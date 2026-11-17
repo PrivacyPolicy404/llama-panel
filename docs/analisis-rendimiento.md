@@ -1282,7 +1282,16 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 9. Subir el GTT por GRUB para fijar las 48 capas: ganancia estimada chica (solo prompt).
 10. ~~Recortar la salida del borrador MTP~~: hecho (5.23, parche 8), +2 %.
 11. Largo de borrador por umbral de confianza, saltear expertos de peso bajo y verificación dispersa: pistas de 5.23.
-12. Fusionar la «puesta al día» del borrador (`process()`) con el primer borrador: una ejecución menos por paso (~1.5 %).
+12. ~~Fusionar la «puesta al día» del borrador (`process()`) con el primer borrador~~: medido en 5.24, +0.3–0.6 %
+    (ruido). Descartado.
+13. ~~Kernel Q2_0 de CPU para varias posiciones del mismo experto (idea de Strata, 5.19)~~: descartado sin prototipo
+    (2026-11-17). Ahorra desempaquetado e instrucciones, no bytes, y con MTP los expertos ya están en el techo de la
+    RAM (5.9: ~1.8 GB por paso a ~43 GB/s); un experto repetido en el lote ya se lee una sola vez porque
+    `mul_mat_id` agrupa las posiciones por experto.
+
+Estado al 2026-11-17: lo que queda en software es ≤3 % y pide reescribir el scheduler (5: solapar el experto
+compartido) o ya se midió en el ruido. La palanca pendiente es de sistema: subir el GTT (9) para fijar las 48 capas,
+que necesita sudo y reiniciar.
 
 ## 11. Reproducir las mediciones clave
 
