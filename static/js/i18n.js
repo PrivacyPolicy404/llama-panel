@@ -49,14 +49,19 @@ export function translateDom(root) {
 
 export const EN = {
   'Desactivado': 'Disabled',
-  'Espacio (sólo en Compañero)': 'Space (Buddy tab only)',
-  'Ctrl + Shift + Espacio (todo el panel)': 'Ctrl + Shift + Space (whole panel)',
-  'F9 (todo el panel)': 'F9 (whole panel)',
+  'Espacio': 'Space',
   'Mantené apretado para hablar': 'Hold to talk',
   'Mantené apretado para hablar · Atajo: {key}': 'Hold to talk · Shortcut: {key}',
   'Atajo para hablar en este navegador': 'Push-to-talk shortcut in this browser',
-  'Desactivado por defecto. Los atajos nunca se capturan mientras usás un campo, botón o enlace. Para hablar desde cualquier programa usá dani.py.':
-    'Disabled by default. Shortcuts are never captured while using a field, button or link. To talk from any program, use dani.py.',
+  'Definir atajo': 'Set shortcut',
+  'Borrar': 'Clear',
+  'Sólo en la sección Compañero': 'Only in the Buddy section',
+  'En cualquier sección del panel': 'In any panel section',
+  'Apretá «Definir atajo» y después la combinación que quieras. No se captura mientras usás un campo, botón o enlace.':
+    'Select “Set shortcut” and then press the combination you want. It is not captured while using a field, button or link.',
+  'Presioná la combinación… (Escape cancela)': 'Press the combination… (Escape cancels)',
+  'Para todo el panel usá una combinación con Ctrl, Alt o Shift, o una tecla F1–F12.':
+    'For the whole panel, use a combination with Ctrl, Alt or Shift, or an F1–F12 key.',
   // index.html
   'Panel IA': 'AI Panel',
   'Sin conexión con el panel': 'No connection to the panel',
@@ -348,9 +353,11 @@ export const EN = {
   'Avisos pendientes': 'Pending reminders',
   'Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.':
     'If the panel has a password, add <code>--token</code> with one created in Setup, Access.',
-  'Desde tu PC, con una tecla': 'From your PC, with a key',
-  'Para hablarle desde cualquier programa (sin el navegador): mantené apretado Ctrl derecho. En Windows, en PowerShell:':
-    'To talk to it from any program (without the browser): hold right Ctrl. On Windows, in PowerShell:',
+  'Hablar desde cualquier programa de tu PC': 'Talk from any program on your PC',
+  'El atajo de arriba funciona sólo cuando llama-panel tiene el foco. Para usar una tecla sobre cualquier programa, descargá este cliente en la PC que tiene el micrófono y dejalo corriendo. En Windows, abrí PowerShell:':
+    'The shortcut above works only while llama-panel has focus. To use a key over any program, download this client on the PC with the microphone and leave it running. On Windows, open PowerShell:',
+  'Mientras mantenés F9 apretado graba; al soltarlo manda el audio. Podés cambiar <code>f9</code> por <code>ctrl_r</code>, otra tecla F o una letra.':
+    'It records while you hold F9 and sends the audio when you release it. You can replace <code>f9</code> with <code>ctrl_r</code>, another F key or a letter.',
   'Te escucho…': 'Listening…',
   'Pensando…': 'Thinking…',
   'Escuchando lo que dijiste…': 'Understanding what you said…',

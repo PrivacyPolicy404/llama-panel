@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- Replaced the invasive global Space push-to-talk binding with a per-device setting: disabled by default, Space only
-  in the Buddy tab, or Ctrl+Shift+Space/F9 across the panel. Interactive controls are never intercepted.
+- Replaced the invasive global Space push-to-talk binding with a per-device shortcut recorder and a choice of Buddy-only
+  or whole-panel scope. Unsafe bare keys are rejected for the whole panel and interactive controls are never intercepted.
+  Background tabs now close their reminder event stream so several open tabs cannot exhaust the browser connection pool.
 - Documented the experimental Buddy installation from a fresh clone, its system dependencies, the exact Hugging Face
   audio model sources, sizes, licenses and verified hashes; the voice installer now diagnoses every required command.
 - Updated the bilingual README screenshots to show the Buddy using its time and web-search tools; screenshot language

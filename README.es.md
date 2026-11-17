@@ -61,8 +61,9 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
   pestaña con el botón flotante o una combinación de teclas segura y opcional. Puede hacer una búsqueda web breve por
   turno para verificar datos
   actuales. El idioma y la zona horaria vienen del navegador; compartir la ubicación aproximada es opcional, se
-  habilita por dispositivo y no se guarda. Con `clients/dani.py` en tu PC, se le habla desde cualquier programa manteniendo
-  apretada una tecla (el panel lo sirve en `/clients/dani.py`). También habla por su cuenta: timers y recordatorios
+  habilita por dispositivo y no se guarda. El atajo del navegador funciona mientras una pestaña de llama-panel tiene
+  el foco. Para hablar desde cualquier programa, descargá `clients/dani.py` en la PC con teclado y micrófono y dejalo
+  corriendo ahí; el panel sirve el cliente en `/clients/dani.py`. También habla por su cuenta: timers y recordatorios
   que le pedís, avisos del homelab (GPU o CPU muy calientes, un servicio caído, poca RAM o disco) y un resumen a la
   mañana. El audio sale solo por el cliente que se usó último y, si no hay nadie conectado, los mensajes esperan.
   `POST /api/buddy/say` lo hace decir algo (por ejemplo, desde una automatización de Home Assistant).
