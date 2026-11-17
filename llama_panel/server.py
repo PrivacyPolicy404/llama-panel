@@ -1,27 +1,31 @@
 """Servidor HTTP: sirve static/ y despacha /api/* a las rutas de api.py."""
 import json
 import mimetypes
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import auth
 from . import config as C
 from . import gate
 from . import hardware
 from . import prompt_cache
 from .api import GET_ROUTES, POST_ROUTES, POST_STREAM_ROUTES
 from .audio_api import RAW_POST_ROUTES
-from .i18n import remember_ui_lang, set_lang
+from .i18n import _, remember_ui_lang, set_lang
 from .install import sync_units
 
 MAX_BODY = 8_000_000  # el audio del compañero llega en base64 dentro del JSON
 MAX_RAW_BODY = 30_000_000  # /v1/audio/transcriptions: OpenAI acepta archivos de hasta 25 MB
+# Sin sesión: la interfaz (no tiene datos), el programa de la PC (está en el repo público) y el login
+PUBLIC_GET = {"/", "/clients/dani.py", "/api/auth"}
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # silencio
         pass
 
-    def _send(self, code, data, ctype="application/json"):
+    def _send(self, code, data, ctype="application/json", headers=()):
         if not isinstance(data, bytes):
             data = json.dumps(data, ensure_ascii=False).encode()
         try:
@@ -29,6 +33,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith(("text/", "application/j")) else ""))
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            for k, v in headers:
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(data)
         except (BrokenPipeError, ConnectionResetError):
@@ -54,8 +60,46 @@ class Handler(BaseHTTPRequestHandler):
             remember_ui_lang(lang)  # y el que sigue el dashboard del modo IA
         return ok
 
+    # ---------- contraseña (auth.py) ----------
+    def _authorized(self):
+        return auth.allowed(self.client_address[0], self.headers)
+
+    def _need_login(self):
+        self._send(401, {"ok": False, "login": True, "msg": _("Hace falta iniciar sesión.")})
+
+    def _session_cookie(self, sid, days=auth.SESSION_DAYS):
+        return ("Set-Cookie", f"{auth.COOKIE}={sid}; Path=/; HttpOnly; SameSite=Strict; Max-Age={days * 86400}")
+
+    def _auth_post(self, path, body):
+        ip = self.client_address[0]
+        if path == "/api/login":
+            time.sleep(auth.pending_delay(ip))  # el que prueba contraseñas espera cada vez más
+            good = auth.check_password(str(body.get("password", "")))
+            auth.throttle(ip, good)
+            if not good:
+                return self._send(403, {"ok": False, "msg": _("Contraseña incorrecta.")})
+            return self._send(200, {"ok": True, "msg": ""}, headers=[self._session_cookie(auth.new_session())])
+        if path == "/api/logout":
+            auth.end_session(auth.cookie_value(self.headers.get("Cookie")))
+            return self._send(200, {"ok": True, "msg": _("Sesión cerrada.")}, headers=[self._session_cookie("", 0)])
+        # /api/auth/password: poner, cambiar o sacar la contraseña (cierra las demás sesiones, no la propia)
+        if not self._authorized():
+            return self._need_login()
+        new = str(body.get("new", ""))
+        err = auth.set_password(new, str(body.get("current", "")))
+        if err:
+            return self._send(200, {"ok": False, "msg": _("No se cambió: {err}.", err=_(err))})
+        msg = _("Contraseña guardada. Desde esta máquina (y por túnel SSH) no se pide.") if new \
+            else _("Contraseña sacada: el panel queda abierto en la red.")
+        return self._send(200, {"ok": True, "msg": msg}, headers=[self._session_cookie(auth.new_session())] if new else ())
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/api/auth":
+            return self._send(200, {"enabled": auth.enabled(), "ok": self._authorized(),
+                                    "local": auth.is_local(self.client_address[0])})
+        if u.path not in PUBLIC_GET and not u.path.startswith("/static/") and not self._authorized():
+            return self._need_login()
         if u.path == "/":
             return self._static("index.html")
         if u.path.startswith("/static/"):
@@ -104,10 +148,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        auth_route = path in ("/api/login", "/api/logout", "/api/auth/password")
+        if not auth_route and not self._authorized():
+            return self._need_login()
         if path in RAW_POST_ROUTES:
             return self._raw(RAW_POST_ROUTES[path])
         route = POST_ROUTES.get(path) or POST_STREAM_ROUTES.get(path)
-        if not route:
+        if not route and not auth_route:
             return self._error(404, "no encontrado")
         # Exigir JSON impide que otra pagina web dispare acciones con un formulario (CSRF)
         if not self.headers.get("Content-Type", "").startswith("application/json"):
@@ -124,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("se espera un objeto")
         except ValueError as e:
             return self._error(400, f"JSON invalido: {e}")
+        if auth_route:
+            return self._auth_post(path, body)
         if path in POST_STREAM_ROUTES:
             return self._stream(route(body))
         try:

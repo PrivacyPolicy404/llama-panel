@@ -1,5 +1,5 @@
 // Arranque: ciclos de consulta, pestanas y botones globales.
-import { $, $$, getJSON, now, post, report, withBusy } from './util.js';
+import { $, $$, getJSON, now, post, report, showLogin, withBusy } from './util.js';
 import { S, clearDirty, hooks, setDirty } from './state.js';
 import { HIST_WINDOW, renderTiles } from './tiles.js';
 import { renderEngines } from './engines.js';
@@ -10,6 +10,7 @@ import { renderPerf } from './perf.js';
 import { loadLogs } from './logs.js';
 import { loadSetup, needsSetup } from './setup.js';
 import { renderAuto } from './auto.js';
+import { loadAccess } from './access.js';
 import { buddyTab, initBuddy, loadBuddy } from './buddy.js';
 import { playPreview, renderAudioEngine, renderAudioModels } from './audio.js';
 import { lang, setLang, t, translateDom } from './i18n.js';
@@ -65,7 +66,7 @@ function showTab(tab) {
   history.replaceState(null, '', '#' + tab);
   if (tab === 'perf') renderPerf();
   if (tab === 'logs') loadLogs();
-  if (tab === 'setup') loadSetup();
+  if (tab === 'setup') { loadSetup(); loadAccess(); }
   if (tab === 'buddy') loadBuddy();
   buddyTab(tab);
 }
@@ -120,6 +121,10 @@ function bind() {
 
 async function start() {
   translateDom(document.body);  // textos fijos de index.html
+  try {
+    const a = await getJSON('/api/auth');
+    if (a.enabled && !a.ok) { showLogin(); return; }  // panel con contraseña y sin sesión
+  } catch { /* panel viejo o caido: sigue como siempre */ }
   const sel = $('#lang');
   sel.value = lang();
   sel.onchange = () => setLang(sel.value);  // guarda y recarga la pagina en el idioma nuevo

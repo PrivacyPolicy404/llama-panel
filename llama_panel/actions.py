@@ -346,3 +346,17 @@ def audio_preview(body):
     except Exception as e:  # noqa: BLE001
         return fail(_("Sin voz: {err}", err=e))
     return ok("", wav=base64.b64encode(wav or b"").decode())
+
+
+# ---------- contraseña: tokens para programas ----------
+def auth_token(body):
+    from . import auth
+    token, err = auth.new_token(body.get("name", ""))
+    if err:
+        return fail(_("No se creó: {err}.", err=_(err)))
+    return ok(_("Token creado. Copialo ahora: no se vuelve a mostrar."), token=token)
+
+
+def auth_revoke(body):
+    from . import auth
+    return ok(_("Token revocado.")) if auth.revoke_token(str(body.get("name", ""))) else fail(_("No existe ese token."))

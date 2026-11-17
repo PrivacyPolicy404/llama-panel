@@ -3,6 +3,7 @@ from pathlib import Path
 
 from . import actions
 from . import audio_models as AM
+from . import auth
 from . import buddy
 from . import config as C
 from . import gate
@@ -95,6 +96,7 @@ GET_ROUTES = {
     "/api/paths": lambda q: paths.current(),
     "/api/paths/dirs": lambda q: {"dirs": paths.suggest_dirs(q.get("prefix", [""])[0])},
     "/api/buddy": lambda q: buddy.state(),
+    "/api/auth/tokens": lambda q: {"tokens": auth.tokens()},
 }
 
 
@@ -122,6 +124,8 @@ POST_ROUTES = {
     "/api/buddy/reset": lambda b: _result(buddy.reset()),
     "/api/buddy/ha": lambda b: _result(buddy.save_ha_token(b.get("token", ""))),
     "/api/audio/use": actions.audio_use,
+    "/api/auth/token": actions.auth_token,
+    "/api/auth/revoke": actions.auth_revoke,
     "/api/audio/preview": actions.audio_preview,
 }
 

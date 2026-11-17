@@ -23,7 +23,9 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 > **Seguridad:** el panel (8090), llama-server (8080) y KoboldCpp (5001) escuchan en todas las interfaces y **no
 > tienen autenticación**: cualquiera que llegue a esos puertos puede cargar, bajar y configurar modelos. Pensado
 > solo para una red local de confianza. No los expongas a internet; si hace falta acceso remoto, usá una VPN o un
-> túnel SSH, o limitá los puertos con el firewall. Con el encendido a demanda, llama-server y KoboldCpp escuchan
+> túnel SSH, o limitá los puertos con el firewall. El panel (8090) puede tener **contraseña** (Configuración,
+> Acceso): el navegador inicia sesión, los programas usan tokens con nombre y desde la propia máquina (incluido un
+> túnel SSH) no se pide. Con el encendido a demanda, llama-server y KoboldCpp escuchan
 > solo en la máquina (18080 y 15001) y el panel atiende el 8080 y el 5001, también sin autenticación.
 
 ## Qué hace
@@ -83,6 +85,7 @@ llama_panel/
   voice.py            whisper.cpp (voz a texto) y Piper (texto a voz); tts_worker.py corre en el venv de Piper
   audio_models.py     modelos de Whisper y voces de Piper en disco, y cuáles se usan
   audio_api.py        /v1/audio/speech y /v1/audio/transcriptions compatibles con OpenAI
+  auth.py             contraseña opcional del panel: sesiones del navegador, tokens para programas, local sin pedir
 static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo; i18n.js tiene las traducciones)

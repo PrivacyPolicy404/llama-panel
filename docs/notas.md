@@ -261,6 +261,10 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
 - **Trampa (pruebas):** probar a Dani con frases inventadas («me gusta el mate amargo») deja datos falsos en
   `memoria.md`, que después aparecen en las charlas reales. Vaciar la memoria al terminar de probar. La personalidad
   de fábrica pide usar `recordar` solo para datos duraderos: antes anotaba hasta «le pidió un chiste».
+- **Contraseña del panel** (`auth.py`, opcional; `~/.config/llama-panel/auth.json` 600, solo hashes): sin ella todo
+  abierto como antes. Con ella, 127.0.0.1/::1 pasan sin pedir (kiosco, herramientas locales, túnel SSH), el
+  navegador usa una cookie de sesión de 30 días y los programas un token. Probado de punta a punta en un servidor
+  aparte (:8099) pidiendo por la IP de la red. **No cubre 8080 ni 5001** (llama-server, KoboldCpp o el proxy).
 - `clients/dani.py` (en la PC, Python con `sounddevice` y `pynput`): tecla global para hablar (Ctrl derecho), pitido
   al empezar y terminar, la respuesta suena oración por oración y apretar de nuevo la corta. Probado acá con
   `--file` / `--save` (sin micrófono): pregunta en voz a respuesta en audio, de punta a punta.

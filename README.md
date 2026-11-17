@@ -24,7 +24,9 @@ They are written in Spanish; each one starts with an English summary of the main
 > **Security:** the panel (8090), llama-server (8080) and KoboldCpp (5001) listen on all interfaces and **have no
 > authentication**: anyone who can reach those ports can load, unload and configure models. It is meant for a
 > trusted local network only. Do not expose them to the internet; for remote access use a VPN or an SSH tunnel,
-> or restrict the ports with a firewall. With on-demand start on, llama-server and KoboldCpp only listen on
+> or restrict the ports with a firewall. The panel (8090) can have a **password** (Setup tab, Access): then the
+> browser logs in, programs use named tokens, and requests from the machine itself (including an SSH tunnel) are not
+> asked for it. With on-demand start on, llama-server and KoboldCpp only listen on
 > localhost (18080 and 15001) and the panel serves 8080 and 5001, still without authentication.
 
 ## What it does
@@ -83,6 +85,7 @@ llama_panel/
   voice.py            whisper.cpp (speech to text) and Piper (text to speech); tts_worker.py runs in Piper's venv
   audio_models.py     Whisper models and Piper voices on disk, and which ones are in use
   audio_api.py        OpenAI-compatible /v1/audio/speech and /v1/audio/transcriptions
+  auth.py             optional panel password: browser sessions, tokens for programs, local requests allowed
 static/
   index.html, app.css
   js/                 native ES modules, no build (main.js starts everything; i18n.js has the translations)

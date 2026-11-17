@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Optional panel password (Setup tab, Access): browser login with a 30-day session, named tokens for programs
+  (`dani.py --token`, OpenAI clients), no password asked from the machine itself or through an SSH tunnel, and
+  slower answers after each failed login. Only hashes are stored.
 - Talk to the buddy from any tab (space bar and a floating button) and from any program on your PC with
   `clients/dani.py`, a push-to-talk client with a global key that the panel serves at `/clients/dani.py`.
 - Audio engine (CPU) next to text and images: an Audio models tab to pick the Whisper model and the Piper voice

@@ -113,6 +113,7 @@ function draw() {
           <pre class="buddy-cmd">py -m pip install sounddevice pynput
 iwr ${esc(location.origin)}/clients/dani.py -OutFile dani.py
 py dani.py --server ${esc(location.origin)}</pre>
+          <p class="hint">${t('Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.')}</p>
         </div>
         <label class="field"><span>${t('Memoria')}</span>
           <textarea id="buddy-mem" rows="6" spellcheck="false"></textarea>

@@ -23,16 +23,44 @@ export const dur = s => s < 60 ? `${fix(s, 1)} s` : `${Math.floor(s / 60)} min $
 
 export async function getJSON(url) {
   const r = await fetch(url, { cache: 'no-store', headers: { 'X-Lang': lang() } });
+  if (r.status === 401) showLogin();
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
 export async function post(url, body = {}) {
   try {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Lang': lang() }, body: JSON.stringify(body) });
+    if (r.status === 401) showLogin();
     return await r.json();
   } catch {
     return { ok: false, msg: tr('No se pudo contactar al panel.') };
   }
+}
+
+// Contraseña del panel (llama_panel/auth.py): si un pedido vuelve 401, se pide la contraseña y se recarga
+export function showLogin() {
+  if ($('#login')) return;
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="login" id="login">
+      <form class="card login-card">
+        <h2>${esc(tr('Panel con contraseña'))}</h2>
+        <input type="password" name="password" autocomplete="current-password" placeholder="${esc(tr('Contraseña'))}" required>
+        <button class="btn" type="submit">${esc(tr('Entrar'))}</button>
+        <p class="hint" data-msg></p>
+      </form>
+    </div>`);
+  const form = $('#login form');
+  $('input', form).focus();
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('button', form);
+    const r = await withBusy(btn, () => fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Lang': lang() },
+      body: JSON.stringify({ password: form.password.value }),
+    }).then(x => x.json()).catch(() => ({ ok: false, msg: tr('No se pudo contactar al panel.') })));
+    if (r.ok) location.reload();
+    else { $('[data-msg]', form).textContent = r.msg; form.password.select(); }
+  };
 }
 export async function withBusy(btn, fn) {
   if (btn) { btn.classList.add('busy'); btn.disabled = true; }

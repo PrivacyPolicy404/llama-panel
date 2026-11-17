@@ -327,6 +327,8 @@ export const EN = {
   'cambia cosas': 'changes things',
   'peligrosa': 'dangerous',
   'Vos': 'You',
+  'Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.':
+    'If the panel has a password, add <code>--token</code> with one created in Setup, Access.',
   'Desde tu PC, con una tecla': 'From your PC, with a key',
   'Para hablarle desde cualquier programa (sin el navegador): mantené apretado Ctrl derecho. En Windows, en PowerShell:':
     'To talk to it from any program (without the browser): hold right Ctrl. On Windows, in PowerShell:',
@@ -340,6 +342,30 @@ export const EN = {
   'sin conectar': 'not connected',
   'conectado': 'connected',
   'no disponible': 'not available',
+  // acceso
+  'Panel con contraseña': 'Password-protected panel',
+  'Contraseña': 'Password',
+  'Entrar': 'Log in',
+  'Acceso': 'Access',
+  'El panel pide contraseña en la red. Desde esta máquina (y por túnel SSH) no la pide.':
+    'The panel asks for a password on the network. It does not ask from this machine (or through an SSH tunnel).',
+  'Sin contraseña: cualquiera en tu red puede usar el panel y hablarle al compañero (que puede manejar luces). Los puertos 8080 y 5001 no pasan por acá.':
+    'No password: anyone on your network can use the panel and talk to the buddy (which can control lights). Ports 8080 and 5001 do not go through here.',
+  'Contraseña actual': 'Current password',
+  'Contraseña nueva (vacía para sacarla)': 'New password (empty to remove it)',
+  'Contraseña nueva': 'New password',
+  'Repetila': 'Repeat it',
+  'Cambiar contraseña': 'Change password',
+  'Poner contraseña': 'Set password',
+  'Cerrar sesión': 'Log out',
+  'Tokens para programas': 'Tokens for programs',
+  'Para <code>dani.py --token …</code> o un cliente de la API de OpenAI (<code>api_key</code>). Cada programa con el suyo, así se puede revocar uno solo.':
+    'For <code>dani.py --token …</code> or an OpenAI API client (<code>api_key</code>). One per program, so each can be revoked on its own.',
+  'Revocar': 'Revoke',
+  'Ninguno todavía.': 'None yet.',
+  'nombre, ej.: laptop': 'name, e.g. laptop',
+  'Crear token': 'Create token',
+  'Las dos contraseñas no coinciden.': 'The two passwords do not match.',
   // encendido a demanda
   'Encendido a demanda': 'On-demand start',
   'Prender texto o imágenes según lo que pida cada cliente': 'Start text or images depending on what each client asks for',
