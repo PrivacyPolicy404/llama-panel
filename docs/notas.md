@@ -288,7 +288,10 @@ ve sin escritorio (8164 MiB libres) y la VRAM en reposo queda en 14 MiB.
 - Borrar el Flash-Next original (shard 1, 38 GB) si el `-hcq8` anda bien un tiempo.
 - ~~Fusionar operaciones chicas en Vulkan~~: medido, techo +2.4 % (`analisis-rendimiento.md` 5.7).
 - Mover Qwen3.6 al NVMe (el usuario prefiere dejarlo en el HDD por ahora: tarda ~2 min en cargar si no está en caché).
-- Sacar `n-gpu-layers = 99` de los ajustes globales.
-- Campos propios para MoE en el panel (expertos en RAM, cache, reparto con el CPU) y un botón de tuning.
+- ~~Sacar `n-gpu-layers = 99` de los ajustes globales~~: hecho (2026-11-17). Los MoE tienen su propio 99 en el
+  control «Capas en GPU»; los densos (Qwen3-8B ×2, Qwen3.5-9B) rinden igual sin el valor global (A/B alternado:
+  30.7–31.2 / 24.2–24.5 tok/s en los dos brazos, misma VRAM; `~/llama-panel-results/2026-11-17-ngl-global.json`).
+- Campos propios para MoE en el panel: hecho en parte (controles de capas en GPU y expertos en RAM, 2026-11-17).
+  Falta la caché de expertos (`moe-cache-mib` / `cpu-share`, hoy en opciones extra) y un botón de tuning.
 - Botón "Actualizar desde GitHub" en el panel; descarga automática por inactividad.
 - Subir el límite de GTT (permitiría fijar las 48 capas de Flash-Next; ganancia estimada: algo más de prompt).
