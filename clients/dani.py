@@ -272,9 +272,12 @@ def run_hotkey(args, session):
             return  # la repetición automática del teclado manda la tecla muchas veces
         state["down"] = True
         session.interrupt()
-        if not args.no_beep:
-            beep(args.out, 880)
+        # Primero el micrófono y después el pitido, en paralelo: abrir los dos streams (sobre todo en Windows) tarda
+        # cientos de ms y, con el pitido antes, se perdía el comienzo de la frase («hola, cómo estás» → «que hace»).
+        # Así, cuando suena, ya está grabando.
         rec.start()
+        if not args.no_beep:
+            threading.Thread(target=beep, args=(args.out, 880), daemon=True).start()
 
     def on_release(k):
         if not matches(k) or not state["down"]:

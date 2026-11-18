@@ -36,9 +36,18 @@ def audio_ctx(seconds):
 
 def clean_transcript(text):
     t = " ".join(text.split()).strip()
-    if t.lower().strip(" .!¡") in [h.strip(" .!¡") for h in HALLUCINATIONS]:
+    # Whisper suele pegar una frase de subtítulos antes o después de algo que sí se dijo. No alcanza con descartar
+    # sólo la coincidencia exacta: sacamos estas alucinaciones conocidas únicamente de los bordes.
+    for hallucination in sorted(HALLUCINATIONS, key=len, reverse=True):
+        phrase = re.escape(hallucination.strip(" .!¡[]()"))
+        t = re.sub(rf"^\s*[¡!¿?\[\(]*{phrase}[\]\) .,!¡¿?;:—-]*", "", t, flags=re.I)
+        t = re.sub(rf"[¡!¿?\[\( .,!;:—-]*{phrase}[\]\) .,!¡¿?;:—-]*$", "", t, flags=re.I)
+    if not t.strip(" .!¡¿?"):
         return ""
-    return t
+    # Con la ventana de audio justa (audio_ctx) Whisper a veces escribe la frase entera dos veces
+    # («¿Cuánto está el dólar? ¿Cuánto está el dólar?»): queda una
+    m = re.fullmatch(r"(.{8,}?[.!?…]?)(?:\s+\1)+", t, flags=re.I | re.S)
+    return m.group(1) if m else t
 
 
 def stt_available():

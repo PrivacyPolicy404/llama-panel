@@ -93,7 +93,9 @@ llama_panel/
   netserver.py        listens on IPv4 and IPv6 (the .local name is also published over IPv6)
   install.py          systemd units (and keeping them in sync at startup)
   kiosk.py            text dashboard for "AI mode" (tty1)
-  buddy.py            Buddy tab: personality, history and the agent loop (streams text, tools and audio)
+  buddy.py            Buddy tab: settings, history and the agent loop (streams text, tools and audio)
+  buddy_prompt.py     the buddy's instructions in sections (defaults in Spanish and English; editable and fixed)
+  buddy_eval.py       buddy behaviour tests ("Save and test" button and tools/bench/buddy_eval.py)
   buddy_tools.py      the buddy's tools, each with its risk level, and the call log
   voice.py            whisper.cpp (speech to text) and Piper (text to speech); tts_worker.py runs in Piper's venv
   audio_models.py     Whisper models and Piper voices on disk, and which ones are in use
@@ -111,7 +113,7 @@ scripts/
   install-modo-ia.sh  optional, with sudo: "AI mode" (stops the desktop, dashboard on tty1)
   install-voice.sh    optional, without sudo: whisper.cpp, Piper and the Spanish models for the Buddy tab
 patches/              local llama.cpp patches and how to reapply them
-tools/bench/          benchmarks, CPU/GPU usage, GGUF sizes and model smoke test
+tools/bench/          benchmarks, CPU/GPU usage, GGUF sizes, model smoke test and buddy tests
 tools/                GGUF utilities (hc in Q8_0, MTP draft with trimmed output)
 docs/                 hardware notes and performance log (Spanish, with English summaries)
 .claude/skills/       llama-cpp-update skill (review and update llama.cpp)

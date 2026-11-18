@@ -15,6 +15,7 @@ import threading
 import time
 import uuid
 
+from . import buddy_prompt as BP
 from . import buddy_tools as BT
 from . import config as C
 from . import voice
@@ -24,19 +25,12 @@ MAX_STEPS = 5       # rondas de herramientas por mensaje
 MAX_TURNS = 12      # mensajes del usuario que se mandan como historial
 MAX_TOKENS = 600
 
-DEFAULT_PERSONA = (
-    "Sos {name}, un compañero de IA que vive en el homelab de tu usuario: una PC con una RX 580 que corre modelos "
-    "de lenguaje e imágenes. Hablás en castellano rioplatense, con humor y buena onda, como un amigo que sabe de "
-    "tecnología. Lo que decís se lee en voz alta: contestá corto (una a tres oraciones), sin listas, sin markdown y "
-    "sin emojis, salvo que te pidan algo largo. Si no sabés algo, decilo. Para datos reales (cómo está la máquina, "
-    "la hora, la casa) usá primero las herramientas y recién después contestá: no adelantes nada antes de mirar. Usá recordar solo para datos duraderos que el usuario "
-    "te cuente de sí mismo, su casa o sus planes, o cuando te pida que te acuerdes de algo; nunca para lo que te pide "
-    "en el momento ni para la charla."
-)
-# Se guardan las herramientas apagadas (no las prendidas): una herramienta nueva queda disponible sin tocar nada
-DEFAULT_CONFIG = {"name": "Dani", "persona": DEFAULT_PERSONA, "model": "", "speak": True, "tools_off": [],
+# Se guardan las herramientas apagadas (no las prendidas): una herramienta nueva queda disponible sin tocar nada.
+# "sections": solo las secciones del prompt que el usuario cambió (buddy_prompt.py); "language": de la charla.
+DEFAULT_CONFIG = {"name": "Dani", "model": "", "speak": True, "tools_off": [], "language": "es", "sections": {},
                   "alerts": True, "morning": "09:00"}  # avisos del homelab y hora del resumen (proactive.py)
 MORNING_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
+SECTION_MAX = 6000
 
 _history = []
 _spontaneous = []  # lo que Dani dijo por su cuenta mientras contestaba otra cosa: entra al historial después
@@ -44,6 +38,29 @@ _session = {"memory": None}  # memoria leída al empezar la charla (ver system_p
 _busy = threading.Lock()
 _conversation_lock = threading.Lock()
 _conversation_state = {"root": None, "active": None, "items": []}
+
+
+class _LiveEvents:
+    """Cola de la respuesta HTTP que además refleja texto/herramientas a los otros clientes conectados."""
+    LIVE_TYPES = {"heard", "text", "tool", "error", "done"}
+
+    def __init__(self, client):
+        self.queue = queue.Queue()
+        self.client = client
+        self.chat_id = uuid.uuid4().hex[:12]
+
+    def put(self, event):
+        self.queue.put(event)
+        if isinstance(event, dict) and event.get("type") in self.LIVE_TYPES:
+            self.mirror(event)
+
+    def mirror(self, event):
+        from . import proactive
+        proactive.HUB.broadcast({"type": "chat", "chat_id": self.chat_id, "client": self.client,
+                                 "conversation_id": _conversation_state["active"], "event": event})
+
+    def get(self):
+        return self.queue.get()
 
 
 # ---------- conversaciones persistentes ----------
@@ -114,7 +131,8 @@ def _safe_messages(messages):
     private_ids = set()
     out = []
     for msg in messages:
-        clean = {k: v for k, v in msg.items() if k in ("role", "content", "tool_calls", "tool_call_id", "spont", "source")}
+        clean = {k: v for k, v in msg.items() if k in ("role", "content", "tool_calls", "tool_call_id", "spont", "source",
+                                                       "at", "voice")}
         calls = clean.get("tool_calls") or []
         for call in calls:
             if (call.get("function") or {}).get("name") == "contexto_usuario":
@@ -199,9 +217,21 @@ def load_config():
     except (OSError, ValueError):
         data = {}
     cfg = {**DEFAULT_CONFIG, **data}
-    cfg["persona"] = cfg["persona"] or DEFAULT_PERSONA  # vacía = la de fábrica (que puede mejorar con el tiempo)
+    sections = {k: v for k, v in (cfg.get("sections") or {}).items() if k in BP.EDITABLE and isinstance(v, str)}
+    persona = cfg.pop("persona", "")  # versión vieja: una sola personalidad, ahora la sección «identidad»
+    if persona and not sections.get("identidad"):
+        sections["identidad"] = persona
+    cfg["sections"] = sections
+    cfg["language"] = BP.lang_of(cfg)
     cfg.pop("tools", None)
     cfg["tools"] = [t for t in BT.TOOLS if t not in cfg["tools_off"]]
+    return cfg
+
+
+def factory_config():
+    """La configuración de fábrica, sin lo que guardó el usuario (para medirla: tools/bench/buddy_eval.py)."""
+    cfg = {**DEFAULT_CONFIG, "sections": {}}
+    cfg["tools"] = list(BT.TOOLS)
     return cfg
 
 
@@ -210,43 +240,57 @@ def save_config(body):
     name = " ".join(str(body.get("name", cfg["name"])).split())[:40]
     if not name:
         return False, _("El compañero necesita un nombre.")
-    persona = str(body.get("persona", cfg["persona"])).strip()[:6000] or DEFAULT_PERSONA
+    language = body.get("language", cfg["language"])
+    if language not in BP.LANGUAGES:
+        return False, _("Idioma desconocido.")
+    sections = dict(cfg["sections"])
+    incoming = body.get("sections", {})
+    if "persona" in body:  # clientes viejos
+        incoming = {**incoming, "identidad": body["persona"]}
+    if not isinstance(incoming, dict) or any(k not in BP.EDITABLE for k in incoming):
+        return False, _("Sección desconocida.")
+    for k, v in incoming.items():
+        sections[k] = str(v or "").strip()[:SECTION_MAX]
+    # Sin editar (vacía o igual a la de fábrica): no se guarda, así le llegan las mejoras de fábrica
+    sections = {k: v for k, v in sections.items() if v and v != BP.DEFAULTS[language][k]}
     tools = body.get("tools", cfg["tools"])
     if not isinstance(tools, list) or any(t not in BT.TOOLS for t in tools):
         return False, _("Herramienta desconocida.")
     morning = str(body.get("morning", cfg["morning"]) or "").strip()
     if morning and not MORNING_RE.match(morning):
         return False, _("La hora del resumen va como HH:MM (vacía = nunca).")
-    cfg.update(name=name, persona=persona, model=str(body.get("model", cfg["model"])).strip(),
+    cfg.update(name=name, language=language, sections=sections, model=str(body.get("model", cfg["model"])).strip(),
                speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)),
                alerts=bool(body.get("alerts", cfg["alerts"])), morning=morning)
     cfg.pop("tools")
-    if cfg["persona"] == DEFAULT_PERSONA:
-        cfg["persona"] = ""  # sin editar: no congelar una copia de la personalidad de fábrica
     C.BUDDY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = C.BUDDY_DIR / "config.tmp"
     tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
     tmp.replace(C.BUDDY_DIR / "config.json")
+    if any(k in body for k in ("sections", "persona", "language", "name", "tools")):
+        warm_async()  # el prompt cambió: que la próxima respuesta no pague el reprocesado
     return True, _("Compañero guardado.")
 
 
 def system_prompt(cfg, memory):
-    """La personalidad y la memoria. No lleva la hora ni nada que cambie seguido: así el servidor reutiliza el
-    prompt ya procesado entre mensajes. La memoria se lee al empezar la charla y queda fija hasta la próxima (lo que
-    se anota en el medio ya está en el historial): si cambiara, el servidor reprocesaría todo el prompt, ~1200
-    tokens con las herramientas, que en Flash-Next son ~20 s."""
-    text = cfg["persona"].replace("{name}", cfg["name"])
-    if memory:
-        text += "\n\nLo que recordás de charlas anteriores:\n" + memory
-    return text
+    """Las secciones (buddy_prompt.py) y la memoria. No lleva la hora ni nada que cambie seguido: así el servidor
+    reutiliza el prompt ya procesado entre mensajes. La memoria se lee al empezar la charla y queda fija hasta la
+    próxima (lo que se anota en el medio ya está en el historial): si cambiara, el servidor reprocesaría todo el
+    prompt (con las herramientas, ~1700 tokens: ~20 s en Flash-Next)."""
+    return BP.build(cfg, memory)
 
 
 def trim_history(history, max_turns=MAX_TURNS):
-    """Con más de `max_turns` mensajes del usuario, borra la mitad más vieja (con sus respuestas y herramientas).
-    De a mitades y no de a uno: cada recorte cambia el comienzo del prompt y el servidor lo reprocesa entero."""
+    """Con más de `max_turns` mensajes del usuario, borra los más viejos (con sus respuestas y herramientas) de a
+    bloques de media ventana: cada recorte cambia el comienzo del prompt y el servidor lo reprocesa entero.
+    El corte depende solo de cuántos mensajes hay, no de lo que se recortó antes (el historial completo queda
+    guardado y se recorta una copia en cada pedido): con 13 a 18 se sacan los 6 primeros, con 19 a 24 los 12...
+    Así el comienzo queda igual durante 6 mensajes seguidos, en vez de moverse en cada uno."""
     users = [i for i, m in enumerate(history) if m["role"] == "user"]
     if len(users) > max_turns:
-        del history[:users[-(max_turns // 2)]]
+        half = max(1, max_turns // 2)
+        drop = ((len(users) - max_turns - 1) // half + 1) * half
+        del history[:users[drop]]
     return history
 
 
@@ -258,20 +302,36 @@ def state():
               "source": m.get("source") or "",
               "tools": [c["function"]["name"] for c in m.get("tool_calls") or []]}
              for m in _history if m["role"] in ("user", "assistant") and (m.get("content") or m.get("tool_calls"))]
-    return {"config": cfg, "default_persona": DEFAULT_PERSONA, "memory": BT.read_memory(), "history": shown,
+    return {"config": cfg, "sections": BP.describe(cfg), "languages": list(BP.LANGUAGES), "memory": BT.read_memory(), "history": shown,
             "conversations": conversation_list(), "active_conversation": _conversation_state["active"],
             "tools": [{"name": n, "level": t["level"], "description": t["schema"]["function"]["description"],
                        "available": BT.available(n)} for n, t in BT.TOOLS.items()],
             "voice": {"stt": voice.stt_available(), "tts": voice.Speaker.available()},
-            "ha": _ha_state(),
+            "ha": _ha_state(), "web_search": _web_search_state(),
             "timers": proactive.timers(), "clients": proactive.HUB.clients(),
-            "busy": _busy.locked()}
+            "busy": _busy.locked(), "test": test_state()}
 
 
 def _ha_state():
     from . import homeassistant as HA
     good, msg = HA.check()
     return {"url": HA.HA_URL, "configured": HA.configured(), "ok": good, "msg": msg}
+
+
+def _web_search_state():
+    from . import websearch
+    return {"provider": "brave" if websearch.configured() else "duckduckgo",
+            "configured": websearch.configured()}
+
+
+def save_brave_token(value):
+    from . import websearch
+    value = str(value or "").strip()
+    if not value:
+        websearch.token_file().unlink(missing_ok=True)
+        return True, _("Clave de Brave Search borrada; se usará la búsqueda experimental.")
+    websearch.save_token(value)
+    return True, _("Clave de Brave Search guardada.")
 
 
 def save_ha_token(value):
@@ -302,10 +362,115 @@ def add_spontaneous(text):
         _spontaneous.append(msg)
 
 
-def _for_model(history):
-    """El historial tal como lo recibe el modelo (sin las marcas propias del panel)."""
+def _for_model(history, lang="es"):
+    """El historial tal como lo recibe el modelo: sin las marcas propias del panel y con la marca (BP.stamp: fecha,
+    hora, si vino por voz, la zona) adelante de cada mensaje del usuario. Va en el mensaje y no en el prompt de
+    sistema: los mensajes ya mandados no cambian, así que el servidor reutiliza lo procesado."""
     keys = ("role", "content", "tool_calls", "tool_call_id")
-    return [{k: m[k] for k in keys if k in m} for m in history]
+    out = []
+    for m in history:
+        msg = {k: m[k] for k in keys if k in m}
+        if m.get("role") == "user" and m.get("at") and isinstance(m.get("content"), str):
+            when = BP.stamp(m["at"], lang, voice=bool(m.get("voice")), place=m.get("place"))
+            msg["content"] = f"{when} {m['content']}"
+        out.append(msg)
+    return out
+
+
+def strip_name(text, name):
+    """Saca un «Dani:» del comienzo de la respuesta. None si todavía no se sabe (puede estar llegando de a partes)."""
+    lead = text.lstrip()
+    target = f"{name.lower()}:"
+    if target.startswith(lead.lower()) and len(lead) < len(target):
+        return None
+    return lead[len(target):].lstrip() if lead.lower().startswith(target) else text
+
+
+def _loaded_model(cfg):
+    """(puerto, modelo) si ya hay un modelo de texto cargado; None si no. Para lo que corre por su cuenta (resumen,
+    precalentar, probar): nunca prende el servidor ni apaga las imágenes."""
+    from . import services
+    if services.svc_state() != "active":
+        return None
+    loaded = [k for k, v in services.router_models().items() if v["status"] == "loaded"]
+    if not loaded:
+        return None
+    return C.backend_port("text"), cfg["model"] if cfg["model"] in loaded else loaded[0]
+
+
+def _warm_locked(cfg):
+    """Manda la charla activa tal como la mandaría el próximo mensaje (sin él, 1 token): el servidor la deja procesada
+    y la respuesta siguiente arranca enseguida. Con el candado ya tomado."""
+    target = _loaded_model(cfg)
+    if not target:
+        return False
+    port, model = target
+    lang = BP.lang_of(cfg)
+    memory = _session["memory"] if _session["memory"] is not None else BT.read_memory()
+    messages = [{"role": "system", "content": system_prompt(cfg, memory)}] + \
+        _for_model(trim_history(list(_history)), lang)
+    if messages[-1]["role"] == "system":
+        messages.append({"role": "user", "content": "."})  # charla vacía: al menos el prompt de sistema
+    req = {"model": model, "messages": messages, "stream": True, "max_tokens": 1,
+           "chat_template_kwargs": {"enable_thinking": False}}
+    if cfg["tools"]:
+        req["tools"] = BT.schemas(cfg["tools"])
+    for _ev in stream_completion(port, req, threading.Event()):
+        pass
+    return True
+
+
+def warm_async():
+    """Precalienta en segundo plano (después de cambiar las instrucciones), si hay modelo y Dani está libre."""
+    def work():
+        if not _busy.acquire(blocking=False):
+            return
+        try:
+            _ensure_conversation()
+            _warm_locked(load_config())
+        except Exception as e:  # noqa: BLE001
+            print(f"precalentar: {e}", flush=True)
+        finally:
+            _busy.release()
+    threading.Thread(target=work, daemon=True).start()
+
+
+# ---------- «Probar»: la versión corta de las pruebas (buddy_eval.py) con lo guardado ----------
+_test = {"running": False, "done": 0, "total": 0, "result": None, "error": None}
+
+
+def test_state():
+    return dict(_test)
+
+
+def start_test():
+    cfg = load_config()
+    if _test["running"]:
+        return False, _("Ya se está probando.")
+    if not _loaded_model(cfg):
+        return False, _("Cargá un modelo de texto para probar.")
+    if not _busy.acquire(blocking=False):
+        return False, _("El compañero está ocupado.")
+    _test.update(running=True, done=0, total=0, result=None, error=None)
+
+    def work():
+        from . import buddy_eval
+        try:
+            out = buddy_eval.run(cfg, quick=True, progress=lambda done, total, _r: _test.update(done=done, total=total))
+            ok, n = out["summary"]["TOTAL"]
+            _test["result"] = {"ok": ok, "total": n, "fails": [
+                {"msg": r["msg"], "expect": r["expect"], "got": ", ".join(r["calls"]) or r["text"][:160]}
+                for r in out["results"] if not r["ok"]]}
+            _ensure_conversation()
+            _warm_locked(cfg)  # las pruebas pisaron el caché de la charla real
+        except Exception as e:  # noqa: BLE001
+            _test["error"] = str(e)
+        finally:
+            _test["running"] = False
+            _busy.release()
+
+    threading.Thread(target=work, daemon=True).start()
+    return True, _("Probando…")
 
 
 def monologue(instruction, max_steps=3):
@@ -324,8 +489,9 @@ def monologue(instruction, max_steps=3):
         model = cfg["model"] if cfg["model"] in loaded else loaded[0]
         tools = [n for n in cfg["tools"] if BT.TOOLS[n]["level"] == "lectura"]
         messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"] or BT.read_memory())}]
-        messages += _for_model(trim_history(list(_history)))
-        messages.append({"role": "user", "content": f"[Mensaje automático del panel, no lo escribió el usuario.] "
+        lang = BP.lang_of(cfg)
+        messages += _for_model(trim_history(list(_history)), lang)
+        messages.append({"role": "user", "content": f"{BP.stamp(time.time(), lang)} {BP.auto_mark(lang)} "
                                                     f"{instruction}"})
         text = ""
         for _step in range(max_steps):
@@ -441,7 +607,7 @@ def chat(body):
         return
     from . import proactive
     proactive.HUB.touch(str(body.get("client") or "")[:64])  # este cliente es el que habla los avisos
-    events = queue.Queue()
+    events = _LiveEvents(str(body.get("client") or "")[:64])
     cancel = threading.Event()
     worker = threading.Thread(target=_run, args=(body, events, cancel), daemon=True)
     started = False
@@ -466,9 +632,7 @@ def _run(body, events, cancel):
     speak = bool(body.get("speak", cfg["speak"])) and voice.Speaker.available()
     sentences = queue.Queue()
     tts = threading.Thread(target=_speak_loop, args=(sentences, events, cancel), daemon=True) if speak else None
-    if tts:
-        threading.Thread(target=voice.SPEAKER.warm, daemon=True).start()  # en paralelo con el modelo
-        tts.start()
+    tts_started = False
     try:
         text = str(body.get("text") or "").strip()
         if body.get("audio"):
@@ -484,14 +648,21 @@ def _run(body, events, cancel):
             events.put({"type": "error", "msg": _("Mensaje vacío.")})
             return
         source = "pc" if str(body.get("client") or "").startswith("pc-") else "web"
-        _converse(cfg, text, events, cancel, sentences if speak else None, source)
+        events.mirror({"type": "start", "text": text, "source": source})
+        if tts:
+            # Whisper también usa el CPU: no cargar Piper mientras intenta entender el audio. Desde acá sí puede
+            # calentarse en paralelo con el modelo de texto y estar listo antes de la primera oración.
+            threading.Thread(target=voice.SPEAKER.warm, daemon=True).start()
+            tts.start()
+            tts_started = True
+        _converse(cfg, text, events, cancel, sentences if speak else None, source, bool(body.get("audio")))
     except Exception as e:  # noqa: BLE001
         events.put({"type": "error", "msg": str(e)})
     finally:
         _save_conversation()
         _broadcast_conversation()
         BT.clear_user_context()
-        if tts:
+        if tts_started:
             sentences.put(None)
             tts.join()
         events.put({"type": "done"})
@@ -499,40 +670,62 @@ def _run(body, events, cancel):
         _busy.release()
 
 
-def _converse(cfg, text, events, cancel, sentences, source="web"):
+def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False):
     port, model = _endpoint_and_model(cfg)
     if _session["memory"] is None or not _history:
         _session["memory"] = BT.read_memory()
     while _spontaneous:
         _history.append(_spontaneous.pop(0))
-    _history.append({"role": "user", "content": text, "source": source})
+    msg = {"role": "user", "content": text, "source": source, "at": round(time.time())}
+    if by_voice:
+        msg["voice"] = True  # el modelo sabe que puede venir mal transcripto (sección «mecanica»)
+    place = BT.user_place()
+    if place:
+        msg["place"] = place  # solo en memoria: _safe_messages no lo guarda en disco
+    _history.append(msg)
     _save_conversation()
     _broadcast_conversation()
     t0 = time.time()
     first = None
     for _step in range(MAX_STEPS):
         model_history = trim_history(list(_history))
-        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + _for_model(model_history)
+        messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + _for_model(model_history, BP.lang_of(cfg))
         req = {"model": model, "messages": messages, "stream": True, "max_tokens": MAX_TOKENS,
                "chat_template_kwargs": {"enable_thinking": False}}
         if cfg["tools"]:
             req["tools"] = BT.schemas(cfg["tools"])
-        reply, calls, pending = "", None, ""
+        reply, calls, pending, lead = "", None, "", ""
         spoken_first = False
+
+        def emit(data):
+            nonlocal reply, pending, spoken_first, first
+            if not data:
+                return
+            if first is None:
+                first = time.time() - t0
+                events.put({"type": "first_token", "s": round(first, 2)})
+            reply += data
+            events.put({"type": "text", "delta": data})
+            if sentences is not None:
+                ready, pending = voice.split_sentences(pending + data, first=not spoken_first)
+                for s in ready:
+                    sentences.put(s)
+                    spoken_first = True
+
         for kind, data in stream_completion(port, req, cancel):
             if kind == "text":
-                if first is None:
-                    first = time.time() - t0
-                    events.put({"type": "first_token", "s": round(first, 2)})
-                reply += data
-                events.put({"type": "text", "delta": data})
-                if sentences is not None:
-                    ready, pending = voice.split_sentences(pending + data, first=not spoken_first)
-                    for s in ready:
-                        sentences.put(s)
-                        spoken_first = True
+                if lead is None:  # ya se sabe que no empieza con el nombre
+                    emit(data)
+                    continue
+                lead += data
+                clean = strip_name(lead, cfg["name"])
+                if clean is not None:
+                    lead = None
+                    emit(clean)
             else:
                 calls = data
+        if lead:  # terminó mientras todavía podía ser el nombre
+            emit(lead)
         if cancel.is_set():
             if reply:
                 _history.append({"role": "assistant", "content": reply + " …"})

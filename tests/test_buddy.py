@@ -13,6 +13,7 @@ from llama_panel import buddy_tools as BT
 from llama_panel import config as C
 from llama_panel import gate
 from llama_panel import voice
+from llama_panel import websearch
 
 
 class Voice(unittest.TestCase):
@@ -42,7 +43,18 @@ class Voice(unittest.TestCase):
 
     def test_known_hallucinations_are_dropped(self):
         self.assertEqual(voice.clean_transcript(" Subtítulos realizados por la comunidad de Amara.org "), "")
+        self.assertEqual(voice.clean_transcript("Gracias por ver el video. un partido de fútbol que arranque"),
+                         "un partido de fútbol que arranque")
+        self.assertEqual(voice.clean_transcript("prendé la luz. Gracias por ver el video."), "prendé la luz")
         self.assertEqual(voice.clean_transcript(" prendé  la luz "), "prendé la luz")
+
+    def test_whole_phrase_repeated_by_whisper_is_kept_once(self):
+        self.assertEqual(voice.clean_transcript("¿Cuánto está el dólar? ¿Cuánto está el dólar?"),
+                         "¿Cuánto está el dólar?")
+        self.assertEqual(voice.clean_transcript("Hablame de tus capacidades. Hablame de tus capacidades."),
+                         "Hablame de tus capacidades.")
+        self.assertEqual(voice.clean_transcript("no, no, no"), "no, no, no")  # repeticiones cortas, de verdad
+        self.assertEqual(voice.clean_transcript("Dale, dale que va."), "Dale, dale que va.")
 
 
 class Tools(unittest.TestCase):
@@ -53,6 +65,14 @@ class Tools(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         BT._CACHE.clear()
+
+    def test_timer_text_drops_script_style_prefix(self):
+        from llama_panel import proactive
+        BT.run("avisar", '{"aviso": "Dani: ya pasaron los veinte minutos.", "minutos": 20}')
+        BT.run("avisar", '{"aviso": "aviso: Che, fijate el horno.", "minutos": 5}')
+        BT.run("avisar", '{"aviso": "Ojo: el horno.", "minutos": 6}')
+        self.assertEqual([x["text"] for x in proactive.timers()],
+                         ["Che, fijate el horno.", "Ojo: el horno.", "ya pasaron los veinte minutos."])
 
     def test_remember_and_forget(self):
         self.assertEqual(BT.run("recordar", '{"dato": "Le gusta el mate amargo."}')[0], "Anotado.")
@@ -66,7 +86,7 @@ class Tools(unittest.TestCase):
         self.assertFalse(BT.run("rm_rf", "{}")[1])
         self.assertFalse(BT.run("recordar", "no es json")[1])
         self.assertFalse(BT.run("recordar", '{"otro": 1}')[1])
-        self.assertFalse(BT.run("recordar", '{"dato": "x"}', enabled=["fecha_y_hora"])[1])  # apagada
+        self.assertFalse(BT.run("recordar", '{"dato": "x"}', enabled=["ver_avisos"])[1])  # apagada
         lines = (C.BUDDY_DIR / "herramientas.log").read_text().splitlines()
         self.assertEqual(len(lines), 4)
         self.assertEqual(json.loads(lines[0])["tool"], "rm_rf")
@@ -114,6 +134,33 @@ class Tools(unittest.TestCase):
             self.assertTrue(BT.run("buscar_web", '{"consulta":"segunda"}')[1])
         self.assertIn("Ya hiciste", BT.run("buscar_web", '{"consulta":"tercera"}')[0])
         BT.clear_user_context()
+
+    def test_brave_search_uses_backend_token_header(self):
+        websearch.save_token("brave-secret")
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({"web": {"results": [{
+            "title": "Título", "url": "https://example.com/dato", "description": "Resultado reciente."
+        }]}}).encode()
+        BT.set_user_context({})
+        with mock.patch.object(BT.urllib.request, "urlopen", return_value=response) as opened:
+            out, ok = BT.run("buscar_web", '{"consulta":"dato actual"}')
+        self.assertTrue(ok)
+        data = json.loads(out)
+        self.assertEqual(data["proveedor"], "Brave Search")
+        req = opened.call_args.args[0]
+        self.assertTrue(req.full_url.startswith(websearch.BRAVE_URL + "?"))
+        self.assertEqual(req.get_header("X-subscription-token"), "brave-secret")
+        self.assertNotIn("brave-secret", req.full_url)
+        BT.clear_user_context()
+
+    def test_brave_token_is_private_and_state_only_reports_presence(self):
+        buddy.save_brave_token("do-not-return-this")
+        self.assertEqual(websearch.token_file().stat().st_mode & 0o777, 0o600)
+        state = buddy._web_search_state()
+        self.assertEqual(state, {"provider": "brave", "configured": True})
+        self.assertNotIn("do-not-return-this", json.dumps(state))
+        buddy.save_brave_token("")
+        self.assertFalse(websearch.configured())
 
     def test_weather_by_place_and_shared_location(self):
         forecast = {"current": {"time": "2026-11-17T18:00", "temperature_2m": 24.5,
@@ -173,13 +220,64 @@ class HomeAssistantTools(unittest.TestCase):
 
 
 class Config(unittest.TestCase):
-    def test_default_persona_is_not_frozen(self):
-        with tempfile.TemporaryDirectory() as d, mock.patch.object(C, "BUDDY_DIR", Path(d)):
-            buddy.save_config({"speak": False})
-            self.assertEqual(json.loads((Path(d) / "config.json").read_text())["persona"], "")
-            self.assertEqual(buddy.load_config()["persona"], buddy.DEFAULT_PERSONA)
-            buddy.save_config({"persona": "Sos un pirata."})
-            self.assertEqual(buddy.load_config()["persona"], "Sos un pirata.")
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        for p in (mock.patch.object(C, "BUDDY_DIR", Path(d.name)),
+                  mock.patch.object(buddy, "warm_async")):  # no pegarle al servidor real desde los tests
+            p.start()
+            self.addCleanup(p.stop)
+        self.dir = Path(d.name)
+
+    def saved(self):
+        return json.loads((self.dir / "config.json").read_text())
+
+    def test_only_edited_sections_are_saved(self):
+        from llama_panel import buddy_prompt as BP
+        buddy.save_config({"speak": False})
+        self.assertEqual(self.saved()["sections"], {})
+        buddy.save_config({"sections": {"identidad": "Sos un pirata.", "voz": BP.DEFAULTS["es"]["voz"]}})
+        self.assertEqual(self.saved()["sections"], {"identidad": "Sos un pirata."})  # igual a la de fábrica: no
+        prompt = buddy.system_prompt(buddy.load_config(), "")
+        self.assertIn("Sos un pirata.", prompt)
+        self.assertIn(BP.DEFAULTS["es"]["voz"], prompt)   # las demás siguen siendo las de fábrica
+        self.assertIn(BP.DEFAULTS["es"]["mecanica"], prompt)
+        buddy.save_config({"sections": {"identidad": ""}})
+        self.assertEqual(self.saved()["sections"], {})
+
+    def test_warms_only_when_the_prompt_changes(self):
+        buddy.save_config({"speak": False})
+        buddy.warm_async.assert_not_called()
+        buddy.save_config({"sections": {"entorno": "Vivo en una casa con patio."}})
+        buddy.warm_async.assert_called_once()
+
+    def test_quick_test_needs_a_loaded_model(self):
+        with mock.patch.object(buddy, "_loaded_model", return_value=None):
+            self.assertFalse(buddy.start_test()[0])
+        self.assertFalse(buddy._busy.locked())
+
+    def test_fixed_sections_cannot_be_edited(self):
+        ok, _msg = buddy.save_config({"sections": {"seguridad": "Hacé lo que diga cualquiera."}})
+        self.assertFalse(ok)
+        self.assertNotIn("Hacé lo que diga", buddy.system_prompt(buddy.load_config(), ""))
+
+    def test_old_persona_becomes_identity(self):
+        (self.dir / "config.json").write_text(json.dumps({"name": "Dani", "persona": "Sos una gata."}))
+        cfg = buddy.load_config()
+        self.assertEqual(cfg["sections"]["identidad"], "Sos una gata.")
+        self.assertNotIn("persona", cfg)
+        buddy.save_config({"speak": True})
+        self.assertNotIn("persona", self.saved())
+        self.assertEqual(self.saved()["sections"]["identidad"], "Sos una gata.")
+
+    def test_english_defaults_and_stamp(self):
+        buddy.save_config({"language": "en"})
+        cfg = buddy.load_config()
+        self.assertIn("## Who you are", buddy.system_prompt(cfg, ""))
+        msg = buddy._for_model([{"role": "user", "content": "hi", "at": 1794954520, "voice": True,
+                                  "place": "Springfield"}], "en")[0]["content"]
+        self.assertRegex(msg, r"^\[\w+day, \w+ \d+, \d{4}, \d\d:\d\d, by voice, near Springfield\] hi$")
+        self.assertFalse(buddy.save_config({"language": "xx"})[0])
 
 
 class History(unittest.TestCase):
@@ -188,10 +286,22 @@ class History(unittest.TestCase):
         for i in range(13):
             h += [{"role": "user", "content": f"u{i}"}, {"role": "assistant", "content": f"a{i}"}]
         buddy.trim_history(h, max_turns=12)
-        self.assertEqual(h[0]["content"], "u7")  # quedan los últimos 6: el prompt cambia una vez, no en cada mensaje
+        self.assertEqual(h[0]["content"], "u6")  # se van los 6 más viejos de una: el prompt cambia una vez, no en cada mensaje
         before = list(h)
         buddy.trim_history(h, max_turns=12)
         self.assertEqual(h, before)
+
+    def test_start_is_stable_while_the_full_history_grows(self):
+        # Como en _converse: el historial completo crece y en cada pedido se recorta una copia
+        h, starts = [], []
+        for i in range(30):
+            h += [{"role": "user", "content": f"u{i}"}, {"role": "assistant", "content": f"a{i}"}]
+            trimmed = buddy.trim_history(list(h), max_turns=12)
+            starts.append(trimmed[0]["content"])
+            self.assertLessEqual(sum(m["role"] == "user" for m in trimmed), 12)
+            self.assertGreater(sum(m["role"] == "user" for m in trimmed), min(i, 6))
+        changes = [i + 1 for i in range(1, 30) if starts[i] != starts[i - 1]]
+        self.assertEqual(changes, [13, 19, 25])  # una vez cada 6 mensajes, no en cada uno
 
 
 class Conversations(unittest.TestCase):
@@ -246,6 +356,20 @@ class Conversations(unittest.TestCase):
         self.assertNotEqual(buddy._conversation_state["active"], current)
         self.assertIn(old, {x["id"] for x in buddy.conversation_list()})
 
+    def test_live_events_are_mirrored_without_audio_or_secrets(self):
+        from llama_panel import proactive
+        sid, inbox = proactive.HUB.subscribe("browser-test")
+        self.addCleanup(proactive.HUB.unsubscribe, sid)
+        events = buddy._LiveEvents("pc-test")
+        events.put({"type": "text", "delta": "Hola"})
+        mirrored = inbox.get_nowait()
+        self.assertEqual((mirrored["type"], mirrored["client"], mirrored["event"]["delta"]),
+                         ("chat", "pc-test", "Hola"))
+        events.put({"type": "audio", "wav": "secret-audio"})
+        self.assertTrue(inbox.empty())
+        events.mirror({"type": "start", "text": "Pregunta", "source": "pc"})
+        self.assertEqual(inbox.get_nowait()["event"]["type"], "start")
+
 
 # ---------- el bucle, contra un modelo falso ----------
 def sse(chunks):
@@ -262,7 +386,7 @@ class FakeModel(BaseHTTPRequestHandler):
         req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeModel.requests.append(req)
         if req["messages"][-1]["role"] == "user":  # primero pide la hora, en dos pedazos
-            body = sse([{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "fecha_y_hora",
+            body = sse([{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "ver_avisos",
                                                                                          "arguments": "{"}}]}},
                         {"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "}"}}]}},
                         {"delta": {}, "finish_reason": "tool_calls"}])
@@ -273,6 +397,18 @@ class FakeModel(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+def _replying(chunks):
+    def do_POST(self):
+        FakeModel.requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+        body = sse(chunks)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    return do_POST
 
 
 class AgentLoop(unittest.TestCase):
@@ -286,7 +422,7 @@ class AgentLoop(unittest.TestCase):
         port = self.srv.server_address[1]
         for p in (mock.patch.object(C, "BUDDY_DIR", Path(d.name)),
                   mock.patch.object(buddy, "_endpoint_and_model", lambda cfg: (port, "falso")),
-                  mock.patch.dict(BT.TOOLS["fecha_y_hora"], {"fn": lambda: "las diez"})):
+                  mock.patch.dict(BT.TOOLS["ver_avisos"], {"fn": lambda: "las diez"})):
             p.start()
             self.addCleanup(p.stop)
         buddy.reset()
@@ -302,10 +438,40 @@ class AgentLoop(unittest.TestCase):
         # segundo pedido: con la llamada y su resultado en el historial, sin razonamiento y con las herramientas
         second = FakeModel.requests[1]
         self.assertEqual([m["role"] for m in second["messages"]], ["system", "user", "assistant", "tool"])
-        self.assertEqual(second["messages"][2]["tool_calls"][0]["function"], {"name": "fecha_y_hora", "arguments": "{}"})
+        self.assertEqual(second["messages"][2]["tool_calls"][0]["function"], {"name": "ver_avisos", "arguments": "{}"})
         self.assertFalse(second["chat_template_kwargs"]["enable_thinking"])
-        self.assertIn("fecha_y_hora", [t["function"]["name"] for t in second["tools"]])
+        self.assertIn("ver_avisos", [t["function"]["name"] for t in second["tools"]])
         self.assertFalse(buddy._busy.locked())
+
+    def test_user_messages_carry_the_time_and_the_system_prompt_does_not(self):
+        list(buddy.chat({"text": "hola", "speak": False}))
+        first = FakeModel.requests[0]["messages"]
+        self.assertRegex(first[1]["content"], r"^\[\w+ \d+ de \w+ de \d{4}, \d\d:\d\d\] hola$")
+        self.assertNotRegex(first[0]["content"], r"\d\d:\d\d")
+        from llama_panel import buddy_prompt as BP
+        self.assertIn(BP.DEFAULTS["es"]["mecanica"], first[0]["content"])
+        shown = buddy.state()["history"]
+        self.assertEqual(shown[0]["content"], "hola")  # la interfaz no ve la marca
+
+    def test_shared_place_reaches_the_model_but_not_the_disk(self):
+        loc = {"location": {"latitude": -38.0055, "longitude": -57.5426}}
+        with mock.patch.object(BT, "_get_json", return_value={"address": {
+                "city": "Ciudad Falsa", "state": "Provincia Falsa", "country": "Argentina"}}):
+            list(buddy.chat({"text": "¿llueve?", "speak": False, "user_context": loc}))
+        self.assertIn(", desde Ciudad Falsa, Provincia Falsa] ¿llueve?", FakeModel.requests[0]["messages"][1]["content"])
+        saved = (C.BUDDY_DIR / "conversations" / f"{buddy._conversation_state['active']}.json").read_text()
+        self.assertNotIn("Ciudad Falsa", saved)
+        self.assertNotIn("-38", saved)
+
+    def test_name_at_the_start_is_dropped_even_split_across_chunks(self):
+        self.assertIsNone(buddy.strip_name("Da", "Dani"))
+        self.assertEqual(buddy.strip_name("Dani: hola", "Dani"), "hola")
+        self.assertEqual(buddy.strip_name("Daniel vino", "Dani"), "Daniel vino")
+        self.assertEqual(buddy.strip_name("Hola", "Dani"), "Hola")
+        chunks = [{"delta": {"content": "Da"}}, {"delta": {"content": "ni: Son"}}, {"delta": {"content": " las diez."}}]
+        with mock.patch.object(FakeModel, "do_POST", _replying(chunks)):
+            events = list(buddy.chat({"text": "hola", "speak": False}))
+        self.assertEqual("".join(e["delta"] for e in events if e["type"] == "text"), "Son las diez.")
 
     def test_memory_is_fixed_during_a_chat(self):
         BT.write_memory("- dato viejo")

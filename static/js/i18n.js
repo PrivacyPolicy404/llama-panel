@@ -48,6 +48,12 @@ export function translateDom(root) {
 }
 
 export const EN = {
+  '(no se entendió)': '(not understood)',
+  'La clave se envía al backend y queda en un archivo privado; nunca se vuelve a mostrar en el navegador. Si dejás el campo vacío y guardás, se borra y se usa DuckDuckGo experimental.':
+    'The key is sent to the backend and stored in a private file; it is never shown in the browser again. Save an empty field to delete it and use experimental DuckDuckGo.',
+  'Guardar clave': 'Save key',
+  'configurada': 'configured',
+  'sin configurar': 'not configured',
   'Desactivado': 'Disabled',
   'Espacio': 'Space',
   'Botón lateral {n}': 'Side mouse button {n}',
@@ -341,7 +347,22 @@ export const EN = {
   'No hay permiso para usar el micrófono.': 'No permission to use the microphone.',
   'Nombre': 'Name',
   'Personalidad': 'Personality',
-  'Volver a la personalidad de fábrica': 'Restore the default personality',
+  'Idioma de la charla': 'Chat language',
+  'Instrucciones': 'Instructions',
+  'Cada parte por separado: si no la tocás, usa la de fábrica (y recibe sus mejoras). <code>{name}</code> se reemplaza por el nombre. Las fijas dependen del panel y no se editan.':
+    'Each part on its own: untouched parts use the default (and get its improvements). <code>{name}</code> is replaced by the name. Fixed parts depend on the panel and cannot be edited.',
+  'Al guardar un cambio, la próxima respuesta tarda unos 20 s más: el modelo vuelve a leer todas las instrucciones.':
+    'After saving a change, the next reply takes about 20 s longer: the model rereads all the instructions.',
+  'Volver a la de fábrica': 'Restore default',
+  'fija': 'fixed',
+  'modificada': 'edited',
+  'Guardar y probar': 'Save and test',
+  'Guarda y le hace 10 preguntas de prueba al modelo cargado (~1 min): si consulta cuando tiene que consultar y no inventa.':
+    'Saves and asks the loaded model 10 test questions (~1 min): does it look things up when it should, without making things up.',
+  'Probando… {done} de {total}': 'Testing… {done} of {total}',
+  '{ok} de {total} bien': '{ok} of {total} passed',
+  'esperaba': 'expected',
+  'hizo': 'did',
   'escuchando…': 'listening…',
   'oído en {s} s': 'heard in {s} s',
   'oído: Whisper': 'hearing: Whisper',

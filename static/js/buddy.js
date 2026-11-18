@@ -33,12 +33,14 @@ const CLIENT = (() => {
 const KIND_ICON = { timer: '⏰', alerta: '⚠️', resumen: '☀️', aviso: '💬' };
 const seen = new Set();
 let alertsSource = null;
+let mirroredChat = null;
 
 const LEVELS = { lectura: 'solo mira', memoria: 'escribe su memoria', accion: 'cambia cosas', peligrosa: 'peligrosa' };
 
 export async function loadBuddy() {
   try { B = await getJSON('/api/buddy'); } catch { return; }
   if (!drawn) draw();
+  else renderConversations();
   renderHistory();
 }
 
@@ -185,7 +187,8 @@ function listen() {
 function onAlert(e) {
   let ev;
   try { ev = JSON.parse(e.data); } catch { return; }
-  if (ev.type === 'conversation') { loadBuddy(); return; }
+  if (ev.type === 'chat') { mirrorChatEvent(ev); return; }
+  if (ev.type === 'conversation') { if (!mirroredChat) loadBuddy(); return; }
   if (ev.type !== 'say' || seen.has(ev.id)) return;
   seen.add(ev.id);
   const icon = KIND_ICON[ev.kind] || '💬';
@@ -200,6 +203,42 @@ function onAlert(e) {
     playNext();
   } else if (!playing) fab('idle', `${icon} ${ev.text}`);
   loadBuddyTimers();
+}
+
+function mirrorChatEvent(message) {
+  if (message.client === CLIENT || !message.event || abort) return;
+  const ev = message.event;
+  if (!mirroredChat || mirroredChat.id !== message.chat_id) {
+    mirroredChat = { id: message.chat_id, out: null, text: '', textEl: null };
+  }
+  const m = mirroredChat;
+  if ((ev.type === 'heard' || ev.type === 'start') && !m.out) {
+    $('.buddy-empty')?.remove();
+    const log = $('#buddy-log');
+    log.insertAdjacentHTML('beforeend', bubble('user', ev.text || t('(no se entendió)'), [], '', 'pc'));
+    log.insertAdjacentHTML('beforeend', `<div class="buddy-msg assistant"><span class="muted buddy-typing">…</span></div>`);
+    m.out = log.lastElementChild;
+    fab('thinking', ev.text ? t('Pensando…') : t('Escuchando lo que dijiste…'));
+  } else if (ev.type === 'text' && m.out) {
+    $('.buddy-typing', m.out)?.remove();
+    if (!m.textEl) { m.out.insertAdjacentHTML('beforeend', '<div class="buddy-text"></div>'); m.textEl = m.out.lastElementChild; }
+    m.text += ev.delta; m.textEl.textContent = m.text;
+    fab('speaking', m.text);
+  } else if (ev.type === 'tool' && m.out) {
+    const chip = document.createElement('span');
+    chip.className = 'buddy-tool' + (ev.ok ? '' : ' bad');
+    chip.textContent = '🔧 ' + ev.name; chip.title = `${ev.args}\n→ ${ev.result}`;
+    m.out.insertBefore(chip, m.textEl || m.out.querySelector('.buddy-typing'));
+    m.textEl = null; m.text = '';
+    fab('thinking', '🔧 ' + ev.name);
+  } else if (ev.type === 'error') {
+    (m.out || $('#buddy-log'))?.insertAdjacentHTML('beforeend', `<div class="buddy-text bad">${esc(ev.msg)}</div>`);
+  } else if (ev.type === 'done') {
+    mirroredChat = null;
+    loadBuddy();
+    return;
+  }
+  scroll();
 }
 
 async function loadBuddyTimers() {
@@ -284,11 +323,14 @@ function draw() {
         <summary><b>${t('Ajustes del compañero')}</b></summary>
         <label class="field"><span>${t('Nombre')}</span><input type="text" id="buddy-cfg-name" maxlength="40"></label>
         <label class="field"><span>${t('Modelo')}</span><select id="buddy-cfg-model"></select></label>
-        <label class="field"><span>${t('Personalidad')}</span>
-          <textarea id="buddy-cfg-persona" rows="9" spellcheck="false"></textarea>
-          <p class="hint">${t('<code>{name}</code> se reemplaza por el nombre. Se lee en voz alta: conviene pedirle respuestas cortas.')}</p>
-          <button class="btn ghost small" id="buddy-cfg-default">${t('Volver a la personalidad de fábrica')}</button>
+        <label class="field"><span>${t('Idioma de la charla')}</span>
+          <select id="buddy-cfg-language"><option value="es">Castellano</option><option value="en">English</option></select>
         </label>
+        <div class="field"><span>${t('Instrucciones')}</span>
+          <div id="buddy-cfg-sections" class="buddy-sections"></div>
+          <p class="hint">${t('Cada parte por separado: si no la tocás, usa la de fábrica (y recibe sus mejoras). <code>{name}</code> se reemplaza por el nombre. Las fijas dependen del panel y no se editan.')}</p>
+          <p class="hint">${t('Al guardar un cambio, la próxima respuesta tarda unos 20 s más: el modelo vuelve a leer todas las instrucciones.')}</p>
+        </div>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
         <label class="field"><span>${t('Atajo para hablar en este navegador')}</span>
           <span class="path-row"><b id="buddy-hotkey-label"></b>
@@ -307,13 +349,20 @@ function draw() {
           <label class="check">${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
           <p class="hint">${t('El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.')}</p>
         </div>
-        <button class="btn" id="buddy-cfg-save">${t('Guardar')}</button>
+        <span class="path-row"><button class="btn" id="buddy-cfg-save">${t('Guardar')}</button>
+          <button class="btn ghost" id="buddy-cfg-test" title="${esc(t('Guarda y le hace 10 preguntas de prueba al modelo cargado (~1 min): si consulta cuando tiene que consultar y no inventa.'))}">${t('Guardar y probar')}</button></span>
+        <div id="buddy-test-result" class="buddy-tools"></div>
         <div class="field"><span>${t('Avisos pendientes')}</span><div id="buddy-timers" class="buddy-tools"></div></div>
         <label class="field"><span>Home Assistant <span class="muted" id="buddy-ha-state"></span></span>
           <input type="password" id="buddy-ha-token" autocomplete="off" placeholder="${esc(t('token de acceso de larga duración'))}">
           <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
         </label>
         <button class="btn ghost" id="buddy-ha-save">${t('Guardar token')}</button>
+        <label class="field"><span>Brave Search <span class="muted" id="buddy-brave-state"></span></span>
+          <input type="password" id="buddy-brave-token" autocomplete="new-password" placeholder="Brave Search API key">
+          <p class="hint">${t('La clave se envía al backend y queda en un archivo privado; nunca se vuelve a mostrar en el navegador. Si dejás el campo vacío y guardás, se borra y se usa DuckDuckGo experimental.')}</p>
+        </label>
+        <button class="btn ghost" id="buddy-brave-save">${t('Guardar clave')}</button>
         <div class="field"><span>${t('Hablar desde cualquier programa de tu PC')}</span>
           <p class="hint">${t('El atajo de arriba funciona sólo cuando llama-panel tiene el foco. Para usar una tecla sobre cualquier programa, descargá este cliente en la PC que tiene el micrófono y dejalo corriendo. En Windows, abrí PowerShell:')}</p>
           <pre class="buddy-cmd">py -m pip install sounddevice pynput
@@ -344,9 +393,10 @@ function fillSettings() {
     B.voice.tts ? t('voz: Piper') : t('sin voz (falta Piper)'),
   ].join(' · ');
   $('#buddy-cfg-name').value = c.name;
-  $('#buddy-cfg-persona').value = c.persona;
-  $('#buddy-conversation').innerHTML = B.conversations.map(x =>
-    `<option value="${esc(x.id)}" ${x.id === B.active_conversation ? 'selected' : ''}>${esc(t(x.title))}</option>`).join('');
+  $('#buddy-cfg-language').value = c.language || 'es';
+  renderSections();
+  renderTest();
+  renderConversations();
   const models = (S.config?.text_models || []).map(m => m.id);
   $('#buddy-cfg-model').innerHTML = `<option value="">${esc(t('El que esté cargado'))}</option>` +
     models.map(m => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('');
@@ -361,6 +411,57 @@ function fillSettings() {
   renderTimers();
   const ha = B.ha;
   $('#buddy-ha-state').textContent = !ha.configured ? `· ${t('sin conectar')} (${ha.url})` : ha.ok ? `· ✓ ${t('conectado')}` : `· ✗ ${ha.msg}`;
+  $('#buddy-brave-state').textContent = B.web_search.configured ? `· ✓ ${t('configurada')}` : `· ${t('sin configurar')} · DuckDuckGo`;
+}
+
+// Secciones del prompt (llama_panel/buddy_prompt.py): las editables muestran lo propio o, si no hay, la de fábrica
+function renderSections() {
+  const box = $('#buddy-cfg-sections');
+  if (!box || !B.sections) return;
+  box.innerHTML = B.sections.map(s => s.editable ? `
+    <details class="buddy-section" data-name="${esc(s.name)}">
+      <summary>${esc(s.title)} <span class="muted" data-state></span></summary>
+      <textarea rows="6" spellcheck="false" data-section="${esc(s.name)}">${esc(s.value || s.default)}</textarea>
+      <button type="button" class="btn ghost small" data-default>${t('Volver a la de fábrica')}</button>
+    </details>` : `
+    <details class="buddy-section fixed">
+      <summary>${esc(s.title)} <span class="muted">· ${t('fija')}</span></summary>
+      <p class="hint buddy-fixed">${esc(s.default)}</p>
+    </details>`).join('');
+  for (const d of $$('#buddy-cfg-sections details[data-name]')) {
+    const s = B.sections.find(x => x.name === d.dataset.name);
+    const area = $('textarea', d);
+    const mark = () => { $('[data-state]', d).textContent = area.value.trim() === s.default.trim() ? '' : `· ${t('modificada')}`; };
+    area.oninput = mark;
+    $('[data-default]', d).onclick = () => { area.value = s.default; mark(); };
+    mark();
+  }
+}
+
+function renderTest() {
+  const box = $('#buddy-test-result');
+  const s = B?.test;
+  if (!box || !s) return;
+  if (s.running) { box.innerHTML = `<p class="muted">${esc(t('Probando… {done} de {total}', { done: s.done, total: s.total || 10 }))}</p>`; return; }
+  if (s.error) { box.innerHTML = `<p class="bad">${esc(s.error)}</p>`; return; }
+  if (!s.result) { box.innerHTML = ''; return; }
+  const r = s.result;
+  box.innerHTML = `<p><b>${esc(t('{ok} de {total} bien', { ok: r.ok, total: r.total }))}</b></p>` +
+    r.fails.map(f => `<p class="hint">✗ «${esc(f.msg)}»: ${esc(t('esperaba'))} ${esc(f.expect)}; ${esc(t('hizo'))}: ${esc(f.got || '—')}</p>`).join('');
+}
+
+function sectionValues() {
+  const out = {};
+  for (const a of $$('#buddy-cfg-sections textarea[data-section]')) out[a.dataset.section] = a.value;
+  return out;
+}
+
+function renderConversations() {
+  const select = $('#buddy-conversation');
+  if (!select || !B) return;
+  select.innerHTML = B.conversations.map(x =>
+    `<option value="${esc(x.id)}">${esc(t(x.title))}</option>`).join('');
+  select.value = B.active_conversation;
 }
 
 function renderHistory() {
@@ -386,7 +487,8 @@ function bind() {
   $('#buddy-stop').onclick = () => { abort?.abort(); stopAudio(); };
   $('#buddy-reset').onclick = async e => { report(await withBusy(e.currentTarget, () => post('/api/buddy/reset'))); loadBuddy(); };
   $('#buddy-conversation').onchange = async e => {
-    report(await post('/api/buddy/conversation/use', { id: e.target.value }));
+    const id = e.target.value;
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/conversation/use', { id })));
     await loadBuddy();
   };
   $('#buddy-conversation-delete').onclick = async e => {
@@ -402,15 +504,37 @@ function bind() {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/conversation/delete', { id: B.active_conversation })));
     await loadBuddy();
   };
-  $('#buddy-cfg-default').onclick = () => { $('#buddy-cfg-persona').value = B.default_persona; };
+  $('#buddy-cfg-language').onchange = async e => {
+    // las de fábrica cambian con el idioma: se guarda y se vuelven a dibujar
+    report(await post('/api/buddy/config', { language: e.target.value }));
+    B = await getJSON('/api/buddy'); renderSections();
+  };
+  const cfgBody = () => ({
+    name: $('#buddy-cfg-name').value, sections: sectionValues(), language: $('#buddy-cfg-language').value,
+    model: $('#buddy-cfg-model').value,
+    speak: $('#buddy-speak').checked, tools: $$('#buddy-cfg-tools input:checked').map(i => i.value),
+    alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value,
+  });
   $('#buddy-cfg-save').onclick = async e => {
-    const body = {
-      name: $('#buddy-cfg-name').value, persona: $('#buddy-cfg-persona').value, model: $('#buddy-cfg-model').value,
-      speak: $('#buddy-speak').checked, tools: $$('#buddy-cfg-tools input:checked').map(i => i.value),
-      alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value,
-    };
-    report(await withBusy(e.currentTarget, () => post('/api/buddy/config', body)));
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/config', cfgBody())));
     B = await getJSON('/api/buddy'); fillSettings();
+  };
+  // «Guardar y probar»: guarda y corre la versión corta de las pruebas (llama_panel/buddy_eval.py) con eso
+  $('#buddy-cfg-test').onclick = async e => {
+    const btn = e.currentTarget;
+    const saved = await post('/api/buddy/config', cfgBody());
+    if (!saved.ok) { report(saved); return; }
+    const started = await post('/api/buddy/test');
+    if (!started.ok) { report(started); return; }
+    btn.disabled = true;
+    try {
+      for (;;) {
+        await new Promise(r => setTimeout(r, 1500));
+        B = await getJSON('/api/buddy');
+        renderTest();
+        if (!B.test.running) break;
+      }
+    } finally { btn.disabled = false; }
   };
   $('#buddy-speak').onchange = () => post('/api/buddy/config', { speak: $('#buddy-speak').checked });
   $('#buddy-share-location').onchange = e => localStorage.setItem('buddy-share-location', e.target.checked ? '1' : '0');
@@ -426,6 +550,11 @@ function bind() {
   $('#buddy-ha-save').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/ha', { token: $('#buddy-ha-token').value })));
     $('#buddy-ha-token').value = '';
+    B = await getJSON('/api/buddy'); fillSettings();
+  };
+  $('#buddy-brave-save').onclick = async e => {
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/brave', { token: $('#buddy-brave-token').value })));
+    $('#buddy-brave-token').value = '';
     B = await getJSON('/api/buddy'); fillSettings();
   };
   $('#buddy-mem-save').onclick = async e => report(await withBusy(e.currentTarget, () => post('/api/buddy/memory', { text: $('#buddy-mem').value })));
