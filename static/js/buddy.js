@@ -1,7 +1,7 @@
 // Pestana Compañero: charla con el agente (llama_panel/buddy.py) por texto o voz.
 // Voz: se graba mientras se mantiene apretado el boton (o el atajo elegido) y el panel lo pasa a texto con
 // Whisper; la respuesta llega en eventos y cada oracion trae su audio de Piper, que se reproduce en orden.
-// El atajo es local a este navegador; para cualquier programa se usa clients/dani.py.
+// El atajo es local a este navegador; para cualquier programa se usa clients/buddy.py.
 import { $, $$, esc, getJSON, post, report, toast, withBusy } from './util.js';
 import { S } from './state.js';
 import { lang, t } from './i18n.js';
@@ -319,19 +319,36 @@ function draw() {
         <p class="hint" id="buddy-stats"></p>
         ${secure ? '' : `<p class="hint">${t('El navegador solo deja usar el micrófono en una página segura. Abrí el panel por un túnel SSH (<code>ssh -L 8090:localhost:8090 …</code>) y entrá a <code>http://localhost:8090</code>.')}</p>`}
       </div>
-      <details class="card buddy-settings">
+      <details class="card buddy-settings" id="buddy-settings">
         <summary><b>${t('Ajustes del compañero')}</b></summary>
+        <div class="seg buddy-panes" role="tablist">
+          <button type="button" data-pane="general">${t('General')}</button>
+          <button type="button" data-pane="instr">${t('Instrucciones')}</button>
+          <button type="button" data-pane="voice">${t('Voz')}</button>
+          <button type="button" data-pane="links">${t('Conexiones')}</button>
+          <button type="button" data-pane="memory">${t('Memoria')}</button>
+        </div>
+        <div class="buddy-pane" data-pane="general">
         <label class="field"><span>${t('Nombre')}</span><input type="text" id="buddy-cfg-name" maxlength="40"></label>
         <label class="field"><span>${t('Modelo')}</span><select id="buddy-cfg-model"></select></label>
         <label class="field"><span>${t('Idioma de la charla')}</span>
           <select id="buddy-cfg-language"><option value="es">Castellano</option><option value="en">English</option></select>
         </label>
+        <div class="field"><span>${t('Por su cuenta')}</span>
+          <label class="check"><input type="checkbox" id="buddy-cfg-alerts"> ${t('Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco')}</label>
+          <label class="check">${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
+          <p class="hint">${t('El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.')}</p>
+        </div>
+        </div>
+        <div class="buddy-pane" data-pane="instr">
         <div class="field"><span>${t('Instrucciones')}</span>
           <div id="buddy-cfg-sections" class="buddy-sections"></div>
           <p class="hint">${t('Cada parte por separado: si no la tocás, usa la de fábrica (y recibe sus mejoras). <code>{name}</code> se reemplaza por el nombre. Las fijas dependen del panel y no se editan.')}</p>
           <p class="hint">${t('Al guardar un cambio, la próxima respuesta tarda unos 20 s más: el modelo vuelve a leer todas las instrucciones.')}</p>
         </div>
         <div class="field"><span>${t('Herramientas')}</span><div id="buddy-cfg-tools" class="buddy-tools"></div></div>
+        </div>
+        <div class="buddy-pane" data-pane="voice">
         <label class="field"><span>${t('Atajo para hablar en este navegador')}</span>
           <span class="path-row"><b id="buddy-hotkey-label"></b>
             <button type="button" class="btn ghost small" id="buddy-hotkey-record">${t('Definir atajo')}</button>
@@ -341,35 +358,16 @@ function draw() {
             <option value="all">${t('En cualquier sección del panel')}</option>
           </select>
           <p class="hint">${t('Apretá «Definir atajo» y después una combinación de teclado o un botón lateral del mouse. No se captura mientras usás un campo, botón o enlace.')}</p>
-          <p class="hint">${t('Algunos navegadores reservan los botones Atrás/Adelante del mouse; si no llegan a la página, usá una tecla o el cliente dani.py.')}</p>
+          <p class="hint">${t('Algunos navegadores reservan los botones Atrás/Adelante del mouse; si no llegan a la página, usá una tecla o el cliente buddy.py.')}</p>
         </label>
-        <label class="check"><input type="checkbox" id="buddy-share-location"> ${t('Compartir ubicación aproximada con el compañero')}</label>
-        <div class="field"><span>${t('Por su cuenta')}</span>
-          <label class="check"><input type="checkbox" id="buddy-cfg-alerts"> ${t('Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco')}</label>
-          <label class="check">${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
-          <p class="hint">${t('El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.')}</p>
-        </div>
-        <span class="path-row"><button class="btn" id="buddy-cfg-save">${t('Guardar')}</button>
-          <button class="btn ghost" id="buddy-cfg-test" title="${esc(t('Guarda y le hace 10 preguntas de prueba al modelo cargado (~1 min): si consulta cuando tiene que consultar y no inventa.'))}">${t('Guardar y probar')}</button></span>
-        <div id="buddy-test-result" class="buddy-tools"></div>
-        <div class="field"><span>${t('Avisos pendientes')}</span><div id="buddy-timers" class="buddy-tools"></div></div>
-        <label class="field"><span>Home Assistant <span class="muted" id="buddy-ha-state"></span></span>
-          <input type="password" id="buddy-ha-token" autocomplete="off" placeholder="${esc(t('token de acceso de larga duración'))}">
-          <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
-        </label>
-        <button class="btn ghost" id="buddy-ha-save">${t('Guardar token')}</button>
-        <label class="field"><span>Brave Search <span class="muted" id="buddy-brave-state"></span></span>
-          <input type="password" id="buddy-brave-token" autocomplete="new-password" placeholder="Brave Search API key">
-          <p class="hint">${t('La clave se envía al backend y queda en un archivo privado; nunca se vuelve a mostrar en el navegador. Si dejás el campo vacío y guardás, se borra y se usa DuckDuckGo experimental.')}</p>
-        </label>
-        <button class="btn ghost" id="buddy-brave-save">${t('Guardar clave')}</button>
         <div class="field"><span>${t('Hablar desde cualquier programa de tu PC')}</span>
           <p class="hint">${t('El atajo de arriba funciona sólo cuando llama-panel tiene el foco. Para usar una tecla sobre cualquier programa, descargá este cliente en la PC que tiene el micrófono y dejalo corriendo. En Windows, abrí PowerShell:')}</p>
-          <pre class="buddy-cmd">py -m pip install sounddevice pynput
-iwr ${esc(location.origin)}/clients/dani.py -OutFile dani.py
-py dani.py --server ${esc(location.origin)} --key f9</pre>
+          <pre class="buddy-cmd">iwr ${esc(location.origin)}/clients/buddy.py -OutFile buddy.py
+py buddy.py --server ${esc(location.origin)} --key f9</pre>
           <p class="hint">${t('Mientras mantenés F9 apretado graba; al soltarlo manda el audio. Podés cambiar <code>f9</code> por <code>ctrl_r</code>, otra tecla F o una letra.')}</p>
           <p class="hint">${t('Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.')}</p>
+          <label class="check"><input type="checkbox" id="buddy-cfg-wake"> ${t('Escuchar su nombre')}</label>
+          <p class="hint">${t('El programa de la PC deja el micrófono abierto y responde cuando escucha su nombre («{name}, ¿qué hora es?»). Lo reconoce en esa PC: al panel va solo la frase que lo nombra. La primera vez instala solo lo que necesita (unos 50 MB). Se aplica en unos segundos sin reiniciar el programa; en una PC se fuerza con <code>--wake</code> o <code>--no-wake</code>.', { name: esc(B.config.name) })}</p>
         </div>
         <div class="field"><span>${t('Oído')}</span>
           <p class="hint">${t('Vocabulario que recibe Whisper para escribir bien los nombres. Se arma solo: el nombre del compañero, tu zona, los lugares que consultaste, Home Assistant, la memoria y lo aprendido.')}</p>
@@ -380,16 +378,54 @@ py dani.py --server ${esc(location.origin)} --key f9</pre>
             <button type="button" class="btn ghost small" id="buddy-hearing-delete">${t('Borrar audios')}</button></span>
           <div id="buddy-hearing-result" class="buddy-tools"></div>
         </div>
+        </div>
+        <div class="buddy-pane" data-pane="links">
+        <label class="check"><input type="checkbox" id="buddy-share-location"> ${t('Compartir ubicación aproximada con el compañero')}</label>
+        <label class="field"><span>Home Assistant <span class="muted" id="buddy-ha-state"></span></span>
+          <input type="password" id="buddy-ha-token" autocomplete="off" placeholder="${esc(t('token de acceso de larga duración'))}">
+          <p class="hint">${t('En Home Assistant: tu perfil, Seguridad, «Tokens de acceso de larga duración». Mejor de un usuario que no sea administrador. Queda en un archivo aparte, solo legible por tu usuario.')}</p>
+        </label>
+        <button class="btn ghost" id="buddy-ha-save">${t('Guardar token')}</button>
+        <label class="field"><span>Brave Search <span class="muted" id="buddy-brave-state"></span></span>
+          <input type="password" id="buddy-brave-token" autocomplete="new-password" placeholder="Brave Search API key">
+          <p class="hint">${t('La clave se envía al backend y queda en un archivo privado; nunca se vuelve a mostrar en el navegador. Si dejás el campo vacío y guardás, se borra y se usa DuckDuckGo experimental.')}</p>
+        </label>
+        <button class="btn ghost" id="buddy-brave-save">${t('Guardar clave')}</button>
+        </div>
+        <div class="buddy-pane" data-pane="memory">
         <label class="field"><span>${t('Memoria')}</span>
           <textarea id="buddy-mem" rows="6" spellcheck="false"></textarea>
           <p class="hint">${t('Lo que anota con «recordar». Se lee al empezar cada charla.')}</p>
         </label>
         <button class="btn ghost" id="buddy-mem-save">${t('Guardar memoria')}</button>
+        <div class="field"><span>${t('Avisos pendientes')}</span><div id="buddy-timers" class="buddy-tools"></div></div>
+        </div>
+        <div class="buddy-save" data-for="general instr voice">
+        <span class="path-row"><button class="btn" id="buddy-cfg-save">${t('Guardar')}</button>
+          <button class="btn ghost" id="buddy-cfg-test" title="${esc(t('Guarda y le hace 10 preguntas de prueba al modelo cargado (~1 min): si consulta cuando tiene que consultar y no inventa.'))}">${t('Guardar y probar')}</button></span>
+        <div id="buddy-test-result" class="buddy-tools"></div>
+        </div>
       </details>
     </div>`;
   drawn = true;
+  showPane(storedPane());
+  for (const b of $$('.buddy-panes button')) b.onclick = () => showPane(b.dataset.pane);
   fillSettings();
   bind();
+}
+
+// Los ajustes en sub-pestañas: con todo junto era una lista larguísima en una columna angosta
+function storedPane() {
+  try { return localStorage.getItem('buddy-pane') || 'general'; } catch { return 'general'; }
+}
+
+function showPane(name) {
+  if (!$(`.buddy-pane[data-pane="${name}"]`)) name = 'general';
+  for (const el of $$('.buddy-pane')) el.hidden = el.dataset.pane !== name;
+  for (const b of $$('.buddy-panes button')) b.setAttribute('aria-pressed', String(b.dataset.pane === name));
+  // «Guardar» va con los campos de la configuración; HA, Brave y la memoria tienen su propio botón
+  $('.buddy-save').hidden = !$('.buddy-save').dataset.for.split(' ').includes(name);
+  try { localStorage.setItem('buddy-pane', name); } catch { /* sin almacenamiento: vuelve a General */ }
 }
 
 function fillSettings() {
@@ -415,6 +451,7 @@ function fillSettings() {
       <span class="mono">${esc(tl.name)}</span> <span class="muted">${esc(t(LEVELS[tl.level] || tl.level))}${tl.available ? '' : ' · ' + esc(t('no disponible'))}</span></label>`).join('');
   $('#buddy-mem').value = B.memory;
   $('#buddy-cfg-alerts').checked = c.alerts;
+  $('#buddy-cfg-wake').checked = !!c.wake;
   $('#buddy-cfg-morning').value = c.morning || '';
   $('#buddy-share-location').checked = localStorage.getItem('buddy-share-location') === '1';
   updateHotkeyUI();
@@ -548,13 +585,14 @@ function bind() {
     model: $('#buddy-cfg-model').value,
     speak: $('#buddy-speak').checked, tools: $$('#buddy-cfg-tools input:checked').map(i => i.value),
     alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value,
-    keep_audio: $('#buddy-cfg-keep-audio').checked,
+    keep_audio: $('#buddy-cfg-keep-audio').checked, wake: $('#buddy-cfg-wake').checked,
   });
   $('#buddy-cfg-save').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/config', cfgBody())));
     B = await getJSON('/api/buddy'); fillSettings();
   };
   $('#buddy-cfg-keep-audio').onchange = e => post('/api/buddy/config', { keep_audio: e.target.checked });
+  $('#buddy-cfg-wake').onchange = async e => { report(await post('/api/buddy/config', { wake: e.target.checked })); };
   $('#buddy-hearing-compare').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/hearing/compare')));
     for (;;) {

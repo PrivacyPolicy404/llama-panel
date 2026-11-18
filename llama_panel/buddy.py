@@ -5,7 +5,7 @@ completa va a Piper mientras se genera la siguiente, y si el modelo pide herrami
 le devuelve el resultado. La interfaz recibe eventos: lo que se escuchó, texto, herramientas, audio y el final.
 
 Todo vive en BUDDY_DIR: config.json, memoria.md, herramientas.log y conversations/ (transcripciones e historial).
-La conversación activa es compartida por la web y clients/dani.py y se restaura al reiniciar el panel.
+La conversación activa es compartida por la web y clients/buddy.py y se restaura al reiniciar el panel.
 """
 import http.client
 import json
@@ -29,6 +29,7 @@ MAX_TOKENS = 600
 # "sections": solo las secciones del prompt que el usuario cambió (buddy_prompt.py); "language": de la charla.
 DEFAULT_CONFIG = {"name": "Dani", "model": "", "speak": True, "tools_off": [], "language": "es", "sections": {},
                   "keep_audio": True,  # últimos audios en BUDDY_DIR/oido (hearing.py), solo en esta máquina
+                  "wake": False,  # clients/buddy.py escucha siempre y responde a su nombre (necesita vosk en la PC)
                   "alerts": True, "morning": "09:00"}  # avisos del homelab y hora del resumen (proactive.py)
 MORNING_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 SECTION_MAX = 6000
@@ -37,6 +38,8 @@ _history = []
 _spontaneous = []  # lo que Dani dijo por su cuenta mientras contestaba otra cosa: entra al historial después
 _session = {"memory": None}  # memoria leída al empezar la charla (ver system_prompt)
 _busy = threading.Lock()
+_warming = threading.Event()  # el candado lo tiene un precalentado: un mensaje nuevo espera en vez de rebotar
+WARM_WAIT_S = 90
 _conversation_lock = threading.Lock()
 _conversation_state = {"root": None, "active": None, "items": []}
 
@@ -263,7 +266,8 @@ def save_config(body):
     cfg.update(name=name, language=language, sections=sections, model=str(body.get("model", cfg["model"])).strip(),
                speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)),
                alerts=bool(body.get("alerts", cfg["alerts"])), morning=morning,
-               keep_audio=bool(body.get("keep_audio", cfg["keep_audio"])))
+               keep_audio=bool(body.get("keep_audio", cfg["keep_audio"])),
+               wake=bool(body.get("wake", cfg.get("wake", False))))
     cfg.pop("tools")
     C.BUDDY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = C.BUDDY_DIR / "config.tmp"
@@ -282,18 +286,32 @@ def system_prompt(cfg, memory):
     return BP.build(cfg, memory)
 
 
-def trim_history(history, max_turns=MAX_TURNS):
+def _cut(n_users, max_turns=MAX_TURNS):
+    """Cuántos mensajes del usuario se recortan del principio cuando hay `n_users`."""
+    if n_users <= max_turns:
+        return 0
+    half = max(1, max_turns // 2)
+    return ((n_users - max_turns - 1) // half + 1) * half
+
+
+def trim_history(history, max_turns=MAX_TURNS, ahead=0):
     """Con más de `max_turns` mensajes del usuario, borra los más viejos (con sus respuestas y herramientas) de a
     bloques de media ventana: cada recorte cambia el comienzo del prompt y el servidor lo reprocesa entero.
     El corte depende solo de cuántos mensajes hay, no de lo que se recortó antes (el historial completo queda
     guardado y se recorta una copia en cada pedido): con 13 a 18 se sacan los 6 primeros, con 19 a 24 los 12...
-    Así el comienzo queda igual durante 6 mensajes seguidos, en vez de moverse en cada uno."""
+    Así el comienzo queda igual durante 6 mensajes seguidos, en vez de moverse en cada uno.
+    `ahead`: recortar como si ya hubiera esos mensajes más (para precalentar lo que va a mandar el próximo)."""
     users = [i for i, m in enumerate(history) if m["role"] == "user"]
-    if len(users) > max_turns:
-        half = max(1, max_turns // 2)
-        drop = ((len(users) - max_turns - 1) // half + 1) * half
+    drop = _cut(len(users) + ahead, max_turns)
+    if 0 < drop < len(users):
         del history[:users[drop]]
     return history
+
+
+def client_settings():
+    """Lo que necesita clients/buddy.py (lo consulta cada tanto): el nombre y si tiene que escuchar su nombre."""
+    cfg = load_config()
+    return {"name": cfg["name"], "wake": bool(cfg.get("wake"))}
 
 
 def state():
@@ -436,9 +454,9 @@ def _loaded_model(cfg):
     return C.backend_port("text"), cfg["model"] if cfg["model"] in loaded else loaded[0]
 
 
-def _warm_locked(cfg):
+def _warm_locked(cfg, ahead=0):
     """Manda la charla activa tal como la mandaría el próximo mensaje (sin él, 1 token): el servidor la deja procesada
-    y la respuesta siguiente arranca enseguida. Con el candado ya tomado."""
+    y la respuesta siguiente arranca enseguida. Con el candado ya tomado. `ahead`: ver trim_history."""
     target = _loaded_model(cfg)
     if not target:
         return False
@@ -446,7 +464,7 @@ def _warm_locked(cfg):
     lang = BP.lang_of(cfg)
     memory = _session["memory"] if _session["memory"] is not None else BT.read_memory()
     messages = [{"role": "system", "content": system_prompt(cfg, memory)}] + \
-        _for_model(trim_history(list(_history)), lang)
+        _for_model(trim_history(list(_history), ahead=ahead), lang)
     if messages[-1]["role"] == "system":
         messages.append({"role": "user", "content": "."})  # charla vacía: al menos el prompt de sistema
     req = {"model": model, "messages": messages, "stream": True, "max_tokens": 1,
@@ -458,19 +476,31 @@ def _warm_locked(cfg):
     return True
 
 
-def warm_async():
-    """Precalienta en segundo plano (después de cambiar las instrucciones), si hay modelo y Dani está libre."""
+def warm_async(ahead=0):
+    """Precalienta en segundo plano (después de cambiar las instrucciones, o antes de que el próximo mensaje recorte
+    el historial), si hay modelo y el compañero está libre. Un mensaje que llega mientras tanto espera (_warming)."""
     def work():
         if not _busy.acquire(blocking=False):
             return
+        _warming.set()
         try:
             _ensure_conversation()
-            _warm_locked(load_config())
+            _warm_locked(load_config(), ahead)
         except Exception as e:  # noqa: BLE001
             print(f"precalentar: {e}", flush=True)
         finally:
+            _warming.clear()
             _busy.release()
     threading.Thread(target=work, daemon=True).start()
+
+
+def _warm_before_cut():
+    """El recorte de a mitades (trim_history) mueve el comienzo de la charla cada 6 mensajes y el servidor reprocesa
+    todo lo que sigue (~2500 tokens, ~26 s con Flash-Next: lo vio el usuario como una respuesta lenta sin
+    herramientas). Si el próximo mensaje lo va a mover, se recorta y procesa ya, mientras el usuario lee."""
+    n = sum(1 for m in _history if m["role"] == "user")
+    if _cut(n + 1) != _cut(n):
+        warm_async(ahead=1)
 
 
 # ---------- «Probar»: la versión corta de las pruebas (buddy_eval.py) con lo guardado ----------
@@ -602,8 +632,9 @@ def _endpoint_and_model(cfg):
 
 
 def stream_completion(port, body, cancel):
-    """Pide una respuesta en streaming y va devolviendo ("text", delta) y, al final, ("tool_calls", [...]) si el
-    modelo pidió herramientas. Corta (cierra la conexión, el servidor deja de generar) si `cancel` se activa."""
+    """Pide una respuesta en streaming y va devolviendo ("text", delta), ("tool_start", nombre) apenas el modelo
+    empieza a escribir una llamada a una herramienta y, al final, ("tool_calls", [...]). Corta (cierra la conexión,
+    el servidor deja de generar) si `cancel` se activa."""
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=900)
     try:
         conn.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
@@ -629,6 +660,8 @@ def stream_completion(port, body, cancel):
                 c = calls.setdefault(tc.get("index", 0), {"id": "", "name": "", "arguments": ""})
                 c["id"] = tc.get("id") or c["id"]
                 fn = tc.get("function") or {}
+                if fn.get("name") and not c["name"]:
+                    yield "tool_start", fn["name"]
                 c["name"] += fn.get("name") or ""
                 c["arguments"] += fn.get("arguments") or ""
         if calls:
@@ -641,8 +674,10 @@ def stream_completion(port, body, cancel):
 def chat(body):
     """Generador de eventos para la interfaz. `body`: {"text"} o {"audio": base64, "speak": bool}."""
     if not _busy.acquire(blocking=False):
-        yield {"type": "error", "msg": _("El compañero está contestando otra cosa; esperá un momento.")}
-        return
+        # precalentando lo mismo que este mensaje va a necesitar: esperar sale más rápido que rebotar
+        if not (_warming.is_set() and _busy.acquire(timeout=WARM_WAIT_S)):
+            yield {"type": "error", "msg": _("El compañero está contestando otra cosa; esperá un momento.")}
+            return
     from . import proactive
     proactive.HUB.touch(str(body.get("client") or "")[:64])  # este cliente es el que habla los avisos
     events = _LiveEvents(str(body.get("client") or "")[:64])
@@ -713,6 +748,7 @@ def _run(body, events, cancel):
         events.put({"type": "done"})
         events.put(None)
         _busy.release()
+        _warm_before_cut()
 
 
 def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False):
@@ -732,6 +768,7 @@ def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False
     _broadcast_conversation()
     t0 = time.time()
     first = None
+    announced = False  # «dejame que me fijo»: una vez por mensaje
     for _step in range(MAX_STEPS):
         model_history = trim_history(list(_history))
         messages = [{"role": "system", "content": system_prompt(cfg, _session["memory"])}] + _for_model(model_history, BP.lang_of(cfg))
@@ -758,6 +795,18 @@ def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False
                     spoken_first = True
 
         for kind, data in stream_completion(port, req, cancel):
+            if kind == "tool_start":
+                # Mientras se busca el dato, decirlo; no va al historial del modelo (no le cambia el prompt)
+                phrase = None if (announced or reply) else BP.checking(data, BP.lang_of(cfg), len(_history))
+                if phrase:
+                    announced = True
+                    if first is None:
+                        first = time.time() - t0
+                        events.put({"type": "first_token", "s": round(first, 2)})
+                    events.put({"type": "text", "delta": phrase + " "})
+                    if sentences is not None:
+                        sentences.put(phrase)
+                continue
             if kind == "text":
                 if lead is None:  # ya se sabe que no empieza con el nombre
                     emit(data)

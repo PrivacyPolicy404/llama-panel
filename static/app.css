@@ -390,6 +390,12 @@ details.global[open] summary { margin-bottom: 12px; }
 .buddy-mic.on { background: var(--critical-text); border-color: var(--critical-text); }
 .buddy-settings { display: flex; flex-direction: column; gap: 10px; }
 .buddy-settings[open] > :not(summary) { margin-top: 10px; }
+.buddy-panes { display: flex; flex-wrap: wrap; width: 100%; }
+.buddy-panes button { flex: 1 1 auto; }
+.buddy-pane { display: flex; flex-direction: column; gap: 10px; }
+.buddy-pane[hidden] { display: none; }
+.buddy-save { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+.buddy-save[hidden] { display: none; }
 .buddy-settings textarea, .buddy-settings input[type=text], .buddy-settings select { width: 100%; }
 .buddy-tools { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
 .buddy-sections { display: flex; flex-direction: column; gap: 6px; }

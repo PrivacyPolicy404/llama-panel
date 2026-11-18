@@ -247,6 +247,16 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   - Whisper con 4 s de audio: small 1.7 s con la ventana entera de 30 s, **0.6 s** ajustando `-ac` al largo
     (`voice.audio_ctx`); large-v3-turbo q5_0 11 s y 2.1 s, pero con la ventana chica repite palabras. 16 hilos no
     mejora a 8. Con el audio en webm del navegador (ffmpeg incluido): 0.74 s.
+  - **Whisper en la GPU** (2026-11-18): `~/whisper.cpp/build-vulkan` (`-DGGML_VULKAN=ON`, `WHISPER_CLI_GPU` en
+    paths.env). Con Flash-Next cargado `--fit` deja ~850 MiB libres y large-v3-turbo q5_0 entra ahí (pico +780 MiB):
+    no hace falta descargar ni achicar el texto. Cada transcripción es un proceso aparte, así que la VRAM se ocupa
+    solo ~1 s. 0.6 a 0.9 s con la carga incluida (CPU: 2.1 s con ventana chica, 11 s entera); con 384 cuadros
+    repite la frase, con 768 no (`GPU_MIN_AC`). Si no hay VRAM libre (imágenes cargadas) o falla, va al CPU con el
+    modelo chico más grande que haya (`voice.plan`).
+  - Bench `whisper_vocab.py` (144 audios), small CPU → turbo GPU: con vocabulario WER 17.5 → **14.0 %**, nombres
+    85 → 84 %, 0.7 → 0.93 s; sin vocabulario nombres 39 → 57 %. Por voz: davefx 18 → 11 %, ald 20 → 15 %, claude
+    7 → 7 %, daniela (la argentina, la peor) 25 → 23.5 %. Con silencio y vocabulario turbo escribe «Sous-titrage
+    Société Radio-Canada» (agregado a `HALLUCINATIONS`).
   - **Trampa:** con la ventana muy justa Whisper repite la frase (2.8 s de audio con `-ac 256` salió dos veces; con
     384 o más, bien; `-mc 0` no cambia nada). Regla: 1.5 veces el largo + 128 cuadros, mínimo 384: 4 s de audio
     pasan de 0.66 a 0.74 s.
@@ -258,6 +268,18 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   - **Trampa: el prompt tiene que quedar fijo.** Personalidad y herramientas son ~1200 tokens: si cambian, Flash-Next
     los reprocesa a ~58 tok/s (~20 s). Por eso la memoria se lee al empezar cada charla (no en cada mensaje), el
     prompt no lleva la hora y el historial se recorta de a mitades.
+  - **Con herramienta son dos vueltas** (2026-11-18, «¿a cuántos grados está el CPU?»): 3.8 s para decidir la llamada
+    (50 tokens leídos a ~16 tok/s: con lotes chicos Flash-Next lee casi a velocidad de generación) + 20 ms la
+    herramienta + 6.5 s la segunda vuelta (201 tokens de resultado a 44 tok/s, 4.6 s, y la respuesta). Para no dejar
+    ese rato en silencio, apenas el streaming trae el nombre de la herramienta el panel dice una frase corta
+    («Dejame que me fijo», `buddy_prompt.CHECKING`, una por mensaje, sin ir al historial del modelo). Con el modelo
+    real: «¿va a llover mañana en Tandil?» → frase a los 3.0 s, clima a los 6.3 s, respuesta a los 11.3 s.
+  - **El recorte igual cuesta, una vez cada 6 mensajes** (2026-11-18, una respuesta de 29 s sin herramientas):
+    `f_keep = 0.585` en el log, 2515 tokens reprocesados a 96 tok/s. Flash-Next tiene capas recurrentes y llama.cpp
+    no puede correr su caché (`--cache-reuse` no sirve). Ahora, al terminar la respuesta anterior a un recorte, se
+    recorta y precalienta en segundo plano (`_warm_before_cut`, `trim_history(ahead=1)`); un mensaje que llega
+    mientras tanto espera en vez de rebotar. Charla de 12 mensajes con el modelo real: el 13.º pasa de 2576 tokens
+    y 27.3 s a la primera palabra a 49 tokens y 3.1 s (el precalentado, 20 s, corre mientras se lee).
 - **Herramientas de más** (Flash-Next `-hcq8`, 2026-11-17, primera ronda, 3 a 6 pruebas por frase): con la
   personalidad que pedía «usá primero las herramientas» llamaba a `estado_homelab` hasta para «hola» y a
   `fecha_y_hora` antes de cada búsqueda, y una vez programó un aviso que nadie pidió. Cada llamada es otra ronda
@@ -305,7 +327,7 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   del mensaje lleva «desde Ciudad, Provincia» (`BT.user_place`, Nominatim con caché de un día; solo en memoria, no
   va al disco). Con esa zona cerca, «mano de plata» da Mar del Plata 3 de 3 y «¿va a llover?» usa la zona 6 de 6;
   con una zona lejos sigue fallando: no interpreta por el sonido, se apoya en dónde está el usuario.
-  `clients/dani.py` todavía no manda contexto (ni zona horaria ni lugar).
+  `clients/buddy.py` todavía no manda contexto (ni zona horaria ni lugar).
 - **Oído** (`hearing.py`, 2026-11-17): Whisper recibe un vocabulario que se arma solo (`--prompt`: nombre del
   compañero, zona, lugares consultados para el clima, Home Assistant, nombres propios de la memoria, lo aprendido;
   sin medidas como «8 GB» ni siglas sueltas). Medido con `tools/bench/whisper_vocab.py` (Piper, 4 voces × 12 frases ×
@@ -336,7 +358,7 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
 - **Trampa (pruebas):** probar a Dani con frases inventadas («me gusta el mate amargo») deja datos falsos en
   `memoria.md`, que después aparecen en las charlas reales. Vaciar la memoria al terminar de probar. La personalidad
   de fábrica pide usar `recordar` solo para datos duraderos: antes anotaba hasta «le pidió un chiste».
-- **Dani por su cuenta** (`proactive.py`): los clientes (web y `dani.py`) se suscriben a `GET /api/buddy/events`
+- **Dani por su cuenta** (`proactive.py`): los clientes (web y `buddy.py`) se suscriben a `GET /api/buddy/events`
   (SSE, ping cada 15 s) y el audio va solo al que se usó último (`client` en cada charla). Timers en
   `buddy/avisos.json` (sobreviven a reinicios; la frase la escribe Dani al crearlo, al sonar no hace falta el modelo).
   Avisos con histéresis y una hora mínima entre repeticiones: GPU ≥85 °C (se rearma <78), CPU ≥90, RAM libre ≤3 GB,
@@ -350,9 +372,32 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   abierto como antes. Con ella, 127.0.0.1/::1 pasan sin pedir (kiosco, herramientas locales, túnel SSH), el
   navegador usa una cookie de sesión de 30 días y los programas un token. Probado de punta a punta en un servidor
   aparte (:8099) pidiendo por la IP de la red. **No cubre 8080 ni 5001** (llama-server, KoboldCpp o el proxy).
-- `clients/dani.py` (en la PC, Python con `sounddevice` y `pynput`): tecla global para hablar (Ctrl derecho), pitido
+- `clients/buddy.py` (antes `dani.py`, que el panel sigue sirviendo; en la PC, Python con `sounddevice` y `pynput`): tecla global para hablar (Ctrl derecho), pitido
   al empezar y terminar, la respuesta suena oración por oración y apretar de nuevo la corta. Probado acá con
   `--file` / `--save` (sin micrófono): pregunta en voz a respuesta en audio, de punta a punta.
+  - **Pitido lento** (2026-11-18): cada pitido abría un stream de salida nuevo a 22050 Hz (cientos de ms en Windows,
+    más la conversión de frecuencia), y recién después de abrir el micrófono. Ahora la salida queda abierta en
+    silencio a la frecuencia de la placa (`Beeper`) y el pitido es poner muestras en una cola. El micrófono se sigue
+    abriendo con cada tecla (no hay ícono de micrófono en uso fuera de eso).
+  - **Escuchar su nombre** (2026-11-18): se prende en el panel (ajustes del compañero, Voz; el cliente lo mira cada
+    15 s por `GET /api/buddy/client` y abre o cierra el micrófono sin reiniciarse) o en una PC con `--wake` /
+    `--no-wake`. El micrófono queda abierto y Vosk (`vosk-model-small-es-0.42`,
+    40 MB, se baja solo con sha256 verificado) reconoce en la PC; al panel va solo la frase que tiene el nombre del
+    compañero (lo lee del panel; otro con `--wake Nombre`). Medido con las 4 voces de Piper:
+    - Restringir Vosk a una gramática («dani» o cualquier cosa) no sirve: 44 falsas alarmas en 76 frases sin el
+      nombre. Reconocimiento libre: 0 falsas, pero escribe «danny» (comparar por sonido: `sound()`); con 5 lecturas
+      alternativas, 42/48. Si la principal dice un nombre más largo que empieza igual («Daniel») no se miran las
+      otras: era la única falsa alarma.
+    - Vosk da una frase por terminada tras ~1 s de silencio, así que en una charla seguida junta varias: se recorta
+      con los tiempos de cada palabra (para atrás lo pegado al nombre, «che», «hola»; para adelante hasta una pausa
+      de 0.45 s). Charla simulada a 48 kHz, 124 frases con pausas de 0.4 a 2.5 s: 38/48 enteras, 0 envíos sin el
+      nombre, 1 frase ajena pegada (con pausas de 0.6 s eran 8; con 0.3 s, ninguna, pero cortaría a quien piensa en
+      el medio de la frase). Con ruido fuerte (σ 1200): 30/48. Llega ~1 s después de callarse.
+    - Otros nombres (5 frases × 4 voces, 0 falsas alarmas en todos): Mateo 20/20, Bruno y Jarvis 15, Nova 14, Lola,
+      Tobías y Ximena 13, Kira 11. Los que Vosk no tiene en su diccionario los escribe como otra cosa («shakira»,
+      «la las», «chimeneas»): se comparan también 2 y 3 palabras seguidas y a los nombres largos se les perdona una
+      letra. Un nombre común y de 3 sílabas anda mejor.
+    - Sin probar: micrófono y voz reales. Tests: `tests/test_buddy_client.py` (lógica, sin Vosk).
 - El micrófono del navegador solo anda en https o `localhost`: desde la laptop, túnel SSH
   (`ssh -L 8090:localhost:8090 …`) y abrir `http://localhost:8090`.
 - **Home Assistant** (2026-11-17): contenedor de Podman sin root, versión fijada 2026.11.2, red del host, puerto 8123,

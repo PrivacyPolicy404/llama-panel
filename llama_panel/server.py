@@ -19,7 +19,7 @@ from .install import sync_units
 MAX_BODY = 8_000_000  # el audio del compañero llega en base64 dentro del JSON
 MAX_RAW_BODY = 30_000_000  # /v1/audio/transcriptions: OpenAI acepta archivos de hasta 25 MB
 # Sin sesión: la interfaz (no tiene datos), el programa de la PC (está en el repo público) y el login
-PUBLIC_GET = {"/", "/clients/dani.py", "/api/auth"}
+PUBLIC_GET = {"/", "/clients/buddy.py", "/clients/dani.py", "/api/auth"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -107,8 +107,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(u.path[len("/static/"):])
         if u.path in GET_STREAM_ROUTES:
             return self._stream(GET_STREAM_ROUTES[u.path](urllib.parse.parse_qs(u.query)))
-        if u.path == "/clients/dani.py":  # el programa para hablarle a Dani desde la PC (clients/dani.py)
-            return self._send(200, (C.APP_DIR / "clients" / "dani.py").read_bytes(), "text/x-python")
+        # el programa para hablarle al compañero desde la PC; dani.py es el nombre viejo (comandos ya copiados)
+        if u.path in ("/clients/buddy.py", "/clients/dani.py"):
+            return self._send(200, (C.APP_DIR / "clients" / "buddy.py").read_bytes(), "text/x-python")
         route = GET_ROUTES.get(u.path)
         if not route:
             return self._error(404, "no encontrado")

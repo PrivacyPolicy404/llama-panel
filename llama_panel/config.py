@@ -56,10 +56,13 @@ IMG_DIR = Path(_env("LLAMA_IMG_DIR", HOME / "imgmodels")).expanduser()
 LLAMA_SERVER = str(Path(_env("LLAMA_SERVER_BIN", HOME / "llama.cpp/build/bin/llama-server")).expanduser())
 KOBOLD_BIN = str(Path(_env("KOBOLD_BIN", HOME / "koboldcpp/koboldcpp")).expanduser())
 
-# Compañero (buddy.py): voz con whisper.cpp (entender, en el CPU) y Piper (hablar, en su propio venv)
+# Compañero (buddy.py): voz con whisper.cpp (entender, en la GPU si entra o en el CPU) y Piper (hablar, en su propio venv)
 # (scripts/install-voice.sh deja todo en VOICE_DIR; otras ubicaciones van en paths.env)
 VOICE_DIR = HOME / ".local/share/llama-panel/voice"
 WHISPER_CLI = str(Path(_env("WHISPER_CLI", HOME / "whisper.cpp/build/bin/whisper-cli")).expanduser())
+# El mismo whisper.cpp compilado con Vulkan (cmake -B build-vulkan -DGGML_VULKAN=ON): si existe y hay VRAM libre,
+# Whisper corre en la GPU al lado del modelo de texto (voice.transcribe)
+WHISPER_CLI_GPU = str(Path(_env("WHISPER_CLI_GPU", HOME / "whisper.cpp/build-vulkan/bin/whisper-cli")).expanduser())
 WHISPER_MODEL = str(Path(_env("WHISPER_MODEL", VOICE_DIR / "ggml-small-q8_0.bin")).expanduser())
 PIPER_PYTHON = str(Path(_env("PIPER_PYTHON", VOICE_DIR / "piper-venv/bin/python")).expanduser())
 PIPER_VOICE = str(Path(_env("PIPER_VOICE", VOICE_DIR / "es_AR-daniela-high.onnx")).expanduser())

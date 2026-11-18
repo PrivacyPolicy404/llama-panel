@@ -1,8 +1,8 @@
 """Dani habla sin que le pregunten: timers y recordatorios, avisos del homelab y un resumen a la mañana.
 
-Los clientes (la interfaz web y clients/dani.py) quedan suscriptos a GET /api/buddy/events (server-sent events). Un
+Los clientes (la interfaz web y clients/buddy.py) quedan suscriptos a GET /api/buddy/events (server-sent events). Un
 mensaje llega a todos como texto, pero el audio va solo al cliente que se usó último (si están abiertos el navegador y
-dani.py, habla uno solo). Sin nadie conectado, los mensajes esperan (hasta 12 h) al próximo que se conecte.
+buddy.py, habla uno solo). Sin nadie conectado, los mensajes esperan (hasta 12 h) al próximo que se conecte.
 
 - Timers: la herramienta avisar los crea con la frase que Dani va a decir, escrita en ese momento: al sonar no hace
   falta el modelo. Se guardan en BUDDY_DIR/avisos.json y sobreviven a los reinicios del panel.

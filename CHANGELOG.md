@@ -2,10 +2,17 @@
 
 ## Unreleased
 
+- Renamed the desktop client to `clients/buddy.py` (the panel still serves `/clients/dani.py` for old commands). It
+  uses whatever name the buddy has, can listen for that name with an always-open microphone (local Vosk recognition;
+  only the sentence that names it is sent), toggled live from the Buddy settings or forced with `--wake` /
+  `--no-wake`, and now exits cleanly on Ctrl+C in Windows. The push-to-talk beep no longer waits for a new audio stream.
+- Speech to text runs on the GPU (Vulkan build of whisper.cpp) when the selected model fits in the free VRAM next to the
+  text model, falling back to the CPU with the small model.
+- Buddy settings are split into tabs (General, Instructions, Voice, Connections, Memory).
 - Added a dedicated Open-Meteo weather tool for current conditions and a two-day forecast. General web search now
   allows one retry after a network failure and uses a six-second timeout, while still capping successful searches.
 - Buddy conversations are now persisted, selectable and deletable, with one active conversation shared by the web UI
-  and `dani.py`; turns sent with the global PC shortcut appear live in the browser. Audio and ephemeral location are
+  and `buddy.py`; turns sent with the global PC shortcut appear live in the browser. Audio and ephemeral location are
   never stored, and `contexto_usuario` is redacted from the tool audit log.
 - Replaced the invasive global Space push-to-talk binding with a per-device keyboard or side-mouse-button shortcut
   recorder and a choice of Buddy-only or whole-panel scope. Unsafe bare keys are rejected for the whole panel and

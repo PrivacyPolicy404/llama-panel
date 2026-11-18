@@ -15,6 +15,7 @@ from pathlib import Path
 
 from . import audio_models as AM
 from . import config as C
+from . import hardware as HW
 
 # Últimos tiempos, para la tarjeta Audio del panel
 LAST = {"stt": None, "tts": None}
@@ -22,7 +23,9 @@ LAST = {"stt": None, "tts": None}
 # Whisper "escucha" estas frases en el silencio o el ruido (vienen de los subtítulos con que se entrenó)
 HALLUCINATIONS = ("subtítulos realizados por la comunidad de amara.org", "subtítulos por la comunidad de amara.org",
                   "gracias por ver el video", "¡gracias por ver!", "gracias por ver", "suscríbete",
-                  "ming pao canada", "[música]", "(música)", "[sonido]")
+                  "ming pao canada", "[música]", "(música)", "[sonido]",
+                  # large-v3-turbo con silencio y vocabulario (bench whisper_vocab, 2026-11-18)
+                  "sous-titrage société radio-canada", "sous-titres réalisés par la communauté d'amara.org")
 
 
 def audio_ctx(seconds):
@@ -59,6 +62,46 @@ def stt_available():
     return os.access(C.WHISPER_CLI, os.X_OK) and Path(AM.selected()["stt"]).is_file()
 
 
+# Whisper en la GPU (2026-11-18, RX 580 con Flash-Next cargado): large-v3-turbo q5_0 entra en lo que deja libre --fit
+# (~850 MiB: el pico fue +780) y tarda ~0.8 s con la carga incluida, contra 2.1 s en el CPU (11 s con la ventana
+# entera). Con 384 cuadros repite la frase; con 768, no. Cada transcripción es un proceso aparte: la VRAM queda
+# ocupada solo ese segundo, así que no hay nada que descargar cuando otro programa usa el modelo de texto.
+GPU_MIN_AC = 768
+GPU_SPARE_MIB = 300  # buffers de cálculo además del archivo del modelo
+BIG_MODEL = 300 << 20  # más que esto (medium, large, turbo) es lento en el CPU: ahí se usa el más chico que haya
+
+
+def vram_free_mib():
+    if not HW.GPU_DIR:
+        return None
+    try:
+        used = int(Path(HW.GPU_DIR, "mem_info_vram_used").read_text())
+        total = int(Path(HW.GPU_DIR, "mem_info_vram_total").read_text())
+    except (OSError, ValueError):
+        return None
+    return (total - used) >> 20
+
+
+def plan(model):
+    """En qué orden probar: [(dispositivo, whisper-cli, modelo)]. La GPU primero si hay binario con Vulkan y la VRAM
+    libre alcanza (si no, o si falla, el CPU)."""
+    out = []
+    try:
+        size = Path(model).stat().st_size
+    except OSError:
+        size = 0
+    free = vram_free_mib()
+    if os.access(C.WHISPER_CLI_GPU, os.X_OK) and free is not None and free >= (size >> 20) + GPU_SPARE_MIB:
+        out.append(("gpu", C.WHISPER_CLI_GPU, model))
+    cpu_model = model
+    if size > BIG_MODEL:
+        small = [m for m in AM.scan()["stt"] if m["size"] <= BIG_MODEL and m["lang"] == "multi"]
+        if small:
+            cpu_model = small[-1]["path"]  # el más grande de los chicos
+    out.append(("cpu", C.WHISPER_CLI, cpu_model))
+    return out
+
+
 def transcribe(audio, threads=8, language="es", prompt=None, keep_wav=None, nice=False):
     """Audio en cualquier formato que entienda ffmpeg (el navegador manda webm/opus). Devuelve (texto, segundos).
     `prompt`: vocabulario para Whisper (nombres que tiene que escribir bien, ver hearing.py). `keep_wav`: ruta donde
@@ -78,18 +121,25 @@ def transcribe(audio, threads=8, language="es", prompt=None, keep_wav=None, nice
             Path(keep_wav).parent.mkdir(parents=True, exist_ok=True)
             Path(keep_wav).write_bytes(wav.read_bytes())
         model = AM.selected()["stt"]
-        t0 = time.time()
-        cmd = [C.WHISPER_CLI, "-m", model, "-f", str(wav), "-l", language, "-t", str(threads),
-               "-ac", str(audio_ctx(seconds)), "-nt", "-np"]
-        if prompt:
-            cmd += ["--prompt", prompt]
-        if nice:
-            cmd = ["nice", "-n", "19"] + cmd
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
-            raise RuntimeError(f"whisper: {r.stderr.strip()[-200:]}")
+        errors = []
+        for device, cli, use in plan(model):
+            t0 = time.time()
+            ac = audio_ctx(seconds)
+            if device == "gpu" and ac:
+                ac = max(ac, GPU_MIN_AC)
+            cmd = [cli, "-m", use, "-f", str(wav), "-l", language, "-t", str(threads), "-ac", str(ac), "-nt", "-np"]
+            if prompt:
+                cmd += ["--prompt", prompt]
+            if nice:
+                cmd = ["nice", "-n", "19"] + cmd
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode == 0:
+                break
+            errors.append(f"{device}: {r.stderr.strip()[-200:]}")
+        else:
+            raise RuntimeError("whisper: " + " · ".join(errors))
         LAST["stt"] = {"t": time.time(), "audio_s": round(seconds, 1), "s": round(time.time() - t0, 2),
-                       "model": Path(model).name}
+                       "model": Path(use).name, "device": device}
         return clean_transcript(r.stdout), seconds
 
 
