@@ -31,6 +31,7 @@ GEOCODE_URL = "https://nominatim.openstreetmap.org/reverse"
 WEATHER_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 HTTP_AGENT = "llama-panel-buddy/0.1"
+NOT_FOUND = "No encontré la ubicación"  # el lugar no existe (hearing.py no aprende de esto)
 WEATHER_CODES = {0: "despejado", 1: "mayormente despejado", 2: "parcialmente nublado", 3: "nublado",
                  45: "niebla", 48: "niebla con escarcha", 51: "llovizna leve", 53: "llovizna",
                  55: "llovizna intensa", 61: "lluvia leve", 63: "lluvia", 65: "lluvia intensa",
@@ -239,7 +240,7 @@ def clima(ubicacion=None):
             query = urllib.parse.urlencode({"name": place, "count": 1, "language": "es", "format": "json"})
             found = _get_json(f"{WEATHER_GEOCODE_URL}?{query}", timeout=4).get("results") or []
             if not found:
-                return f"No encontré la ubicación «{place}». Pedile al usuario una ciudad o provincia cercana."
+                return f"{NOT_FOUND} «{place}». Pedile al usuario una ciudad o provincia cercana."
             hit = found[0]
             resolved = (hit["latitude"], hit["longitude"],
                         ", ".join(x for x in (hit.get("name"), hit.get("admin1"), hit.get("country")) if x))

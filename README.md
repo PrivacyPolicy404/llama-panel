@@ -94,6 +94,7 @@ llama_panel/
   buddy.py            Buddy tab: settings, history and the agent loop (streams text, tools and audio)
   buddy_prompt.py     the buddy's instructions in sections (defaults in Spanish and English; editable and fixed)
   buddy_eval.py       buddy behaviour tests ("Save and test" button and tools/bench/buddy_eval.py)
+  hearing.py          hearing: automatic Whisper vocabulary, corrections learned from the model, last recordings
   buddy_tools.py      the buddy's tools, each with its risk level, and the call log
   voice.py            whisper.cpp (speech to text) and Piper (text to speech); tts_worker.py runs in Piper's venv
   audio_models.py     Whisper models and Piper voices on disk, and which ones are in use

@@ -95,6 +95,7 @@ llama_panel/
   buddy.py            pestaña Compañero: configuración, historial y el bucle del agente (texto, herramientas y audio)
   buddy_prompt.py     instrucciones del compañero por secciones (de fábrica en castellano e inglés; editables y fijas)
   buddy_eval.py       pruebas de comportamiento del compañero (botón «Guardar y probar» y tools/bench/buddy_eval.py)
+  hearing.py          el oído: vocabulario automático para Whisper, correcciones aprendidas del modelo, últimos audios
   buddy_tools.py      herramientas del compañero, cada una con su nivel de riesgo, y su registro
   voice.py            whisper.cpp (voz a texto) y Piper (texto a voz); tts_worker.py corre en el venv de Piper
   audio_models.py     modelos de Whisper y voces de Piper en disco, y cuáles se usan

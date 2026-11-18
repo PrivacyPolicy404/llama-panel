@@ -417,3 +417,4 @@ details.global[open] summary { margin-bottom: 12px; }
   font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .buddy-msg.spont { border: 1px dashed var(--border); }
 .buddy-settings input[type=time] { width: auto; }
+.buddy-vocab { font-size: 12px; white-space: normal; word-break: break-word; margin: 0; }

@@ -317,6 +317,12 @@ EN = {
     "Ya se está probando.": "A test is already running.",
     "Cargá un modelo de texto para probar.": "Load a text model to run the test.",
     "Probando…": "Testing…",
+    "Corrección borrada; no se va a volver a aprender.": "Correction deleted; it won't be learned again.",
+    "No existe esa corrección.": "That correction does not exist.",
+    "Todavía no hay audios guardados.": "No recordings saved yet.",
+    "Comparando en segundo plano…": "Comparing in the background…",
+    "Ya se está comparando.": "A comparison is already running.",
+    "Audios borrados: {n}.": "Recordings deleted: {n}.",
     "Sección desconocida.": "Unknown section.",
     "Clave de Brave Search borrada; se usará la búsqueda experimental.":
         "Brave Search key deleted; experimental search will be used.",

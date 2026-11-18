@@ -36,6 +36,11 @@ def audio_ctx(seconds):
 
 def clean_transcript(text):
     t = " ".join(text.split()).strip()
+    # Con ruido o silencio Whisper escribe anotaciones de subtítulos: «(Para el video de la cámara)», «[Música]»,
+    # o los restos de una («de la puerta]»). Lo dicho de verdad no viene entre paréntesis ni corchetes.
+    t = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", t)
+    t = re.sub(r"^[^\[\]()]*[\])]|[\[(][^\[\]()]*$", " ", t)
+    t = " ".join(t.split())
     # Whisper suele pegar una frase de subtítulos antes o después de algo que sí se dijo. No alcanza con descartar
     # sólo la coincidencia exacta: sacamos estas alucinaciones conocidas únicamente de los bordes.
     for hallucination in sorted(HALLUCINATIONS, key=len, reverse=True):
@@ -54,8 +59,11 @@ def stt_available():
     return os.access(C.WHISPER_CLI, os.X_OK) and Path(AM.selected()["stt"]).is_file()
 
 
-def transcribe(audio, threads=8, language="es"):
-    """Audio en cualquier formato que entienda ffmpeg (el navegador manda webm/opus). Devuelve (texto, segundos)."""
+def transcribe(audio, threads=8, language="es", prompt=None, keep_wav=None, nice=False):
+    """Audio en cualquier formato que entienda ffmpeg (el navegador manda webm/opus). Devuelve (texto, segundos).
+    `prompt`: vocabulario para Whisper (nombres que tiene que escribir bien, ver hearing.py). `keep_wav`: ruta donde
+    dejar una copia del audio ya convertido (16 kHz mono), para las pruebas con la voz real. `nice`: con la menor
+    prioridad (las comparaciones en segundo plano no le sacan CPU a una charla)."""
     with tempfile.TemporaryDirectory(prefix="buddy-") as d:
         src, wav = Path(d, "in"), Path(d, "in.wav")
         src.write_bytes(audio)
@@ -66,11 +74,18 @@ def transcribe(audio, threads=8, language="es"):
         seconds = max(0.0, (wav.stat().st_size - 44) / 32000)
         if seconds < 0.3:
             return "", seconds
+        if keep_wav:
+            Path(keep_wav).parent.mkdir(parents=True, exist_ok=True)
+            Path(keep_wav).write_bytes(wav.read_bytes())
         model = AM.selected()["stt"]
         t0 = time.time()
-        r = subprocess.run([C.WHISPER_CLI, "-m", model, "-f", str(wav), "-l", language, "-t", str(threads),
-                            "-ac", str(audio_ctx(seconds)), "-nt", "-np"],
-                           capture_output=True, text=True, timeout=120)
+        cmd = [C.WHISPER_CLI, "-m", model, "-f", str(wav), "-l", language, "-t", str(threads),
+               "-ac", str(audio_ctx(seconds)), "-nt", "-np"]
+        if prompt:
+            cmd += ["--prompt", prompt]
+        if nice:
+            cmd = ["nice", "-n", "19"] + cmd
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
             raise RuntimeError(f"whisper: {r.stderr.strip()[-200:]}")
         LAST["stt"] = {"t": time.time(), "audio_s": round(seconds, 1), "s": round(time.time() - t0, 2),
