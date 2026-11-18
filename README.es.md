@@ -92,7 +92,9 @@ llama_panel/
   server.py           servidor HTTP
   install.py          units de systemd (y su sincronización al arrancar)
   kiosk.py            dashboard de texto del "modo IA" (tty1)
-  buddy.py            pestaña Compañero: personalidad, historial y el bucle del agente (texto, herramientas y audio)
+  buddy.py            pestaña Compañero: configuración, historial y el bucle del agente (texto, herramientas y audio)
+  buddy_prompt.py     instrucciones del compañero por secciones (de fábrica en castellano e inglés; editables y fijas)
+  buddy_eval.py       pruebas de comportamiento del compañero (botón «Guardar y probar» y tools/bench/buddy_eval.py)
   buddy_tools.py      herramientas del compañero, cada una con su nivel de riesgo, y su registro
   voice.py            whisper.cpp (voz a texto) y Piper (texto a voz); tts_worker.py corre en el venv de Piper
   audio_models.py     modelos de Whisper y voces de Piper en disco, y cuáles se usan
@@ -110,7 +112,7 @@ scripts/
   install-modo-ia.sh  opcional, con sudo: "modo IA" (apaga el escritorio, dashboard en tty1)
   install-voice.sh    opcional, sin sudo: whisper.cpp, Piper y los modelos en castellano para el Compañero
 patches/              parches locales de llama.cpp y cómo reaplicarlos
-tools/bench/          benchmark, uso de CPU/GPU, tamaños de GGUF y test de humo de los modelos
+tools/bench/          benchmark, uso de CPU/GPU, tamaños de GGUF, test de humo de los modelos y pruebas del compañero
 tools/                utilidades de GGUF (hc en Q8_0, borrador MTP con salida recortada)
 docs/notas.md         hardware, mediciones, por qué cada configuración, trampas conocidas
 .claude/skills/       skill llama-cpp-update (revisar novedades y actualizar llama.cpp)

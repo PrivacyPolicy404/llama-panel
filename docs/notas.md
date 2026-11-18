@@ -258,6 +258,57 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   - **Trampa: el prompt tiene que quedar fijo.** Personalidad y herramientas son ~1200 tokens: si cambian, Flash-Next
     los reprocesa a ~58 tok/s (~20 s). Por eso la memoria se lee al empezar cada charla (no en cada mensaje), el
     prompt no lleva la hora y el historial se recorta de a mitades.
+- **Herramientas de más** (Flash-Next `-hcq8`, 2026-11-17, primera ronda, 3 a 6 pruebas por frase): con la
+  personalidad que pedía «usá primero las herramientas» llamaba a `estado_homelab` hasta para «hola» y a
+  `fecha_y_hora` antes de cada búsqueda, y una vez programó un aviso que nadie pidió. Cada llamada es otra ronda
+  entera antes de hablar. Ahora cada mensaje del usuario lleva la fecha adelante (`buddy.stamp`, solo para el modelo;
+  en el mensaje y no en el sistema, para no romper el caché) y el prompt de sistema termina con `TOOL_RULES` (fijo,
+  aparte de la personalidad, porque la editada queda congelada en `config.json`). Resultado: saludos y charla sin
+  herramientas, búsquedas sin la ronda de la hora, la fecha bien en 12 de 12 (con «17/11/2026» se equivocó 1 de 3;
+  escrita en palabras, no).
+- **Herramientas al azar con historial** (misma noche): en una charla real seguía llamando a `fecha_y_hora` o
+  `estado_homelab` en ~2 de cada 9 mensajes de charla. No era solo el historial (lleno de ejemplos de herramientas
+  de más) ni solo la frase «usá primero las herramientas» de la personalidad: cualquiera de los dos daba ~2 de 9.
+  Lo que funcionó, en conjunto: sacar `fecha_y_hora` (la hora ya viene en el mensaje), sacar esa frase (de la
+  personalidad de fábrica y de la del usuario), «nunca digas números… sin haberlos consultado» en `TOOL_RULES` y
+  «(la placa de video)» en `estado_homelab`. Con el historial real: charla 0 de 32, la placa 12 de 12.
+  **Trampa:** poner ejemplos de saludo en las reglas («¿cómo estás?») hizo que «¿cómo está la máquina?» contestara
+  sin consultar y se inventara los números.
+- **Instrucciones por secciones** (`buddy_prompt.py`, 2026-11-17): identidad, cómo hablar, entorno y cuándo usar
+  herramientas (editables, de fábrica en castellano e inglés; se guarda solo lo cambiado) más dos fijas (la marca de
+  cada mensaje y las reglas que no cambian). La personalidad vieja pasa sola a «identidad». Pruebas:
+  `python3 tools/bench/buddy_eval.py` (32 casos × 3 repeticiones × historial limpio y «contaminado»; ~9 min; pisa el
+  caché de la charla real) y el botón «Guardar y probar» (10 casos, ~1 min, después precalienta). Resultados con
+  Flash-Next `-hcq8` (192 pedidos cada uno, margen ~±2.5 puntos):
+  | variante | total | charla | memoria | voz confusa | limpio / contaminado |
+  |---|---|---|---|---|---|
+  | **a la mañana** (git `4e9ab2c`: «usá primero las herramientas», `fecha_y_hora`, sin marca) | **72.4 %** | 56 % | 71 % | 42 % | 73 / 72 % |
+  | prompt anterior (`TOOL_RULES`) | 87.5 % | 85 % | 71 % | 58 % | 94 / 81 % |
+  | secciones | 85.9 % | 65 % | 100 % | 50 % | 90 / 82 % |
+  | secciones v2 (cierre «ante la duda…», datos viejos) | 84.9 % | 80 % | 88 % | 42 % | 91 / 79 % |
+  | v2 con temperatura 0.3 (por defecto 0.8) | 86.5 % | 80 % | 79 % | 50 % | 91 / 82 % |
+  | v2 sin herramientas de turnos anteriores | 82.3 % (solo contaminado) | 74 % | 100 % | 33 % | |
+  Contra la mañana, +14 puntos (sobre todo charla, web y clima: menos rondas de herramientas de más). Entre las
+  variantes de esta noche, en cambio, **todo da lo mismo dentro del ruido: el techo lo pone el modelo, no la redacción.** Las categorías bailan entre
+  corridas (memoria 71/100/88/79). Lo que pesa es el historial: ~10 puntos menos cuando hay herramientas de más en
+  la charla (las imita). Sacar las herramientas de los turnos anteriores no sirve: imita las respuestas sin
+  herramientas y dice «dale, te aviso» **sin** programar el aviso. Otras fallas vistas: usa un dato de la máquina de
+  hace una hora como actual; a veces escribe «[recordar] …» como texto en vez de llamar la herramienta; con frases
+  sin sentido inventa (guardó «le encanta el culo» en la memoria). Próximo paso medible: otro modelo.
+- **Errores de Whisper** (misma prueba): el modelo corrige los de ortografía («cordova capital», «dolar blu»), pero
+  no los de sonido. «Clima en mano de plata» va a `clima("Mano de Plata, Mendoza")` 6 de 6 aunque el mensaje diga
+  «por voz» (marca `voice` en el historial, explicada en `TOOL_RULES`). Cuando el geocodificador no lo encuentra,
+  lo busca en la web en vez de preguntar (3 de 3). La marca sí ayuda con frases sin sentido: a veces pregunta en vez
+  de inventar. Esto hay que arreglarlo en Whisper, no en el modelo.
+- **Ubicación compartida:** antes el modelo solo la veía si llamaba a `contexto_usuario` (0 veces en el registro) o
+  a `clima` sin lugar. Y el «Mendoza» de sus intentos salía del ejemplo en la descripción de `clima`. Ahora la marca
+  del mensaje lleva «desde Ciudad, Provincia» (`BT.user_place`, Nominatim con caché de un día; solo en memoria, no
+  va al disco). Con esa zona cerca, «mano de plata» da Mar del Plata 3 de 3 y «¿va a llover?» usa la zona 6 de 6;
+  con una zona lejos sigue fallando: no interpreta por el sonido, se apoya en dónde está el usuario.
+  `clients/dani.py` todavía no manda contexto (ni zona horaria ni lugar).
+- **Trampa (historial):** desde que las charlas se guardan, `trim_history` recorta una copia del historial completo
+  en cada pedido: con «quedan los últimos 6» el comienzo se movía en **cada** mensaje después del 12, y el servidor
+  reprocesaba todo. Ahora el corte depende solo de la cantidad (13 a 18 mensajes: se sacan los 6 primeros, etc.).
 - **Trampa (pruebas):** probar a Dani con frases inventadas («me gusta el mate amargo») deja datos falsos en
   `memoria.md`, que después aparecen en las charlas reales. Vaciar la memoria al terminar de probar. La personalidad
   de fábrica pide usar `recordar` solo para datos duraderos: antes anotaba hasta «le pidió un chiste».
