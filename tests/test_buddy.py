@@ -232,6 +232,14 @@ class Config(unittest.TestCase):
     def saved(self):
         return json.loads((self.dir / "config.json").read_text())
 
+    def test_wake_setting_reaches_the_pc_client(self):
+        self.assertEqual(buddy.client_settings(), {"name": "Dani", "wake": False})
+        ok, _ = buddy.save_config({"name": "Lola", "wake": True})
+        self.assertTrue(ok)
+        self.assertEqual(buddy.client_settings(), {"name": "Lola", "wake": True})
+        buddy.save_config({"speak": False})  # otro ajuste no lo apaga
+        self.assertTrue(self.saved()["wake"])
+
     def test_only_edited_sections_are_saved(self):
         from llama_panel import buddy_prompt as BP
         buddy.save_config({"speak": False})
@@ -302,6 +310,36 @@ class History(unittest.TestCase):
             self.assertGreater(sum(m["role"] == "user" for m in trimmed), min(i, 6))
         changes = [i + 1 for i in range(1, 30) if starts[i] != starts[i - 1]]
         self.assertEqual(changes, [13, 19, 25])  # una vez cada 6 mensajes, no en cada uno
+
+    def test_warm_ahead_is_what_the_next_message_sends(self):
+        h = []
+        for i in range(30):
+            h += [{"role": "user", "content": f"u{i}"}, {"role": "assistant", "content": f"a{i}"}]
+            warmed = buddy.trim_history(list(h), max_turns=12, ahead=1)
+            nxt = buddy.trim_history(list(h) + [{"role": "user", "content": "nuevo"}], max_turns=12)
+            self.assertEqual(nxt[:len(warmed)], warmed, i)
+
+    def test_warms_only_before_the_cut_moves(self):
+        warmed = []
+        with mock.patch.object(buddy, "_history", []) as h:
+            for i in range(26):
+                h += [{"role": "user", "content": f"u{i}"}, {"role": "assistant", "content": f"a{i}"}]
+                with mock.patch.object(buddy, "warm_async", side_effect=lambda ahead=0, n=i + 1: warmed.append((n, ahead))):
+                    buddy._warm_before_cut()
+        self.assertEqual(warmed, [(12, 1), (18, 1), (24, 1)])  # justo antes de los mensajes 13, 19 y 25
+
+    def test_message_waits_for_a_warm_instead_of_bouncing(self):
+        def fake_run(_body, events, _cancel):
+            events.put({"type": "done"})
+            events.put(None)
+            buddy._busy.release()
+
+        buddy._busy.acquire()
+        buddy._warming.set()
+        threading.Timer(0.3, lambda: (buddy._warming.clear(), buddy._busy.release())).start()
+        with mock.patch.object(buddy, "_run", fake_run):
+            events = list(buddy.chat({"text": "hola"}))
+        self.assertEqual([e["type"] for e in events], ["done"])
 
 
 class Conversations(unittest.TestCase):
@@ -431,13 +469,16 @@ class AgentLoop(unittest.TestCase):
     def test_tool_round_then_answer(self):
         events = list(buddy.chat({"text": "¿qué hora es?", "speak": False}))
         kinds = [e["type"] for e in events]
-        self.assertEqual(kinds[0], "tool")
-        self.assertEqual(events[0]["result"], "las diez")
-        self.assertEqual("".join(e["delta"] for e in events if e["type"] == "text"), "Son las diez. ¡Buen día!")
+        # apenas decide usar la herramienta avisa que se fija (lo pone el panel), y después la herramienta
+        self.assertEqual(kinds[:3], ["first_token", "text", "tool"])
+        self.assertEqual(events[1]["delta"], "A ver, me fijo. ")
+        self.assertEqual(events[2]["result"], "las diez")
+        self.assertEqual("".join(e["delta"] for e in events if e["type"] == "text"), "A ver, me fijo. Son las diez. ¡Buen día!")
         self.assertEqual(kinds[-1], "done")
         # segundo pedido: con la llamada y su resultado en el historial, sin razonamiento y con las herramientas
         second = FakeModel.requests[1]
         self.assertEqual([m["role"] for m in second["messages"]], ["system", "user", "assistant", "tool"])
+        self.assertIsNone(second["messages"][2]["content"])  # la frase no va al modelo: no le cambia el prompt
         self.assertEqual(second["messages"][2]["tool_calls"][0]["function"], {"name": "ver_avisos", "arguments": "{}"})
         self.assertFalse(second["chat_template_kwargs"]["enable_thinking"])
         self.assertIn("ver_avisos", [t["function"]["name"] for t in second["tools"]])

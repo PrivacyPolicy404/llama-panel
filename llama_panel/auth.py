@@ -4,7 +4,7 @@ Con contraseña:
 - Desde la misma máquina (127.0.0.1 / ::1) no se pide: el dashboard del modo IA, las herramientas locales y quien
   entra por un túnel SSH (que ya se autenticó con SSH).
 - El navegador inicia sesión con la contraseña y recibe una cookie de sesión (30 días, HttpOnly, SameSite=Strict).
-- Los programas (clients/dani.py, clientes de la API de OpenAI) usan un token con nombre: "Authorization: Bearer …".
+- Los programas (clients/buddy.py, clientes de la API de OpenAI) usan un token con nombre: "Authorization: Bearer …".
   Los tokens se crean y revocan en la pestaña Configuración; solo se muestran una vez.
 
 En AUTH_FILE (permisos 600) se guardan solo hashes: PBKDF2 para la contraseña, SHA-256 para sesiones y tokens.

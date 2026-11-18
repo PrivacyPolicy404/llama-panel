@@ -129,6 +129,7 @@ GET_ROUTES = {
     "/api/paths": lambda q: paths.current(),
     "/api/paths/dirs": lambda q: {"dirs": paths.suggest_dirs(q.get("prefix", [""])[0])},
     "/api/buddy": lambda q: buddy.state(),
+    "/api/buddy/client": lambda q: buddy.client_settings(),
     "/api/auth/tokens": lambda q: {"tokens": auth.tokens()},
 }
 

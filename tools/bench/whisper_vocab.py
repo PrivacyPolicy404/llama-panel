@@ -10,7 +10,7 @@ telefónica, 15 % más rápido y ruido). Cada audio se transcribe sin prompt y c
 - términos: cuántos nombres del vocabulario aparecen bien escritos (sin importar mayúsculas ni tildes)
 - WER: palabras mal sobre el total (distancia de edición por palabras, sin puntuación ni tildes)
 - fugas: con silencio y con ruido solo, ¿Whisper «escucha» el vocabulario? (el riesgo conocido del --prompt)
-Todo en el CPU: no toca la GPU. Resultados en ~/llama-panel-results/<fecha>-whisper-vocab/.
+Por defecto en el CPU (no toca la GPU); --whisper-cli y --model para probar otro. Resultados en ~/llama-panel-results/<fecha>-whisper-vocab/.
 """
 import argparse
 import json
@@ -90,7 +90,17 @@ def main():
     ap.add_argument("--conds", default=",".join(CONDS))
     ap.add_argument("--prompt", default=None, help="vocabulario a probar (por defecto, VOCAB separado por comas)")
     ap.add_argument("--out", default=str(Path.home() / "llama-panel-results" / f"{date.today()}-whisper-vocab"))
+    ap.add_argument("--whisper-cli", help="otro whisper-cli (por ejemplo ~/whisper.cpp/build-vulkan/bin/whisper-cli)")
+    ap.add_argument("--model", help="otro modelo de Whisper (por defecto el elegido en el panel)")
+    ap.add_argument("--min-ac", type=int, default=384, help="ventana mínima de audio (turbo repite con 384)")
     args = ap.parse_args()
+    if args.whisper_cli:
+        voice.C.WHISPER_CLI = str(Path(args.whisper_cli).expanduser())
+    if args.model:
+        sel = AM.selected
+        AM.selected = lambda: {**sel(), "stt": str(Path(args.model).expanduser())}
+    ctx = voice.audio_ctx
+    voice.audio_ctx = lambda secs: ctx(secs) and max(ctx(secs), -(-args.min_ac // 64) * 64)
     prompt = args.prompt or ", ".join(VOCAB) + "."
     voices = [Path(v["path"]) for v in AM.list_audio_models()["tts"]] if hasattr(AM, "list_audio_models") else []
     if not voices:

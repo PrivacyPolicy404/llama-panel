@@ -77,3 +77,63 @@ class OpenAIRoutes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhisperDevice(unittest.TestCase):
+    """voice.plan: Whisper en la GPU si hay binario con Vulkan y VRAM libre; si no, el CPU con un modelo chico."""
+
+    def setUp(self):
+        from llama_panel import voice
+        self.voice = voice
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.root = Path(d.name)
+        self.big = self.root / "ggml-large-v3-turbo-q5_0.bin"
+        self.small = self.root / "ggml-small-q8_0.bin"
+        for p, mib in ((self.big, 547), (self.small, 252)):
+            with open(p, "wb") as f:
+                f.truncate(mib << 20)
+        scan = {"stt": [{"path": str(self.small), "size": 252 << 20, "lang": "multi"},
+                        {"path": str(self.big), "size": 547 << 20, "lang": "multi"}]}
+        for patch in (mock.patch.object(AM, "scan", return_value=scan),
+                      mock.patch.object(C, "WHISPER_CLI_GPU", "/gpu/whisper-cli"),
+                      mock.patch.object(C, "WHISPER_CLI", "/cpu/whisper-cli")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def plan(self, model, free, gpu_bin=True):
+        with mock.patch.object(self.voice, "vram_free_mib", return_value=free), \
+                mock.patch.object(self.voice.os, "access", return_value=gpu_bin):
+            return [(d, m) for d, _cli, m in self.voice.plan(str(model))]
+
+    def test_gpu_when_it_fits(self):
+        self.assertEqual(self.plan(self.big, 900), [("gpu", str(self.big)), ("cpu", str(self.small))])
+
+    def test_cpu_with_small_model_when_vram_is_full(self):
+        self.assertEqual(self.plan(self.big, 500), [("cpu", str(self.small))])
+
+    def test_no_vulkan_build(self):
+        self.assertEqual(self.plan(self.big, 4000, gpu_bin=False), [("cpu", str(self.small))])
+
+    def test_small_model_stays_on_cpu_fallback(self):
+        self.assertEqual(self.plan(self.small, 900), [("gpu", str(self.small)), ("cpu", str(self.small))])
+
+    def test_falls_back_when_gpu_fails(self):
+        calls = []
+
+        def run(cmd, **_kw):
+            if cmd[0] == "ffmpeg":  # deja 1 s de wav de 16 kHz
+                Path(cmd[-1]).write_bytes(b"\0" * (44 + 32000))
+                return mock.Mock(returncode=0)
+            calls.append(cmd[cmd.index("-m") + 1])
+            if len(calls) == 1:
+                return mock.Mock(returncode=1, stderr="ErrorOutOfDeviceMemory", stdout="")
+            return mock.Mock(returncode=0, stderr="", stdout="hola")
+
+        steps = [("gpu", "/gpu/w", str(self.big)), ("cpu", "/cpu/w", str(self.small))]
+        with mock.patch.object(self.voice, "plan", return_value=steps), \
+                mock.patch.object(self.voice.subprocess, "run", side_effect=run):
+            text, _ = self.voice.transcribe(b"audio")
+        self.assertEqual(text, "hola")
+        self.assertEqual(calls, [str(self.big), str(self.small)])
+        self.assertEqual(self.voice.LAST["stt"]["device"], "cpu")

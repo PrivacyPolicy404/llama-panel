@@ -6,8 +6,8 @@ Panel web casero para levantar y bajar modelos on demand en una GPU con poca VRA
 
 - **Texto:** `llama-server` (llama.cpp) en modo router, puerto 8080.
 - **Imágenes:** KoboldCpp con StableUI, puerto 5001.
-- **Audio:** whisper.cpp (voz a texto) y Piper (texto a voz) en el CPU, siempre disponibles, con rutas compatibles
-  con OpenAI en el puerto del panel.
+- **Audio:** whisper.cpp (voz a texto, en la GPU al lado del modelo de texto si entra, si no en el CPU) y Piper
+  (texto a voz, CPU), siempre disponibles, con rutas compatibles con OpenAI en el puerto del panel.
 - **Panel:** puerto 8090. Texto e imágenes se excluyen mutuamente para compartir la VRAM.
 
 Solo usa la biblioteca estándar de Python 3, sin dependencias ni paso de build. La interfaz está en castellano
@@ -52,25 +52,23 @@ La bitácora de rendimiento ([docs/analisis-rendimiento.md](docs/analisis-rendim
 - Pestaña **Modelos de audio**: elegir el modelo de Whisper y la voz de Piper (cada voz se puede escuchar antes).
   Otros programas los usan con `http://<máquina>:8090/v1/audio/speech` y `/v1/audio/transcriptions` (formato OpenAI).
 - Pestaña **Compañero**: un agente con personalidad, memoria y herramientas que usa el modelo de texto cargado. Se le
-  puede hablar: mantenés apretado el micrófono (o activás un atajo por dispositivo), whisper.cpp pasa la voz a texto
-  en el CPU y
+  puede hablar: mantenés apretado el micrófono (o activás un atajo por dispositivo), whisper.cpp pasa la voz a texto y
   Piper lee cada oración de la respuesta mientras se genera la siguiente. Sus herramientas declaran qué pueden hacer y
   cada llamada queda registrada. La voz se instala sin sudo con `scripts/install-voice.sh` (el micrófono necesita
-  https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces,
-  enchufes, ventiladores, escenas y reproductores (nunca scripts ni automatizaciones). Se le habla desde cualquier
-  pestaña con el botón flotante o una combinación de teclas segura y opcional. Puede hacer una búsqueda web breve por
-  turno para verificar datos
-  actuales. El idioma y la zona horaria vienen del navegador; compartir la ubicación aproximada es opcional, se
-  habilita por dispositivo y no se guarda. El clima actual y el pronóstico de dos días usan la
-  [API de Open-Meteo](https://open-meteo.com/en/docs), no scraping web. El atajo del navegador funciona mientras una
-  pestaña de llama-panel tiene
-  el foco. Para hablar desde cualquier programa, descargá `clients/dani.py` en la PC con teclado y micrófono y dejalo
-  corriendo ahí; el panel sirve el cliente en `/clients/dani.py`. Las conversaciones se guardan como texto, sobreviven
-  reinicios y tienen una conversación activa compartida: un turno enviado con `dani.py` aparece en vivo en el navegador.
-  También habla por su cuenta: timers y recordatorios
-  que le pedís, avisos del homelab (GPU o CPU muy calientes, un servicio caído, poca RAM o disco) y un resumen a la
-  mañana. El audio sale solo por el cliente que se usó último y, si no hay nadie conectado, los mensajes esperan.
-  `POST /api/buddy/say` lo hace decir algo (por ejemplo, desde una automatización de Home Assistant).
+  https o localhost, por ejemplo un túnel SSH). Con un token de Home Assistant también lista y maneja luces, enchufes,
+  ventiladores, escenas y reproductores (nunca scripts ni automatizaciones). Se le habla desde cualquier pestaña con
+  el botón flotante o una combinación de teclas segura y opcional. Puede hacer una búsqueda web breve por turno para
+  verificar datos actuales. El idioma y la zona horaria vienen del navegador; compartir la ubicación aproximada es
+  opcional, se habilita por dispositivo y no se guarda. El clima actual y el pronóstico de dos días usan la [API de
+  Open-Meteo](https://open-meteo.com/en/docs), no scraping web. El atajo del navegador funciona mientras una pestaña
+  de llama-panel tiene el foco. Para hablar desde cualquier programa, descargá `clients/buddy.py` en la PC con teclado
+  y micrófono y dejalo corriendo ahí; el panel sirve el cliente en `/clients/buddy.py`. Con «Escuchar su
+  nombre» (ajustes del compañero, Voz; instala solo lo que necesita) también responde cuando escucha el nombre del compañero; de la PC sale solo esa frase. Las
+  conversaciones se guardan como texto, sobreviven reinicios y tienen una conversación activa compartida: un turno
+  enviado con `buddy.py` aparece en vivo en el navegador. También habla por su cuenta: timers y recordatorios que le
+  pedís, avisos del homelab (GPU o CPU muy calientes, un servicio caído, poca RAM o disco) y un resumen a la mañana.
+  El audio sale solo por el cliente que se usó último y, si no hay nadie conectado, los mensajes esperan. `POST
+  /api/buddy/say` lo hace decir algo (por ejemplo, desde una automatización de Home Assistant).
 
 ## Estructura
 
@@ -107,7 +105,7 @@ llama_panel/
 static/
   index.html, app.css
   js/                 módulos ES nativos, sin build (main.js arranca todo; i18n.js tiene las traducciones)
-clients/dani.py       hablarle al compañero desde tu PC con una tecla global (Windows, Linux, macOS)
+clients/buddy.py       hablarle al compañero desde tu PC con una tecla global o su nombre (Windows, Linux, macOS)
 tests/                unittest de la stdlib
 scripts/
   update-llama.sh     actualiza llama.cpp manteniendo los parches (--check solo informa)

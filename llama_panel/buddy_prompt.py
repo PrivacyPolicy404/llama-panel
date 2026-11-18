@@ -140,6 +140,30 @@ def build(cfg, memory):
     return "\n\n".join(parts)
 
 
+# Lo que dice apenas decide usar una herramienta, mientras espera el resultado (la segunda vuelta del modelo tarda
+# ~6 s con Flash-Next): las pone el panel, no el modelo, así salen enseguida y no suman tokens. Sin frase: instantáneas.
+CHECKING = {
+    "es": {"estado_homelab": ("Dejame que me fijo.", "A ver, me fijo."),
+           "clima": ("Dejame que me fijo el clima.", "A ver qué dice el pronóstico."),
+           "buscar_web": ("Dejame que lo busco.", "Ya lo busco."),
+           "ver_avisos": ("A ver, me fijo.",), "casa_dispositivos": ("Dejame que me fijo.",),
+           "recordar": ("Dale.",), "olvidar": ("Dale.",), "avisar": ("Dale.",), "cancelar_aviso": ("Dale.",),
+           "casa_controlar": ("Dale, ya va.",)},
+    "en": {"estado_homelab": ("Let me check.", "One sec, checking."),
+           "clima": ("Let me check the weather.", "Let me see the forecast."),
+           "buscar_web": ("Let me look that up.", "Looking it up."),
+           "ver_avisos": ("Let me check.",), "casa_dispositivos": ("Let me check.",),
+           "recordar": ("Sure.",), "olvidar": ("Sure.",), "avisar": ("Sure.",), "cancelar_aviso": ("Sure.",),
+           "casa_controlar": ("On it.",)},
+}
+
+
+def checking(tool, lang="es", n=0):
+    """La frase para `tool` (la n-ésima, para variar), o None si esa herramienta no lleva."""
+    options = CHECKING.get(lang, CHECKING["es"]).get(tool)
+    return options[n % len(options)] if options else None
+
+
 def stamp(t, lang="es", voice=False, place=None):
     """La marca de cada mensaje del usuario (ver la sección «mecanica»)."""
     d = datetime.fromtimestamp(t)

@@ -23,7 +23,7 @@ export async function loadAccess() {
         ${a.enabled && !a.local ? `<button class="btn ghost" id="access-logout">${t('Cerrar sesión')}</button>` : ''}
       </div>
       <h4>${t('Tokens para programas')}</h4>
-      <p class="hint">${t('Para <code>dani.py --token …</code> o un cliente de la API de OpenAI (<code>api_key</code>). Cada programa con el suyo, así se puede revocar uno solo.')}</p>
+      <p class="hint">${t('Para <code>buddy.py --token …</code> o un cliente de la API de OpenAI (<code>api_key</code>). Cada programa con el suyo, así se puede revocar uno solo.')}</p>
       <div class="access-tokens">${tk.tokens.map(x => `
         <div class="path-row"><span class="mono">${esc(x.name)} <span class="muted">${esc(date(x.created))}</span></span>
           <button class="btn ghost small" data-revoke="${esc(x.name)}">${t('Revocar')}</button></div>`).join('') || `<p class="muted">${t('Ninguno todavía.')}</p>`}</div>

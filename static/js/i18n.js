@@ -70,8 +70,8 @@ export const EN = {
   'En cualquier sección del panel': 'In any panel section',
   'Apretá «Definir atajo» y después una combinación de teclado o un botón lateral del mouse. No se captura mientras usás un campo, botón o enlace.':
     'Select “Set shortcut” and then press a key combination or a side mouse button. It is not captured while using a field, button or link.',
-  'Algunos navegadores reservan los botones Atrás/Adelante del mouse; si no llegan a la página, usá una tecla o el cliente dani.py.':
-    'Some browsers reserve the mouse Back/Forward buttons; if the page does not receive them, use a key or the dani.py client.',
+  'Algunos navegadores reservan los botones Atrás/Adelante del mouse; si no llegan a la página, usá una tecla o el cliente buddy.py.':
+    'Some browsers reserve the mouse Back/Forward buttons; if the page does not receive them, use a key or the buddy.py client.',
   'Presioná la combinación… (Escape cancela)': 'Press the combination… (Escape cancels)',
   'Para todo el panel usá una combinación con Ctrl, Alt o Shift, o una tecla F1–F12.':
     'For the whole panel, use a combination with Ctrl, Alt or Shift, or an F1–F12 key.',
@@ -302,6 +302,11 @@ export const EN = {
     'Text and images share the VRAM: starting one stops the other. Audio runs on the CPU and is always available.',
   'Modelos de audio': 'Audio models',
   'Oído': 'Hearing',
+  'General': 'General',
+  'Conexiones': 'Connections',
+  'Escuchar su nombre': 'Listen for its name',
+  'El programa de la PC deja el micrófono abierto y responde cuando escucha su nombre («{name}, ¿qué hora es?»). Lo reconoce en esa PC: al panel va solo la frase que lo nombra. La primera vez instala solo lo que necesita (unos 50 MB). Se aplica en unos segundos sin reiniciar el programa; en una PC se fuerza con <code>--wake</code> o <code>--no-wake</code>.':
+    'The PC program keeps the microphone open and answers when it hears its name (“{name}, what time is it?”). Recognition happens on that PC: only the sentence that names it reaches the panel. The first time it installs what it needs on its own (about 50 MB). Applies within seconds without restarting the program; force it on one PC with <code>--wake</code> or <code>--no-wake</code>.',
   'Voz': 'Voice',
   'Último uso': 'Last use',
   'Escuchar la voz': 'Hear the voice',
@@ -437,8 +442,8 @@ export const EN = {
   'Poner contraseña': 'Set password',
   'Cerrar sesión': 'Log out',
   'Tokens para programas': 'Tokens for programs',
-  'Para <code>dani.py --token …</code> o un cliente de la API de OpenAI (<code>api_key</code>). Cada programa con el suyo, así se puede revocar uno solo.':
-    'For <code>dani.py --token …</code> or an OpenAI API client (<code>api_key</code>). One per program, so each can be revoked on its own.',
+  'Para <code>buddy.py --token …</code> o un cliente de la API de OpenAI (<code>api_key</code>). Cada programa con el suyo, así se puede revocar uno solo.':
+    'For <code>buddy.py --token …</code> or an OpenAI API client (<code>api_key</code>). One per program, so each can be revoked on its own.',
   'Revocar': 'Revoke',
   'Ninguno todavía.': 'None yet.',
   'nombre, ej.: laptop': 'name, e.g. laptop',

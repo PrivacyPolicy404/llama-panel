@@ -6,8 +6,8 @@ A small home web panel to start and stop models on demand on a GPU with little V
 
 - **Text:** `llama-server` (llama.cpp) in router mode, port 8080.
 - **Images:** KoboldCpp with StableUI, port 5001.
-- **Audio:** whisper.cpp (speech to text) and Piper (text to speech) on the CPU, always available, with
-  OpenAI-compatible routes on the panel port.
+- **Audio:** whisper.cpp (speech to text, on the GPU next to the text model when it fits, otherwise on the CPU) and
+  Piper (text to speech, CPU), always available, with OpenAI-compatible routes on the panel port.
 - **Panel:** port 8090. Text and images are mutually exclusive so they can share the VRAM.
 
 It only uses the Python 3 standard library: no dependencies, no build step. The interface is available in English
@@ -53,23 +53,22 @@ They are written in Spanish; each one starts with an English summary of the main
 - **Audio models** tab: pick the Whisper model and the Piper voice (listen to each voice first). Other programs can
   use them through `http://<machine>:8090/v1/audio/speech` and `/v1/audio/transcriptions` (OpenAI format).
 - **Buddy** tab: an agent with a personality, memory and tools that uses the loaded text model. You can talk to it:
-  hold the mic button (or enable a per-device shortcut), whisper.cpp turns your voice into text on the CPU and Piper
-  reads each
+  hold the mic button (or enable a per-device shortcut), whisper.cpp turns your voice into text and Piper reads each
   sentence of the answer while the next one is being generated. Its tools say what they are allowed to do and every
   call is logged. Voice setup without sudo: `scripts/install-voice.sh` (the microphone needs https or localhost, for
   example an SSH tunnel). With a Home Assistant token it can also list and switch lights, plugs, fans, scenes and
   media players (never scripts or automations). You can talk to it from any tab using the floating button or an
-  optional safe key combination. It can
-  run one short web search per turn to verify current facts. Language and timezone come from the browser; approximate
-  location is optional, enabled per device, and never saved. Current weather and a two-day forecast use the
-  [Open-Meteo API](https://open-meteo.com/en/docs) instead of web scraping. The browser shortcut works while a
-  llama-panel tab has
-  focus. To talk from any program, download `clients/dani.py` onto the PC with the keyboard and microphone and leave
-  it running there; the panel serves the client at `/clients/dani.py`. Conversations are saved as text, survive panel
-  restarts and have one shared active conversation: a turn sent through `dani.py` appears live in the browser.
-  It also speaks on its own: timers and reminders it sets for you, warnings about the homelab (GPU or CPU too hot, a
-  service down, low RAM or disk) and a morning summary. Only the client used last plays the audio, and messages wait
-  if nobody is connected. `POST /api/buddy/say` makes it say something (for example from a Home Assistant automation).
+  optional safe key combination. It can run one short web search per turn to verify current facts. Language and
+  timezone come from the browser; approximate location is optional, enabled per device, and never saved. Current
+  weather and a two-day forecast use the [Open-Meteo API](https://open-meteo.com/en/docs) instead of web scraping. The
+  browser shortcut works while a llama-panel tab has focus. To talk from any program, download `clients/buddy.py` onto
+  the PC with the keyboard and microphone and leave it running there; the panel serves the client at
+  `/clients/buddy.py`. With «Listen for its name» (Buddy settings, Voice; it installs what it needs) it also answers when
+  it hears the buddy's name; only that sentence leaves the PC. Conversations are saved as text, survive panel restarts
+  and have one shared active conversation: a turn sent through `buddy.py` appears live in the browser. It also speaks
+  on its own: timers and reminders it sets for you, warnings about the homelab (GPU or CPU too hot, a service down,
+  low RAM or disk) and a morning summary. Only the client used last plays the audio, and messages wait if nobody is
+  connected. `POST /api/buddy/say` makes it say something (for example from a Home Assistant automation).
 
 ## Layout
 
@@ -106,7 +105,7 @@ llama_panel/
 static/
   index.html, app.css
   js/                 native ES modules, no build (main.js starts everything; i18n.js has the translations)
-clients/dani.py       talk to the buddy from your PC with a global push-to-talk key (Windows, Linux, macOS)
+clients/buddy.py       talk to the buddy from your PC with a global push-to-talk key or its name (Windows, Linux, macOS)
 tests/                stdlib unittest
 scripts/
   update-llama.sh     updates llama.cpp keeping the patches (--check only reports)
