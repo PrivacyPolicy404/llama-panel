@@ -328,6 +328,30 @@ el server en un límite de memoria (`WRAP="systemd-run --user --scope -p MemoryM
   va al disco). Con esa zona cerca, «mano de plata» da Mar del Plata 3 de 3 y «¿va a llover?» usa la zona 6 de 6;
   con una zona lejos sigue fallando: no interpreta por el sonido, se apoya en dónde está el usuario.
   `clients/dani.py` todavía no manda contexto (ni zona horaria ni lugar).
+- **Oído** (`hearing.py`, 2026-11-17): Whisper recibe un vocabulario que se arma solo (`--prompt`: nombre del
+  compañero, zona, lugares consultados para el clima, Home Assistant, nombres propios de la memoria, lo aprendido;
+  sin medidas como «8 GB» ni siglas sueltas). Medido con `tools/bench/whisper_vocab.py` (Piper, 4 voces × 12 frases ×
+  limpio/ruido/micrófono malo = 144 audios, small q8): nombres bien escritos **39 % → 85 %**, WER 30.4 → 17.5 %,
+  +0.1 s por audio, ninguno empeoró, y sin fugas en silencio. Igual con ruido y con banda telefónica. Por voz:
+  es_MX-claude-high WER 15 → 7 % (42/42 nombres); es_AR-daniela-high es la peor para Whisper (40 → 25 %).
+  - Correcciones aprendidas: si el modelo llamó una herramienta con un nombre propio que suena parecido a algo de la
+    transcripción («mano de plata» → `clima("Mar del Plata")`), se anota; a la segunda se aplica a lo que transcribe
+    Whisper y entra al vocabulario. Cuenta lo que interpretó el modelo aunque la herramienta falle por la red, pero
+    no si el lugar no existe (`BT.NOT_FOUND`). Solo nombres propios: «partido de futbol» no se cambia por el
+    «partidos de fútbol» de una búsqueda. Las borradas no se vuelven a aprender.
+  - Últimos 50 audios en `buddy/oido/audios` (solo esta máquina; se puede apagar y borrar) y comparación con y sin
+    vocabulario cada 20 nuevos (con `nice`) o a pedido. Sin transcripción de referencia: cuenta cambios y nombres.
+  - De punta a punta con todo real (Piper → Whisper → Flash-Next → herramientas, en un BUDDY_DIR temporal; Open-Meteo
+    caído con 503, el modelo siguió con la web): con es_AR-daniela, «chas komus» → `clima("Chascomús")` → entra al
+    vocabulario → la vez siguiente Whisper ya escribe «Chascomús»; «mano de plata» y «Tandí» se aprenden a la segunda
+    y llegan corregidos; los lugares que el modelo adivinó mal («Vichaca», «Billige») no existen y no entran. Con
+    es_MX-claude no aprende nada de más, pero «Villa Gesell» → «Villa Jeze» no se arregla (el modelo tampoco lo
+    adivina) y 2 de 9 audios salieron peor con vocabulario («Tandiil»): pasa poco (0 de 144 en el set), por eso la
+    comparación con la voz real.
+  - **Trampa:** con ruido o silencio Whisper escribe anotaciones de subtítulos («(Para el video de la cámara)»,
+    «[SILENCIO]», «de la puerta]»), con y sin vocabulario. `clean_transcript` saca lo que va entre paréntesis o
+    corchetes.
+  - **Trampa:** el modelo a veces imita la marca de los mensajes y empieza con «[de] …»: se saca como el «Dani:».
 - **Trampa (historial):** desde que las charlas se guardan, `trim_history` recorta una copia del historial completo
   en cada pedido: con «quedan los últimos 6» el comienzo se movía en **cada** mensaje después del 12, y el servidor
   reprocesaba todo. Ahora el corte depende solo de la cantidad (13 a 18 mensajes: se sacan los 6 primeros, etc.).

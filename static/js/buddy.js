@@ -371,6 +371,15 @@ py dani.py --server ${esc(location.origin)} --key f9</pre>
           <p class="hint">${t('Mientras mantenés F9 apretado graba; al soltarlo manda el audio. Podés cambiar <code>f9</code> por <code>ctrl_r</code>, otra tecla F o una letra.')}</p>
           <p class="hint">${t('Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.')}</p>
         </div>
+        <div class="field"><span>${t('Oído')}</span>
+          <p class="hint">${t('Vocabulario que recibe Whisper para escribir bien los nombres. Se arma solo: el nombre del compañero, tu zona, los lugares que consultaste, Home Assistant, la memoria y lo aprendido.')}</p>
+          <p class="mono buddy-vocab" id="buddy-hearing-vocab"></p>
+          <div id="buddy-hearing-corr" class="buddy-tools"></div>
+          <label class="check"><input type="checkbox" id="buddy-cfg-keep-audio"> ${t('Guardar mis últimos 50 audios (solo en esta máquina) para comparar con y sin vocabulario')}</label>
+          <span class="path-row"><button type="button" class="btn ghost small" id="buddy-hearing-compare">${t('Comparar ahora')}</button>
+            <button type="button" class="btn ghost small" id="buddy-hearing-delete">${t('Borrar audios')}</button></span>
+          <div id="buddy-hearing-result" class="buddy-tools"></div>
+        </div>
         <label class="field"><span>${t('Memoria')}</span>
           <textarea id="buddy-mem" rows="6" spellcheck="false"></textarea>
           <p class="hint">${t('Lo que anota con «recordar». Se lee al empezar cada charla.')}</p>
@@ -396,6 +405,7 @@ function fillSettings() {
   $('#buddy-cfg-language').value = c.language || 'es';
   renderSections();
   renderTest();
+  renderHearing();
   renderConversations();
   const models = (S.config?.text_models || []).map(m => m.id);
   $('#buddy-cfg-model').innerHTML = `<option value="">${esc(t('El que esté cargado'))}</option>` +
@@ -448,6 +458,30 @@ function renderTest() {
   const r = s.result;
   box.innerHTML = `<p><b>${esc(t('{ok} de {total} bien', { ok: r.ok, total: r.total }))}</b></p>` +
     r.fails.map(f => `<p class="hint">✗ «${esc(f.msg)}»: ${esc(t('esperaba'))} ${esc(f.expect)}; ${esc(t('hizo'))}: ${esc(f.got || '—')}</p>`).join('');
+}
+
+// Oído (llama_panel/hearing.py): vocabulario automático, correcciones aprendidas y comparación con la voz real
+function renderHearing() {
+  const h = B?.hearing;
+  if (!h || !$('#buddy-hearing-vocab')) return;
+  $('#buddy-hearing-vocab').textContent = (h.vocabulary || []).join(', ') || '—';
+  const corr = (h.corrections || []).map(c => `
+    <div class="path-row"><span>«${esc(c.from)}» → <b>${esc(c.to)}</b> <span class="muted">(${c.count}×)</span></span>
+      <button type="button" class="btn ghost small" data-forget="${esc(c.from)}">${t('Borrar')}</button></div>`).join('');
+  const pending = (h.pending || []).map(c => `<span class="muted">«${esc(c.from)}» → ${esc(c.to)}</span>`).join(' · ');
+  $('#buddy-hearing-corr').innerHTML =
+    `<p class="hint">${t('Correcciones aprendidas: cuando el modelo entiende un nombre que Whisper escribió mal, lo anota; a la segunda vez se aplica sola.')}</p>` +
+    (corr || `<p class="muted">${t('Todavía ninguna.')}</p>`) +
+    (pending ? `<p class="hint">${t('En espera (vistas una vez):')} ${pending}</p>` : '');
+  for (const b of $$('#buddy-hearing-corr [data-forget]')) {
+    b.onclick = async () => { report(await post('/api/buddy/hearing/forget', { from: b.dataset.forget })); B = await getJSON('/api/buddy'); renderHearing(); };
+  }
+  $('#buddy-cfg-keep-audio').checked = h.keep_audio;
+  const c = h.compare;
+  $('#buddy-hearing-result').innerHTML = h.comparing ? `<p class="muted">${t('Comparando…')}</p>` : !c ? `<p class="muted">${esc(t('{n} audios guardados.', { n: h.audios }))}</p>` :
+    `<p class="hint">${esc(t('{n} audios guardados. Última comparación ({m} audios): cambió en {changed}; nombres del vocabulario {sin} sin y {con} con.', {
+      n: h.audios, m: c.n, changed: c.changed, sin: c.terms_sin, con: c.terms_con }))}</p>` +
+    (h.compare_rows || []).map(r => `<p class="hint">${t('sin')}: ${esc(r.sin)}<br>${t('con')}: <b>${esc(r.con)}</b></p>`).join('');
 }
 
 function sectionValues() {
@@ -514,10 +548,24 @@ function bind() {
     model: $('#buddy-cfg-model').value,
     speak: $('#buddy-speak').checked, tools: $$('#buddy-cfg-tools input:checked').map(i => i.value),
     alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value,
+    keep_audio: $('#buddy-cfg-keep-audio').checked,
   });
   $('#buddy-cfg-save').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/config', cfgBody())));
     B = await getJSON('/api/buddy'); fillSettings();
+  };
+  $('#buddy-cfg-keep-audio').onchange = e => post('/api/buddy/config', { keep_audio: e.target.checked });
+  $('#buddy-hearing-compare').onclick = async e => {
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/hearing/compare')));
+    for (;;) {
+      B = await getJSON('/api/buddy'); renderHearing();
+      if (!B.hearing.comparing) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  };
+  $('#buddy-hearing-delete').onclick = async e => {
+    report(await withBusy(e.currentTarget, () => post('/api/buddy/hearing/audios/delete')));
+    B = await getJSON('/api/buddy'); renderHearing();
   };
   // «Guardar y probar»: guarda y corre la versión corta de las pruebas (llama_panel/buddy_eval.py) con eso
   $('#buddy-cfg-test').onclick = async e => {
@@ -667,6 +715,7 @@ async function send(body) {
         if (ev.type === 'heard' && mine) {
           mine.classList.remove('pending');
           $('.buddy-text', mine).textContent = ev.text || '…';
+          if (ev.raw) mine.title = t('Whisper escribió: {raw}', { raw: ev.raw });
           stats.push(t('oído en {s} s', { s: ev.stt_s }));
           if (ev.text) fab('user', ev.text);
         } else if (ev.type === 'text') {
@@ -681,6 +730,8 @@ async function send(body) {
           if (!said) fab('thinking', '🔧 ' + ev.name); else said += '\n';
           out.insertBefore(chip, txtEl || out.querySelector('.buddy-typing'));
           txtEl = null; text = '';  // lo que diga despues va en un renglon nuevo
+        } else if (ev.type === 'learned') {
+          toast(t('Aprendí cómo se escribe un nombre que no entendí bien.'));
         } else if (ev.type === 'first_token') {
           stats.push(t('primera palabra a los {s} s', { s: ev.s }));
         } else if (ev.type === 'audio') {

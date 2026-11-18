@@ -363,6 +363,25 @@ export const EN = {
   '{ok} de {total} bien': '{ok} of {total} passed',
   'esperaba': 'expected',
   'hizo': 'did',
+  'Oído': 'Hearing',
+  'Vocabulario que recibe Whisper para escribir bien los nombres. Se arma solo: el nombre del compañero, tu zona, los lugares que consultaste, Home Assistant, la memoria y lo aprendido.':
+    'Vocabulary Whisper gets so it spells names right. It builds itself: the buddy\'s name, your area, places you asked about, Home Assistant, memory and what it learned.',
+  'Guardar mis últimos 50 audios (solo en esta máquina) para comparar con y sin vocabulario':
+    'Keep my last 50 recordings (only on this machine) to compare with and without vocabulary',
+  'Comparar ahora': 'Compare now',
+  'Borrar audios': 'Delete recordings',
+  'Correcciones aprendidas: cuando el modelo entiende un nombre que Whisper escribió mal, lo anota; a la segunda vez se aplica sola.':
+    'Learned corrections: when the model understands a name Whisper got wrong, it notes it; the second time it applies automatically.',
+  'Todavía ninguna.': 'None yet.',
+  'En espera (vistas una vez):': 'Waiting (seen once):',
+  'Comparando…': 'Comparing…',
+  '{n} audios guardados.': '{n} recordings saved.',
+  '{n} audios guardados. Última comparación ({m} audios): cambió en {changed}; nombres del vocabulario {sin} sin y {con} con.':
+    '{n} recordings saved. Last comparison ({m} recordings): changed in {changed}; vocabulary names {sin} without and {con} with.',
+  'sin': 'without',
+  'con': 'with',
+  'Whisper escribió: {raw}': 'Whisper wrote: {raw}',
+  'Aprendí cómo se escribe un nombre que no entendí bien.': 'I learned how to spell a name I misheard.',
   'escuchando…': 'listening…',
   'oído en {s} s': 'heard in {s} s',
   'oído: Whisper': 'hearing: Whisper',

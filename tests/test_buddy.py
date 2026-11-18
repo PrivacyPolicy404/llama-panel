@@ -468,6 +468,9 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(buddy.strip_name("Dani: hola", "Dani"), "hola")
         self.assertEqual(buddy.strip_name("Daniel vino", "Dani"), "Daniel vino")
         self.assertEqual(buddy.strip_name("Hola", "Dani"), "Hola")
+        self.assertEqual(buddy.strip_name("[de] No te entendí", "Dani"), "No te entendí")
+        self.assertEqual(buddy.strip_name("[martes 17, 20:07] Dani: hola", "Dani"), "hola")
+        self.assertIsNone(buddy.strip_name("[mar", "Dani"))
         chunks = [{"delta": {"content": "Da"}}, {"delta": {"content": "ni: Son"}}, {"delta": {"content": " las diez."}}]
         with mock.patch.object(FakeModel, "do_POST", _replying(chunks)):
             events = list(buddy.chat({"text": "hola", "speak": False}))

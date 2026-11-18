@@ -28,6 +28,7 @@ MAX_TOKENS = 600
 # Se guardan las herramientas apagadas (no las prendidas): una herramienta nueva queda disponible sin tocar nada.
 # "sections": solo las secciones del prompt que el usuario cambió (buddy_prompt.py); "language": de la charla.
 DEFAULT_CONFIG = {"name": "Dani", "model": "", "speak": True, "tools_off": [], "language": "es", "sections": {},
+                  "keep_audio": True,  # últimos audios en BUDDY_DIR/oido (hearing.py), solo en esta máquina
                   "alerts": True, "morning": "09:00"}  # avisos del homelab y hora del resumen (proactive.py)
 MORNING_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 SECTION_MAX = 6000
@@ -261,7 +262,8 @@ def save_config(body):
         return False, _("La hora del resumen va como HH:MM (vacía = nunca).")
     cfg.update(name=name, language=language, sections=sections, model=str(body.get("model", cfg["model"])).strip(),
                speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)),
-               alerts=bool(body.get("alerts", cfg["alerts"])), morning=morning)
+               alerts=bool(body.get("alerts", cfg["alerts"])), morning=morning,
+               keep_audio=bool(body.get("keep_audio", cfg["keep_audio"])))
     cfg.pop("tools")
     C.BUDDY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = C.BUDDY_DIR / "config.tmp"
@@ -309,7 +311,34 @@ def state():
             "voice": {"stt": voice.stt_available(), "tts": voice.Speaker.available()},
             "ha": _ha_state(), "web_search": _web_search_state(),
             "timers": proactive.timers(), "clients": proactive.HUB.clients(),
-            "busy": _busy.locked(), "test": test_state()}
+            "busy": _busy.locked(), "test": test_state(), "hearing": _hearing_state(cfg)}
+
+
+def _hearing_state(cfg):
+    from . import hearing
+    try:
+        return hearing.state(cfg)
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+
+
+def hearing_forget(heard):
+    from . import hearing
+    return (True, _("Corrección borrada; no se va a volver a aprender.")) if hearing.forget(heard) \
+        else (False, _("No existe esa corrección."))
+
+
+def hearing_compare():
+    from . import hearing
+    if not hearing.audios():
+        return False, _("Todavía no hay audios guardados.")
+    return (True, _("Comparando en segundo plano…")) if hearing.compare_async(load_config()) \
+        else (False, _("Ya se está comparando."))
+
+
+def hearing_delete_audios():
+    from . import hearing
+    return True, _("Audios borrados: {n}.", n=hearing.delete_audios())
 
 
 def _ha_state():
@@ -378,8 +407,17 @@ def _for_model(history, lang="es"):
 
 
 def strip_name(text, name):
-    """Saca un «Dani:» del comienzo de la respuesta. None si todavía no se sabe (puede estar llegando de a partes)."""
+    """Saca un «Dani:» o un «[…]» del comienzo de la respuesta (el modelo a veces imita la marca de los mensajes:
+    «[de] No te entendí»). None si todavía no se sabe (puede estar llegando de a partes)."""
     lead = text.lstrip()
+    if lead.startswith("["):
+        if "]" not in lead:
+            return None if len(lead) < 80 else text
+        rest = lead[lead.index("]") + 1:]
+        if not rest.strip():
+            return None
+        clean = strip_name(rest, name)
+        return clean.lstrip() if clean is not None else None
     target = f"{name.lower()}:"
     if target.startswith(lead.lower()) and len(lead) < len(target):
         return None
@@ -638,9 +676,16 @@ def _run(body, events, cancel):
         if body.get("audio"):
             import base64
             t0 = time.time()
-            text, seconds = voice.transcribe(base64.b64decode(body["audio"]))
+            # Vocabulario de la casa y correcciones aprendidas (hearing.py); el audio queda para las comparaciones
+            from . import hearing
+            vocab = hearing.prompt(cfg, BT.user_place())
+            keep = hearing.new_audio_path() if cfg.get("keep_audio", True) else None
+            raw, seconds = voice.transcribe(base64.b64decode(body["audio"]), prompt=vocab, keep_wav=keep)
+            text = hearing.apply(raw)
+            if keep:
+                hearing.record(keep, raw, text, vocab)
             events.put({"type": "heard", "text": text, "audio_s": round(seconds, 1),
-                        "stt_s": round(time.time() - t0, 2)})
+                        "stt_s": round(time.time() - t0, 2), **({"raw": raw} if raw != text else {})})
             if not text:
                 events.put({"type": "error", "msg": _("No se entendió nada; probá de nuevo.")})
                 return
@@ -741,6 +786,12 @@ def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False
              "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}} for i, c in enumerate(calls)]})
         for i, c in enumerate(calls):
             result, ok = BT.run(c["name"], c["arguments"], cfg["tools"])
+            # Si el modelo entendió un nombre que Whisper escribió mal, aprenderlo: cuenta lo que interpretó aunque
+            # la herramienta falle por la red, pero no si el lugar no existe (BT.NOT_FOUND)
+            if by_voice and not result.startswith(BT.NOT_FOUND):
+                from . import hearing
+                if hearing.learn(text, c["name"], c["arguments"]):
+                    events.put({"type": "learned", "name": c["name"]})
             events.put({"type": "tool", "name": c["name"], "args": c["arguments"], "ok": ok, "result": result[:400]})
             _history.append({"role": "tool", "tool_call_id": c["id"] or f"call_{i}", "content": result})
     events.put({"type": "error", "msg": _("Demasiadas herramientas seguidas; corté acá.")})
