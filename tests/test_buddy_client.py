@@ -226,3 +226,30 @@ class MicToggle(unittest.TestCase):
             self.mic.set_wake(["Lola"])
         self.mic.start()
         self.assertEqual(self.mic.stop()[0], b"tecla")
+
+
+class Startup(unittest.TestCase):
+    def test_says_which_step_is_slow(self):
+        from unittest import mock
+        import threading
+        import time
+        with mock.patch.object(dani, "SLOW_S", 0.2), mock.patch("builtins.print") as out:
+            dani.stage("conectando con el panel")
+            t = threading.Thread(target=dani.watchdog, daemon=True)
+            t.start()
+            time.sleep(0.9)
+            dani.stage(None)
+            t.join(2)
+        self.assertFalse(t.is_alive())
+        self.assertIn("(todavía conectando con el panel…)", [c.args[0] for c in out.call_args_list])
+
+    def test_quiet_when_fast(self):
+        from unittest import mock
+        import threading
+        with mock.patch("builtins.print") as out:
+            dani.stage("arrancando")
+            t = threading.Thread(target=dani.watchdog, daemon=True)
+            t.start()
+            dani.stage(None)
+            t.join(2)
+        out.assert_not_called()

@@ -66,19 +66,40 @@ def need(module):
         return importlib.import_module(module)
     except ImportError:
         pass
-    print(f"Instalando {module} (una sola vez)…", flush=True)
-    r = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check", "-q",
-                        PACKAGES[module]], capture_output=True, text=True)
-    if r.returncode != 0:  # en un venv no hay --user
-        r = subprocess.run([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "-q",
-                            PACKAGES[module]], capture_output=True, text=True)
+    print(f"Instalando {module} con pip (una sola vez)…", flush=True)
+    cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", PACKAGES[module]]
+    in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+    r = subprocess.run(cmd if in_venv else cmd[:4] + ["--user"] + cmd[4:])  # con su salida: que se vea que avanza
     if r.returncode != 0:
-        raise ImportError(f"no se pudo instalar {module}: {(r.stderr or r.stdout).strip()[-300:]}")
+        raise ImportError(f"no se pudo instalar {module} (pip terminó con {r.returncode})")
+    print(f"{module} instalado.", flush=True)
     user_site = site.getusersitepackages()
     if user_site not in sys.path:  # la carpeta recién creada no estaba al arrancar
         sys.path.append(user_site)
     importlib.invalidate_caches()
     return importlib.import_module(module)
+
+
+# ---------- arranque ----------
+STAGE = {"what": None, "since": 0.0}
+SLOW_S = 4  # un paso del arranque que tarda más que esto se avisa
+
+
+def stage(what):
+    """Marca en qué paso del arranque está (None = arrancó). Si uno tarda, watchdog avisa cuál."""
+    STAGE.update(what=what, since=time.time())
+
+
+def watchdog():
+    told = None
+    while STAGE["what"] is not None or told is None:
+        what = STAGE["what"]
+        if what is None:
+            return
+        if what != told and time.time() - STAGE["since"] > SLOW_S:
+            print(f"(todavía {what}…)", flush=True)
+            told = what
+        time.sleep(0.5)
 
 
 # ---------- panel ----------
@@ -312,12 +333,18 @@ def wake_model_dir():
     print(f"Bajando el reconocedor para escuchar su nombre ({name}, 40 MB, una sola vez)…", flush=True)
     h = hashlib.sha256()
     with urllib.request.urlopen(url, timeout=60) as resp, open(tmp, "wb") as f:
+        total, done, shown = int(resp.headers.get("Content-Length") or 0), 0, -1
         for chunk in iter(lambda: resp.read(1 << 16), b""):
             h.update(chunk)
             f.write(chunk)
+            done += len(chunk)
+            pct = done * 100 // total if total else 0
+            if pct // 10 != shown:
+                shown = pct // 10
+                print(f"  {pct} % ({done >> 20} de {total >> 20} MB)", flush=True)
     if h.hexdigest() != sha:
         os.remove(tmp)
-        raise SystemExit("El modelo bajado no coincide con el esperado (sha256); no lo uso.")
+        raise RuntimeError("el modelo bajado no coincide con el esperado (sha256); no lo uso")
     with zipfile.ZipFile(tmp) as z:
         z.extractall(base)
     os.remove(tmp)
@@ -599,19 +626,24 @@ class Mic:
         self.lock = threading.Lock()
 
     def set_wake(self, words):
-        """words: nombres a los que responde, o vacío para dejar de escuchar."""
+        """words: nombres a los que responde, o vacío para dejar de escuchar. La primera vez instala Vosk, baja su
+        modelo y lo carga (hasta un minuto): eso va sin el candado, para que la tecla siga andando mientras tanto."""
+        if words and self.wake is None:
+            try:
+                wake = WakeListener(self.args, self.session, self.beep, words)
+            except Exception as e:  # noqa: BLE001  sin Vosk, sin red o sin micrófono: sigue con la tecla
+                if not self.warned:
+                    print(f"No puedo escuchar su nombre en esta PC ({e}); sigue andando con la tecla. "
+                          "Lo vuelvo a intentar solo.", flush=True)
+                    self.warned = True
+                return
+            with self.lock:
+                self.wake, self.words, self.warned = wake, words, False
+            print(f"Escuchando su nombre («{', '.join(words)}»). El micrófono queda abierto; lo que no lo nombra "
+                  "no sale de esta PC.", flush=True)
+            return
         with self.lock:
-            if words and self.wake is None:
-                try:
-                    self.wake = WakeListener(self.args, self.session, self.beep, words)
-                except ImportError as e:
-                    if not self.warned:
-                        print(f"No puedo escuchar su nombre en esta PC ({e}); sigue andando con la tecla.", flush=True)
-                        self.warned = True
-                    return
-                print(f"Escuchando su nombre («{', '.join(words)}»). El micrófono queda abierto; lo que no lo nombra "
-                      "no sale de esta PC.", flush=True)
-            elif words and self.wake is not None and words != self.words:
+            if words and self.wake is not None and words != self.words:
                 self.wake.set_words(words)
                 print(f"Ahora responde a «{', '.join(words)}».", flush=True)
             elif not words and self.wake is not None:
@@ -647,18 +679,24 @@ def wake_words(args, settings):
 def follow_panel(args, mic):
     """Cada POLL_S segundos: el nombre del compañero y si tiene que escuchar su nombre."""
     while True:
-        got = panel_settings(args.server, args.token)
-        if got:
-            BUDDY.update(got)
-        if mic is not None:
-            mic.set_wake(wake_words(args, BUDDY))
+        try:
+            got = panel_settings(args.server, args.token)
+            if got:
+                BUDDY.update(got)
+            if mic is not None:
+                mic.set_wake(wake_words(args, BUDDY))
+        except Exception as e:  # noqa: BLE001  que un error no deje de mirar el panel
+            print(f"[aviso] {e}", flush=True)
         time.sleep(POLL_S)
 
 
 def run_hotkey(args, session):
+    stage("cargando el teclado (pynput)")
     keyboard = need("pynput").keyboard
     key = parse_key(args.key)
+    stage("abriendo la salida de audio para el pitido")
     beep = make_beeper(args)
+    stage("buscando el micrófono")
     rec = Mic(args, session, beep)
     state = {"down": False}
 
@@ -666,27 +704,48 @@ def run_hotkey(args, session):
         return k == key or (isinstance(k, keyboard.KeyCode) and isinstance(key, keyboard.KeyCode)
                             and (k.char or "").lower() == (key.char or "").lower())
 
+    # pynput llama a estas funciones desde el hook de teclado de Windows: si tardan (abrir el micrófono son cientos de
+    # ms), se traba el teclado de toda la PC. Solo anotan la tecla; el trabajo lo hace key_worker.
+    keys = queue.Queue()
+
     def on_press(k):
         if not matches(k) or state["down"]:
             return  # la repetición automática del teclado manda la tecla muchas veces
         state["down"] = True
-        session.interrupt()
-        # Primero el micrófono y después el pitido: abrir el micrófono (sobre todo en Windows) tarda cientos de ms y,
-        # con el pitido antes, se perdía el comienzo de la frase («hola, cómo estás» → «que hace»). Así, cuando suena,
-        # ya está grabando. El pitido sale al instante (Beeper deja la salida abierta).
-        rec.start()
-        beep(880)
+        keys.put("down")
 
     def on_release(k):
         if not matches(k) or not state["down"]:
             return
         state["down"] = False
-        pcm, seconds = rec.stop()
-        beep(660)
-        if seconds < MIN_SECONDS:
-            return
-        session.send(to_wav(pcm, rec.rate))
+        keys.put("up")
 
+    def key_worker():
+        recording = False
+        while True:
+            what = keys.get()
+            try:
+                if what == "down" and not recording:
+                    session.interrupt()
+                    # Primero el micrófono y después el pitido: abrir el micrófono (sobre todo en Windows) tarda
+                    # cientos de ms y, con el pitido antes, se perdía el comienzo de la frase («hola, cómo estás» →
+                    # «que hace»). Así, cuando suena, ya está grabando. El pitido sale al instante (Beeper).
+                    rec.start()
+                    recording = True
+                    beep(880)
+                elif what == "up" and recording:
+                    recording = False
+                    pcm, seconds = rec.stop()
+                    beep(660)
+                    if seconds >= MIN_SECONDS:
+                        session.send(to_wav(pcm, rec.rate))
+            except Exception as e:  # noqa: BLE001  un micrófono que no abre no tiene que matar la tecla
+                recording = False
+                print(f"[micrófono] {e}", flush=True)
+
+    threading.Thread(target=key_worker, daemon=True).start()
+
+    stage(f"conectando con el panel en {args.server}")
     got = panel_settings(args.server, args.token)  # el nombre, antes de mostrar nada
     if got:
         BUDDY.update(got)
@@ -694,8 +753,11 @@ def run_hotkey(args, session):
         print(f"[aviso] no pude hablar con el panel en {args.server}; sigo intentando.", flush=True)
     threading.Thread(target=listen, args=(args, session.player), daemon=True).start()
     threading.Thread(target=follow_panel, args=(args, rec), daemon=True).start()
-    print(f"{BUDDY['name']} escucha mientras mantengas apretada la tecla «{args.key}». Ctrl+C para salir.", flush=True)
+    stage("activando la tecla")
     with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+        stage(None)
+        print(f"{BUDDY['name']} escucha mientras mantengas apretada la tecla «{args.key}». Ctrl+C para salir.",
+              flush=True)
         wait_for(listener)
 
 
@@ -730,8 +792,11 @@ def main():
         return
     if args.save:
         os.makedirs(args.save, exist_ok=True)
+    stage("arrancando")
+    threading.Thread(target=watchdog, daemon=True).start()
     session = Session(args, Player(args.out, args.save))
     if args.file:
+        stage(None)
         with open(args.file, "rb") as f:
             session.send(f.read(), wait=True)
         while not session.player.q.empty():
@@ -740,6 +805,7 @@ def main():
         return
     try:
         if args.listen_only:
+            stage(None)
             threading.Thread(target=follow_panel, args=(args, None), daemon=True).start()
             print("Escuchando sus avisos. Ctrl+C para salir.", flush=True)
             t = threading.Thread(target=listen, args=(args, session.player), daemon=True)
