@@ -170,6 +170,7 @@ function captureMouseButton(e) {
 
 // Lo que Dani dice por su cuenta (timers, avisos, el resumen de la manana) llega por server-sent events
 function listen() {
+  let connectedBefore = false;
   const sync = () => {
     if (document.hidden) {
       alertsSource?.close();
@@ -177,6 +178,10 @@ function listen() {
     } else if (!alertsSource) {
       alertsSource = new EventSource('/api/buddy/events?client=' + encodeURIComponent(CLIENT));
       alertsSource.onmessage = onAlert;
+      // Con la pestaña oculta no llegan los turnos de otros clientes (buddy.py por tecla o por su nombre): al
+      // volver, traer la charla guardada para que aparezcan
+      if (connectedBefore && !abort) loadBuddy();
+      connectedBefore = true;
     }
   };
   addEventListener('visibilitychange', sync);
