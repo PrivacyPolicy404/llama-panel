@@ -164,8 +164,10 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 ## Modelos de imagen y sus valores por defecto
 
 Pasos, CFG y muestreador por modelo van en las opciones extra con `--gendefaults '<JSON>'` (entre comillas simples).
-KoboldCpp solo completa lo que el pedido no trae (el muestreador también si llega `"default"`). Con
-`--gendefaultsoverwrite` se imponen siempre, aunque StableUI mande otros. `img_models.env_line` escribe `kobold.env`
+KoboldCpp solo completa lo que el pedido no trae (el muestreador y el scheduler también si llegan `"default"`).
+StableUI siempre manda pasos, CFG y tamaño, así que esos valores son referencia: hay que ponerlos a mano en StableUI
+al cambiar de modelo (StableUI no tiene presets que se puedan fijar desde el servidor). No se usa
+`--gendefaultsoverwrite`: pisa lo que pide el cliente y StableUI muestra una cosa mientras genera otra. `img_models.env_line` escribe `kobold.env`
 con comillas dobles afuera y simples adentro porque systemd saca comillas dos veces: al leer el archivo y al partir
 `$KOBOLD_ARGS` en palabras.
 
@@ -174,7 +176,8 @@ con comillas dobles afuera y simples adentro porque systemd saca comillas dos ve
 - `animagine-hyper4/animagine-xl-4.0-opt-hyper4-Q8_0.gguf` (SearchingMan): el mismo Opt con la LoRA Hyper-SDXL 4-step
   fusionada. Lleva en su carpeta `sdxl_vae.safetensors` (madebyollin/sdxl-vae-fp16-fix): el VAE de SDXL desborda en fp16.
   La receta de la ficha (4 pasos, CFG 1, `ddim_trailing`) sale lavada y sin contraste. Con la misma semilla, Euler +
-  `sgm_uniform`, 6 pasos y CFG 2 sale nítida y el negativo actúa: es lo que queda **impuesto**. 1024×1024 en la RX 580
+  `sgm_uniform`, 6 pasos y CFG 2 sale nítida y el negativo actúa: son sus valores recomendados (y de respaldo, con
+1024×1024). 1024×1024 en la RX 580
   (2026-11-19): 4 pasos CFG 1 = 31 s; 6 pasos CFG 2 = 55 s; unos 18 s de cada uno son el VAE en 49 mosaicos
   (`--sdtiledvae` 512 por defecto). `sgm_uniform` con DDIM no cambia nada.
   Lo que más pesa es el prompt: sin `masterpiece, high score, great score, absurdres` y un negativo corto sale una cara
