@@ -175,6 +175,25 @@ class ImgScan(unittest.TestCase):
         errors, cfgs = IM.validate_settings(models, {"a": {"extra": " --sdoffloadcpu "}, "zz": {"extra": ""}})
         self.assertEqual((errors, cfgs), ([], {"a": {"extra": "--sdoffloadcpu"}}))
 
+    def test_gendefaults_json(self):
+        models = [{"key": "a"}]
+        extra = """--gendefaults '{"steps": 4, "cfg_scale": 1}' --gendefaultsoverwrite"""
+        errors, cfgs = IM.validate_settings(models, {"a": {"extra": extra}})
+        self.assertEqual(errors, [])
+        args = IM.build_kobold_args({"path": "/i/f.gguf", "comps": []}, cfgs["a"]["extra"])
+        self.assertIn('{"steps": 4, "cfg_scale": 1}', args)
+        # no es un objeto, o trae caracteres que kobold.env no puede pasar
+        for bad in ["--gendefaults 4", """--gendefaults '{"a": "$(x)"}'""", "--gendefaults '{\"a\": 1'"]:
+            errors, _ = IM.validate_settings(models, {"a": {"extra": bad}})
+            self.assertTrue(errors, bad)
+        # el JSON fuera de --gendefaults sigue sin pasar
+        errors, _ = IM.validate_settings(models, {"a": {"extra": """--sdthreads '{"a": 1}'"""}})
+        self.assertTrue(errors)
+
+    def test_env_line_quotes_for_systemd(self):
+        line = IM.env_line(["--sdmodel", "/i/f.gguf", "--gendefaults", '{"steps":4}'])
+        self.assertEqual(line, """KOBOLD_ARGS="--sdmodel /i/f.gguf --gendefaults '{\\"steps\\":4}'"\n""")
+
 
 if __name__ == "__main__":
     unittest.main()

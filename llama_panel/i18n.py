@@ -106,6 +106,8 @@ EN = {
     " Servidor de texto apagado para liberar VRAM.": " Text server stopped to free VRAM.",
     # validación de ajustes
     "{key}: opciones extra mal escritas ({err})": "{key}: malformed extra options ({err})",
+    "{key}: {flag} necesita un objeto JSON entre comillas simples, por ejemplo {example}":
+        "{key}: {flag} needs a JSON object in single quotes, for example {example}",
     "{key}: '{token}' tiene caracteres no permitidos (solo letras, números y . _ / : = + , -)":
         "{key}: '{token}' has characters that are not allowed (only letters, digits and . _ / : = + , -)",
     "{key}: borradores MTP debe ser un número entre 1 y 16 (puso '{value}')":

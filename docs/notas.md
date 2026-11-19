@@ -161,6 +161,20 @@ Con `tools/bench/vk_timings.py` (medidor de Vulkan) y `cpu_profile.sh` (perf), ~
 - Medir con MTP y temperatura 0.7 para comparar cambios chicos: el ruido del borrador tapa diferencias de ±5 %.
   Para A/B usar `TEMP=0`, sin MTP, y alternar las versiones.
 
+## Modelos de imagen y sus valores por defecto
+
+Pasos, CFG y muestreador por modelo van en las opciones extra con `--gendefaults '<JSON>'` (entre comillas simples).
+KoboldCpp solo completa lo que el pedido no trae (el muestreador también si llega `"default"`). Con
+`--gendefaultsoverwrite` se imponen siempre, aunque StableUI mande otros. `img_models.env_line` escribe `kobold.env`
+con comillas dobles afuera y simples adentro porque systemd saca comillas dos veces: al leer el archivo y al partir
+`$KOBOLD_ARGS` en palabras.
+
+- `animagine-xl-4.0-opt.safetensors` (cagliostrolab, la versión pulida de 4.0; Zero es la base para entrenar LoRAs):
+  ficha: 28 pasos, CFG 5, Euler a, 1024×1024. Solo como valores por defecto.
+- `animagine-hyper4/animagine-xl-4.0-opt-hyper4-Q8_0.gguf` (SearchingMan): el mismo Opt con la LoRA Hyper-SDXL 4-step
+  fusionada. 4 pasos, CFG 1, `ddim_trailing`, **impuestos** (más pasos o CFG queman la imagen; el negativo no actúa).
+  Lleva en su carpeta `sdxl_vae.safetensors` (madebyollin/sdxl-vae-fp16-fix): el VAE de SDXL desborda en fp16.
+
 ## Descubrimientos
 
 - **El expert cache no siempre ayuda.** Con mmap (default) los expertos no están fijos y el cache empeora todo.

@@ -1,4 +1,5 @@
 """Modelos de imagen: escaneo, deteccion de acompanantes (VAE, codificadores) y el kobold.env de KoboldCpp."""
+import json
 import os
 import re
 import shlex
@@ -9,6 +10,10 @@ from .i18n import _
 
 IMG_EXT = (".gguf", ".safetensors", ".ckpt")
 ARG_RE = re.compile(r"^[A-Za-z0-9_./:=+,-]+$")
+# --gendefaults lleva un objeto JSON (pasos, CFG, muestreador por defecto de cada pedido de imagen): se escribe entre
+# comillas simples en las opciones extra. Sin ' \ $ ` para que kobold.env lo pase entero a KoboldCpp.
+JSON_ARG_FLAGS = {"--gendefaults"}
+JSON_ARG_RE = re.compile(r'^[A-Za-z0-9_.:,+ "{}\[\]-]+$')
 MIN_SIZE = 100 * 1024 * 1024
 
 
@@ -89,8 +94,16 @@ def write_img_env():
         return None
     cfg = settings["image"]["models"].get(m["key"]) or {}
     C.CFG_DIR.mkdir(parents=True, exist_ok=True)
-    C.IMG_ENV.write_text("KOBOLD_ARGS=" + " ".join(build_kobold_args(m, cfg.get("extra", ""))) + "\n")
+    C.IMG_ENV.write_text(env_line(build_kobold_args(m, cfg.get("extra", ""))))
     return m
+
+
+def env_line(args):
+    """KOBOLD_ARGS para el EnvironmentFile. systemd saca comillas dos veces (al leer el archivo y al partir
+    $KOBOLD_ARGS en palabras): el valor va entre comillas dobles y cada argumento con espacios o comillas, entre
+    simples. Así un JSON como {"steps":4} le llega a KoboldCpp tal cual."""
+    words = " ".join(shlex.quote(a) for a in args)
+    return 'KOBOLD_ARGS="' + words.replace("\\", "\\\\").replace('"', '\\"') + '"\n'
 
 
 def validate_settings(models, cfg_in):
@@ -106,8 +119,20 @@ def validate_settings(models, cfg_in):
         except ValueError as ex:
             errors.append(_("{key}: opciones extra mal escritas ({err})", key=key, err=ex))
             continue
-        for t in toks:
+        for i, t in enumerate(toks):
+            if i and toks[i - 1] in JSON_ARG_FLAGS:
+                if not (JSON_ARG_RE.match(t) and _json_object(t)):
+                    errors.append(_("{key}: {flag} necesita un objeto JSON entre comillas simples, por ejemplo "
+                                    "{example}", key=key, flag=toks[i - 1], example="'{\"steps\":28}'"))
+                continue
             if not ARG_RE.match(t):
                 errors.append(_("{key}: '{token}' tiene caracteres no permitidos (solo letras, números y . _ / : = + , -)", key=key, token=t))
         cfgs[key] = {"extra": extra}
     return errors, cfgs
+
+
+def _json_object(text):
+    try:
+        return isinstance(json.loads(text), dict)
+    except ValueError:
+        return False
