@@ -3,7 +3,7 @@ import json
 import mimetypes
 import time
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 from . import auth
 from . import config as C
@@ -15,6 +15,7 @@ from .api import GET_ROUTES, GET_STREAM_ROUTES, POST_ROUTES, POST_STREAM_ROUTES
 from .audio_api import RAW_POST_ROUTES
 from .i18n import _, remember_ui_lang, set_lang
 from .install import sync_units
+from .netserver import DualStackServer
 
 MAX_BODY = 8_000_000  # el audio del compañero llega en base64 dentro del JSON
 MAX_RAW_BODY = 30_000_000  # /v1/audio/transcriptions: OpenAI acepta archivos de hasta 25 MB
@@ -195,4 +196,4 @@ def serve():
     prompt_cache.start_watcher()
     gate.start_background()
     proactive.start()
-    ThreadingHTTPServer(("0.0.0.0", C.PANEL_PORT), Handler).serve_forever()
+    DualStackServer(("0.0.0.0", C.PANEL_PORT), Handler).serve_forever()

@@ -15,10 +15,11 @@ import socket
 import threading
 import time
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 from . import config as C
 from .i18n import _
+from .netserver import DualStackServer
 
 SIDES = ("text", "img")
 OTHER = {"text": "img", "img": "text"}
@@ -372,10 +373,8 @@ class GateHandler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _handle
 
 
-class _Server(ThreadingHTTPServer):
-    daemon_threads = True
+class _Server(DualStackServer):
     allow_reuse_address = True
-    request_queue_size = 64
 
     def handle_error(self, request, client_address):
         import sys

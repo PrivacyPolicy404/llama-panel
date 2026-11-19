@@ -81,6 +81,7 @@ llama_panel/
   actions.py          what the buttons do (load, save, apply, start)
   api.py              /api/* routes
   server.py           HTTP server
+  netserver.py        listens on IPv4 and IPv6 (the .local name is also published over IPv6)
   install.py          systemd units (and keeping them in sync at startup)
   kiosk.py            text dashboard for "AI mode" (tty1)
   buddy.py            Buddy tab: personality, history and the agent loop (streams text, tools and audio)

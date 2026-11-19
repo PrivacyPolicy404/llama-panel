@@ -81,6 +81,7 @@ llama_panel/
   actions.py          lo que hacen los botones (cargar, guardar, aplicar, encender)
   api.py              rutas /api/*
   server.py           servidor HTTP
+  netserver.py        escucha en IPv4 e IPv6 (el nombre .local también se publica por IPv6)
   install.py          units de systemd (y su sincronización al arrancar)
   kiosk.py            dashboard de texto del "modo IA" (tty1)
   buddy.py            pestaña Compañero: personalidad, historial y el bucle del agente (texto, herramientas y audio)
