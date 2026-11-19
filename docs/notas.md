@@ -172,8 +172,13 @@ con comillas dobles afuera y simples adentro porque systemd saca comillas dos ve
 - `animagine-xl-4.0-opt.safetensors` (cagliostrolab, la versión pulida de 4.0; Zero es la base para entrenar LoRAs):
   ficha: 28 pasos, CFG 5, Euler a, 1024×1024. Solo como valores por defecto.
 - `animagine-hyper4/animagine-xl-4.0-opt-hyper4-Q8_0.gguf` (SearchingMan): el mismo Opt con la LoRA Hyper-SDXL 4-step
-  fusionada. 4 pasos, CFG 1, `ddim_trailing`, **impuestos** (más pasos o CFG queman la imagen; el negativo no actúa).
-  Lleva en su carpeta `sdxl_vae.safetensors` (madebyollin/sdxl-vae-fp16-fix): el VAE de SDXL desborda en fp16.
+  fusionada. Lleva en su carpeta `sdxl_vae.safetensors` (madebyollin/sdxl-vae-fp16-fix): el VAE de SDXL desborda en fp16.
+  La receta de la ficha (4 pasos, CFG 1, `ddim_trailing`) sale lavada y sin contraste. Con la misma semilla, Euler +
+  `sgm_uniform`, 6 pasos y CFG 2 sale nítida y el negativo actúa: es lo que queda **impuesto**. 1024×1024 en la RX 580
+  (2026-11-19): 4 pasos CFG 1 = 31 s; 6 pasos CFG 2 = 55 s; unos 18 s de cada uno son el VAE en 49 mosaicos
+  (`--sdtiledvae` 512 por defecto). `sgm_uniform` con DDIM no cambia nada.
+  Lo que más pesa es el prompt: sin `masterpiece, high score, great score, absurdres` y un negativo corto sale una cara
+  borroneada aun con la receta correcta.
 
 ## Descubrimientos
 
