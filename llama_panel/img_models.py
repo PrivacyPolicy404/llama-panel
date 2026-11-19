@@ -84,7 +84,11 @@ def build_kobold_args(m, extra=""):
     if not any(a in GPU_BACKEND_FLAGS for a in user):
         args += ["--usevulkan", "0"]
     host, port = C.backend("img")
-    return args + ["--host", host, "--port", str(port)] + user
+    # Sin --host KoboldCpp escucha en IPv4 e IPv6 (abre un socket de cada uno con la misma dirección, así que con
+    # 0.0.0.0 el de IPv6 falla). god.local también se publica por IPv6 y Windows la prefiere: sin esto, StableUI
+    # no carga en el navegador aunque el panel sí.
+    host_args = [] if host == "0.0.0.0" else ["--host", host]
+    return args + host_args + ["--port", str(port)] + user
 
 
 def write_img_env():
