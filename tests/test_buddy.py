@@ -240,6 +240,13 @@ class Config(unittest.TestCase):
         buddy.save_config({"speak": False})  # otro ajuste no lo apaga
         self.assertTrue(self.saved()["wake"])
 
+    def test_morning_summary_turns_off_keeping_the_hour(self):
+        buddy.save_config({"morning": "07:30"})
+        buddy.save_config({"morning_on": False})
+        self.assertEqual((self.saved()["morning"], self.saved()["morning_on"]), ("07:30", False))
+        buddy.save_config({"speak": False})  # otro ajuste no lo vuelve a prender
+        self.assertFalse(self.saved()["morning_on"])
+
     def test_only_edited_sections_are_saved(self):
         from llama_panel import buddy_prompt as BP
         buddy.save_config({"speak": False})

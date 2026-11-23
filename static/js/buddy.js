@@ -341,8 +341,8 @@ function draw() {
         </label>
         <div class="field"><span>${t('Por su cuenta')}</span>
           <label class="check"><input type="checkbox" id="buddy-cfg-alerts"> ${t('Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco')}</label>
-          <label class="check">${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
-          <p class="hint">${t('El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.')}</p>
+          <label class="check"><input type="checkbox" id="buddy-cfg-morning-on"> ${t('Resumen de la mañana a las')} <input type="time" id="buddy-cfg-morning"></label>
+          <p class="hint">${t('El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos.')}</p>
         </div>
         </div>
         <div class="buddy-pane" data-pane="instr">
@@ -458,6 +458,8 @@ function fillSettings() {
   $('#buddy-cfg-alerts').checked = c.alerts;
   $('#buddy-cfg-wake').checked = !!c.wake;
   $('#buddy-cfg-morning').value = c.morning || '';
+  $('#buddy-cfg-morning-on').checked = c.morning_on !== false && !!c.morning;
+  $('#buddy-cfg-morning').disabled = !$('#buddy-cfg-morning-on').checked;
   $('#buddy-share-location').checked = localStorage.getItem('buddy-share-location') === '1';
   updateHotkeyUI();
   renderTimers();
@@ -589,7 +591,8 @@ function bind() {
     name: $('#buddy-cfg-name').value, sections: sectionValues(), language: $('#buddy-cfg-language').value,
     model: $('#buddy-cfg-model').value,
     speak: $('#buddy-speak').checked, tools: $$('#buddy-cfg-tools input:checked').map(i => i.value),
-    alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value,
+    alerts: $('#buddy-cfg-alerts').checked, morning: $('#buddy-cfg-morning').value || '09:00',
+    morning_on: $('#buddy-cfg-morning-on').checked,
     keep_audio: $('#buddy-cfg-keep-audio').checked, wake: $('#buddy-cfg-wake').checked,
   });
   $('#buddy-cfg-save').onclick = async e => {
@@ -598,6 +601,12 @@ function bind() {
   };
   $('#buddy-cfg-keep-audio').onchange = e => post('/api/buddy/config', { keep_audio: e.target.checked });
   $('#buddy-cfg-wake').onchange = async e => { report(await post('/api/buddy/config', { wake: e.target.checked })); };
+  $('#buddy-cfg-morning-on').onchange = async e => {
+    $('#buddy-cfg-morning').disabled = !e.target.checked;
+    const body = { morning_on: e.target.checked };
+    if (e.target.checked && !$('#buddy-cfg-morning').value) body.morning = $('#buddy-cfg-morning').value = '09:00';
+    report(await post('/api/buddy/config', body));
+  };
   $('#buddy-hearing-compare').onclick = async e => {
     report(await withBusy(e.currentTarget, () => post('/api/buddy/hearing/compare')));
     for (;;) {

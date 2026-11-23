@@ -8,7 +8,7 @@ buddy.py, habla uno solo). Sin nadie conectado, los mensajes esperan (hasta 12 h
   falta el modelo. Se guardan en BUDDY_DIR/avisos.json y sobreviven a los reinicios del panel.
 - Avisos del homelab: temperatura de GPU y CPU, servicios caídos, RAM y disco. Cada uno salta al cruzar el umbral,
   se rearma recién al volver a un valor normal (histéresis) y no se repite antes de una hora.
-- Resumen de la mañana a la hora de la configuración del compañero ("morning", vacía = nunca). Lo escribe el modelo
+- Resumen de la mañana a la hora de la configuración del compañero ("morning"; "morning_on" falso o vacía = nunca). Lo escribe el modelo
   solo si ya hay uno cargado y el compañero está libre: nunca prende el servidor ni apaga las imágenes por esto.
 """
 import base64
@@ -354,7 +354,7 @@ def loop(interval=5):
                 for text in ALERTS.check(hardware.latest() or {}, _services(), _disks()):
                     say(text, "alerta")
             st = _read_state()
-            if morning_due(cfg.get("morning", ""), st.get("morning_day")):
+            if cfg.get("morning_on", True) and morning_due(cfg.get("morning", ""), st.get("morning_day")):
                 st["morning_day"] = datetime.now().strftime("%Y-%m-%d")
                 _write_state(st)
                 morning_summary()

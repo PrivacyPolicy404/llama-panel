@@ -405,8 +405,8 @@ export const EN = {
   'Por su cuenta': 'On its own',
   'Avisar si la GPU o la CPU calientan, se cae un servicio o falta RAM o disco': 'Warn if the GPU or CPU run hot, a service fails, or RAM or disk run low',
   'Resumen de la mañana a las': 'Morning summary at',
-  'El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos. Vacío = sin resumen.':
-    'The model writes the summary if one is already loaded; otherwise a short one from the data. Empty = no summary.',
+  'El resumen lo escribe el modelo si ya hay uno cargado; si no, uno corto con los datos.':
+    'The model writes the summary if one is already loaded; otherwise a short one from the data.',
   'Avisos pendientes': 'Pending reminders',
   'Si el panel tiene contraseña, agregá <code>--token</code> con uno creado en Configuración, Acceso.':
     'If the panel has a password, add <code>--token</code> with one created in Setup, Access.',

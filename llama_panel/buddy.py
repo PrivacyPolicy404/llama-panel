@@ -31,7 +31,8 @@ MAX_TOKENS = 600
 DEFAULT_CONFIG = {"name": "Dani", "model": "", "speak": True, "tools_off": [], "language": "es", "sections": {},
                   "keep_audio": True,  # últimos audios en BUDDY_DIR/oido (hearing.py), solo en esta máquina
                   "wake": False,  # clients/buddy.py escucha siempre y responde a su nombre (necesita vosk en la PC)
-                  "alerts": True, "morning": "09:00"}  # avisos del homelab y hora del resumen (proactive.py)
+                  "alerts": True, "morning": "09:00",  # avisos del homelab y hora del resumen (proactive.py)
+                  "morning_on": True}  # apagar el resumen sin perder la hora
 MORNING_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 SECTION_MAX = 6000
 
@@ -267,6 +268,7 @@ def save_config(body):
     cfg.update(name=name, language=language, sections=sections, model=str(body.get("model", cfg["model"])).strip(),
                speak=bool(body.get("speak", cfg["speak"])), tools_off=sorted(set(BT.TOOLS) - set(tools)),
                alerts=bool(body.get("alerts", cfg["alerts"])), morning=morning,
+               morning_on=bool(body.get("morning_on", cfg.get("morning_on", True))),
                keep_audio=bool(body.get("keep_audio", cfg["keep_audio"])),
                wake=bool(body.get("wake", cfg.get("wake", False))))
     cfg.pop("tools")
