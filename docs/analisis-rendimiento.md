@@ -1193,7 +1193,39 @@ y directo (18080), alternados tres veces. Se mide desde el primer trozo hasta el
 - Descarga por inactividad con 1 minuto: Flash-Next se descargó a los ~70 s (se revisa cada 20 s) y la VRAM bajó de
   7.1 GB a 0.01 GB con el router prendido.
 
----
+### 5.36 Dos ideas de Basalt: cache KV mixta y el error del motor (2026-11-18)
+
+Basalt (fork de Strata para NVIDIA Blackwell, CUDA; acá no corre) ofrece la cache KV en «k8v4» y dice que con los
+mismos pesos Q8_0 su divergencia contra BF16 es 0.0200 y la de llama.cpp 0.0325, o sea que parte del error es del
+motor y no de la cuantización.
+
+**Cache con claves en Q8_0 y valores en Q4_0.** Hipótesis: los valores toleran más la pérdida que las claves, así
+que se ahorra VRAM casi gratis. Método: `tools/bench/kv_engine_test.sh` (el mismo texto y los mismos 6 tramos de 4096
+que 5.14, KLD contra la cache F16; VRAM y velocidad a 64K con `TEMP=0`, sin MTP, alternadas ×2).
+
+| K / V | KLD media | KLD 99 % | mismo token | VRAM (sin MTP) | gen / prompt |
+|---|---|---|---|---|---|
+| Q8_0 / Q8_0 (vigente) | 0.0035 | 0.041 | 98.05 % | 5.12 GiB | 15.3 / 64 tok/s |
+| Q8_0 / Q4_0 | 0.0125 | 0.137 | 96.30 % | 4.93 GiB | 15.2 / 64 tok/s |
+| Q4_0 / Q4_0 | 0.0185 | 0.209 | 95.51 % | | |
+
+Conclusión: **no conviene**. 3.5 veces el error por 190 MiB y la misma velocidad (como referencia, el parche 3 ahorró
+550 MiB con 0.0077). En Flash-Next la cache ya es chica: solo una de cada cuatro capas tiene atención completa.
+
+**El error del motor.** Lo directo sería el mismo Q2 entero en el CPU contra la GPU, pero el modelo pesa 61.7 GiB y
+no entra en 62 de RAM. Se midió por operación: `test-export-graph-ops` (el grafo real, lotes de 2048 y de 1 token:
+272 operaciones distintas) y `test-backend-ops test -b Vulkan0 --test-file` (Vulkan contra el CPU con datos al
+azar). 264 de 272 dan OK, todas las multiplicaciones de matrices incluidas. Las 8 que fallan no son del motor:
+SQRT y GATED_DELTA_NET dan NaN o números enormes en los dos lados (datos al azar: raíces de negativos, compuertas
+que explotan), GET_ROWS de `iq4_nl` no está en Vulkan (los embeddings quedan en el CPU), ARGSORT difiere en 7e-6
+(empates) y TOP_K del indexador da 0.5 porque la prueba desde archivo compara índices sin ordenar (TOP_K no promete
+orden); las pruebas propias de TOP_K pasan 534 de 534, incluido el tamaño exacto 1088×2048 con k=512. La RX 580 no
+tiene fp16, así que Vulkan acumula en fp32. Sin una referencia BF16 no hay un número como el de Basalt, pero nada
+indica que el motor sume error aparte de la cuantización.
+
+Al preparar la prueba apareció un bug del panel: con el panel abierto, «Descargar» no descargaba. El router sigue
+mostrando el modelo como cargado unos instantes y la telemetría pedía `/slots?model=…`, que lo volvía a cargar.
+Arreglado en `services.router` (las consultas que nombran un modelo que se está descargando no salen).
 
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
@@ -1303,6 +1335,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Enviar a la GPU cada 4–8 nodos | Peor que 16 (el costo de cada envío empieza a pesar, 5.10) |
 | Vocabulario recortado para el borrador MTP | +3 % a temp 0, -6 % a temp 0.8 (5.12) |
 | Overclock de VRAM (pp_od_clk_voltage) | +1–2 % (tope de potencia); el SMU falla con la tabla modificada: cuelgue y memoria clavada (5.13) |
+| Cache KV con valores en Q4_0 («k8v4» de Basalt) | KLD 0.0035 → 0.0125 por 190 MiB, misma velocidad (5.36) |
 
 ---
 
