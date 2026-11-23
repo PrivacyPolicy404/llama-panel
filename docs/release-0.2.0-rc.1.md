@@ -1,10 +1,10 @@
 # v0.2.0-rc.1 — Experimental Companion
 
-First experimental release of the voice-enabled Buddy. It is a prerelease: use it for testing and report issues;
-the stable `main` branch remains on v0.1.x.
+First experimental release of the voice-enabled Buddy. It is a prerelease: use it for testing and report issues.
+The base Buddy is stable since v0.2.0 (`main`); web search, weather and saved conversations are still experimental.
 
-Primera versión experimental del Compañero con voz. Es una prerelease: usala para probar y reportar problemas;
-la rama estable `main` continúa en v0.1.x.
+Primera versión experimental del Compañero con voz. Es una prerelease: usala para probar y reportar problemas.
+El Compañero base es estable desde la v0.2.0 (`main`); la búsqueda web, el clima y las conversaciones guardadas siguen siendo experimentales.
 
 ## Install / Instalación
 

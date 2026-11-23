@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- Read-only buddy tools for one short web search per turn and ephemeral client context (language and timezone,
+  plus approximate location only when explicitly enabled on that device). Search results are limited to fixed
+  providers and treated as untrusted content; location coordinates are rounded before being sent and never saved.
+- Renamed the desktop client to `clients/buddy.py` (the panel still serves `/clients/dani.py` for old commands). It
+  uses whatever name the buddy has, can listen for that name with an always-open microphone (local Vosk recognition;
+  only the sentence that names it is sent), toggled live from the Buddy settings or forced with `--wake` /
+  `--no-wake`, and now exits cleanly on Ctrl+C in Windows. The push-to-talk beep no longer waits for a new audio stream.
+- Speech to text runs on the GPU (Vulkan build of whisper.cpp) when the selected model fits in the free VRAM next to the
+  text model, falling back to the CPU with the small model.
+- Buddy settings are split into tabs (General, Instructions, Voice, Connections, Memory).
+- Added a dedicated Open-Meteo weather tool for current conditions and a two-day forecast. General web search now
+  allows one retry after a network failure and uses a six-second timeout, while still capping successful searches.
+- Buddy conversations are now persisted, selectable and deletable, with one active conversation shared by the web UI
+  and `buddy.py`; turns sent with the global PC shortcut appear live in the browser. Audio and ephemeral location are
+  never stored, and `contexto_usuario` is redacted from the tool audit log.
+- Replaced the invasive global Space push-to-talk binding with a per-device keyboard or side-mouse-button shortcut
+  recorder and a choice of Buddy-only or whole-panel scope. Unsafe bare keys are rejected for the whole panel and
+  interactive controls are never intercepted.
+  Background tabs now close their reminder event stream so several open tabs cannot exhaust the browser connection pool.
+- Documented the experimental Buddy installation from a fresh clone, its system dependencies, the exact Hugging Face
+  audio model sources, sizes, licenses and verified hashes; the voice installer now diagnoses every required command.
+- Updated the bilingual README screenshots to show the Buddy using its time and web-search tools; screenshot language
+  selection is now deterministic for reproducible captures.
+
 ## 0.2.0 (2026-11-23)
 
 The Buddy and WSL2. / El Compañero y WSL2.
@@ -41,6 +67,13 @@ The Buddy and WSL2. / El Compañero y WSL2.
 - Install: lingering on (the panel starts at boot), messages in the system language, custom port kept in the unit.
 - Fixes: empty paths in `paths.env`, personal default folder, AI mode button hidden when not installed, saved
   prompts no longer invalidated when equivalent settings are reordered.
+
+## 0.2.0-rc.1 (2026-11-17)
+
+Experimental companion prerelease. / Prerelease experimental del Compañero.
+
+It contained the Buddy features later released in 0.2.0, plus the web search and client context listed
+under Unreleased.
 
 ## 0.1.0 (2026-11-16)
 
