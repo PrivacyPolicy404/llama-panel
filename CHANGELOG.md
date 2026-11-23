@@ -1,7 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-23)
 
+The Buddy and WSL2. / El Compañero y WSL2.
+
+- WSL2 support, tested on an RTX 2060 Max-Q with CUDA (guide in `docs/wsl.md`): `nvidia-smi` is also looked up in
+  `/usr/lib/wsl/lib`, KoboldCpp defaults to `--usecuda` with NVIDIA and `--usehipblas` with AMD, AI mode is hidden,
+  the memory clock helper is left out of the units, and models on the Windows drive (`/mnt/<letter>`) get a warning
+  because they load several times slower.
+- Configurable client ports: `LLAMA_CHAT_PORT` and `LLAMA_IMG_PORT` (8080 and 5001 by default), as environment
+  variables or in `paths.env`. The measurement tools in `tools/bench/` use the same port.
+- The panel, the on-demand proxy and KoboldCpp also listen on IPv6 (the `.local` name is published over IPv6 and
+  Windows prefers it).
+- Per-image-model defaults for steps, CFG and sampler with `--gendefaults '<JSON>'` in the extra options; KoboldCpp
+  only fills in what the request leaves out, unless `--gendefaultsoverwrite` is added.
+- The AI mode dashboard shows the disks and what they are reading, the GPU's kWh per day (with its cost if the kWh
+  price is set in Settings), the services with their uptime, and the network: IP, connected clients and the last
+  request.
+- Panel status queries no longer load again a model that is being unloaded.
 - The buddy speaks on its own: timers and reminders (a new `avisar` tool), homelab warnings (temperature,
   failed services, RAM, disk) and a morning summary, delivered to the web panel and `clients/dani.py` through
   server-sent events; only the client used last plays the audio. `POST /api/buddy/say` for automations.
