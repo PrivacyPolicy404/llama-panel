@@ -21,12 +21,21 @@ Al terminar, lo que funcione pasa a una sección «WSL» del README (en los dos 
 1. systemd: `systemctl --user status` tiene que responder. Si no, el punto de arriba.
 2. llama.cpp con CUDA en `~/llama.cpp` (puede ser el oficial: el fork solo hace falta para Flash-Next, que no entra
    en 6 GB): `cmake -B build -DGGML_CUDA=ON && cmake --build build -j --target llama-server`. Anotar versión y tiempos.
-3. Un modelo chico que entre en 6 GB (por ejemplo un 4B o 8B en Q4_K_M), **dentro del disco de Linux** (`~/models`),
-   no en `/mnt/c`: por ahí la lectura es mucho más lenta. Verificar el sha256 contra la API de Hugging Face.
+3. Modelos: **primero buscar los que ya hay** en la máquina (el usuario ya generó imágenes con Animagine). Lugares
+   típicos: `find /mnt/c/Users -iname "*.gguf" -o -iname "*.safetensors" 2>/dev/null`, y adentro del WSL `~`.
+   Herramientas que los guardan: ComfyUI (`models/checkpoints`), Stable Diffusion WebUI / Forge
+   (`models/Stable-diffusion`), LM Studio (`~/.lmstudio/models`). Anotar con qué herramienta se usaban: si es
+   ComfyUI, esta máquina sirve después para probar el soporte de ComfyUI en el panel.
+   - Copiarlos (no enlazarlos) **al disco de Linux** (`~/models`, `~/imgmodels`): leer de `/mnt/c` es mucho más
+     lento. Medir una vez la diferencia al cargar (sirve para el aviso de la pestaña Configuración).
+   - En 6 GB entra Animagine XL en `.safetensors` fp16 (~6.5 GB en disco, justo) o mejor en GGUF Q8_0 (~3.5 GB).
+   - Para texto, si no hay ninguno, uno chico que entre en 6 GB (un 4B u 8B en Q4_K_M). Al bajar, verificar el
+     sha256 contra la API de Hugging Face.
 4. `git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel`, rama `experimental/wsl`,
    `python3 panel.py --install`. Abrir `http://localhost:8090` desde el navegador de Windows.
 5. Cargar el modelo desde el panel y medir con `python3 tools/bench/smoke_models.py`.
-6. Opcional: imágenes con KoboldCpp (binario de Linux con CUDA) y `--usecuda` en las opciones del modelo.
+6. Imágenes con KoboldCpp (binario de Linux con CUDA) y `--usecuda` en las opciones del modelo, con el Animagine
+   que ya había. Comparar el tiempo por imagen con lo que daba la herramienta de Windows, mismos pasos y tamaño.
 
 ## Qué revisar (anotar el resultado de cada uno)
 
