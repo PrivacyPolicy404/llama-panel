@@ -529,3 +529,37 @@ class AgentLoop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RememberPrefix(unittest.TestCase):
+    """El perfil «companero» se guarda tras el primer turno y solo si cambió lo fijo del prompt."""
+
+    def run_with(self, messages, saved_prefix=None, loaded=("m",)):
+        from unittest import mock
+        from llama_panel import buddy, prompt_cache as PC, services
+        saves = []
+        req = {"tools": [{"name": "clima"}]}
+        with mock.patch.object(services, "router_models", lambda: {k: {"status": "loaded"} for k in loaded}), \
+                mock.patch.object(PC, "meta", lambda mid, profile: {"prefix": saved_prefix} if saved_prefix else {}), \
+                mock.patch.object(PC, "save", lambda mid, profile, extra: (saves.append((mid, profile, extra)), (1, None))[1]):
+            buddy._remember_prefix("auto", messages, req)
+        return saves, buddy.prefix_key(messages, req)
+
+    def test_first_turn_saves_once(self):
+        first = [{"role": "system", "content": "s"}, {"role": "user", "content": "[lunes 10:00] hola"},
+                 {"role": "assistant", "content": "x", "tool_calls": []}, {"role": "tool", "content": "r"}]
+        saves, key = self.run_with(first)
+        self.assertEqual(saves, [("m", "companero", {"prefix": key})])
+        self.assertEqual(self.run_with(first, saved_prefix=key)[0], [])
+
+    def test_date_does_not_change_the_key(self):
+        a = [{"role": "system", "content": "s"}, {"role": "user", "content": "[lunes 10:00] hola"}]
+        b = [{"role": "system", "content": "s"}, {"role": "user", "content": "[martes 11:00] chau"}]
+        self.assertEqual(self.run_with(a)[1], self.run_with(b)[1])
+
+    def test_later_turns_and_ambiguous_model_skip(self):
+        later = [{"role": "system", "content": "s"}, {"role": "user", "content": "a"},
+                 {"role": "assistant", "content": "b"}, {"role": "user", "content": "c"}]
+        self.assertEqual(self.run_with(later)[0], [])
+        first = [{"role": "system", "content": "s"}, {"role": "user", "content": "a"}]
+        self.assertEqual(self.run_with(first, loaded=("m", "n"))[0], [])

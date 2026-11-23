@@ -116,8 +116,17 @@ def _slot_action(mid, action, name, timeout=180):
                   {"model": mid, "filename": name}, timeout=timeout)
 
 
-def save(mid, profile=MAIN):
-    """Guarda lo que el slot tiene procesado ahora como ese perfil. Devuelve (tokens, None) o (None, error)."""
+def meta(mid, profile=MAIN):
+    """Lo anotado junto al guardado de un perfil (tokens y, si quien guardo lo paso, `extra`), o {} si no hay."""
+    try:
+        return json.loads((C.SLOTS_DIR / file_name(mid, profile=profile)).with_suffix(".json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save(mid, profile=MAIN, extra=None):
+    """Guarda lo que el slot tiene procesado ahora como ese perfil. Devuelve (tokens, None) o (None, error).
+    `extra` se anota en el .json (por ejemplo, de que prompt es: ver buddy._remember_prefix)."""
     with _lock:
         try:
             slot = _slot(mid)
@@ -132,7 +141,7 @@ def save(mid, profile=MAIN):
         if not tokens:
             (C.SLOTS_DIR / name).unlink(missing_ok=True)
             return None, _("el slot está vacío: mandar primero un mensaje desde el cliente")
-        (C.SLOTS_DIR / name).with_suffix(".json").write_text(json.dumps({"tokens": tokens}))
+        (C.SLOTS_DIR / name).with_suffix(".json").write_text(json.dumps({**(extra or {}), "tokens": tokens}))
         return tokens, None
 
 

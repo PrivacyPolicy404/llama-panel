@@ -7,6 +7,7 @@ le devuelve el resultado. La interfaz recibe eventos: lo que se escuchó, texto,
 Todo vive en BUDDY_DIR: config.json, memoria.md, herramientas.log y conversations/ (transcripciones e historial).
 La conversación activa es compartida por la web y clients/buddy.py y se restaura al reiniciar el panel.
 """
+import hashlib
 import http.client
 import json
 import queue
@@ -829,6 +830,7 @@ def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False
                 sentences.put(s)
         if not calls:
             _history.append({"role": "assistant", "content": reply})
+            _remember_prefix(model, messages, req)
             return
         _history.append({"role": "assistant", "content": reply or None, "tool_calls": [
             {"id": c["id"] or f"call_{i}", "type": "function",
@@ -844,6 +846,39 @@ def _converse(cfg, text, events, cancel, sentences, source="web", by_voice=False
             events.put({"type": "tool", "name": c["name"], "args": c["arguments"], "ok": ok, "result": result[:400]})
             _history.append({"role": "tool", "tool_call_id": c["id"] or f"call_{i}", "content": result})
     events.put({"type": "error", "msg": _("Demasiadas herramientas seguidas; corté acá.")})
+
+
+PREFIX_PROFILE = "companero"
+
+
+def prefix_key(messages, req):
+    """Huella de lo fijo del prompt: instrucciones con la memoria y herramientas (la fecha va en cada mensaje)."""
+    fixed = json.dumps([messages[0], req.get("tools")], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(fixed.encode()).hexdigest()[:16]
+
+
+def _remember_prefix(model, messages, req):
+    """Después del primer turno de una charla, guarda el slot como el perfil «companero» si lo fijo del prompt
+    cambió desde el último guardado. Ahí el servidor tiene un checkpoint justo donde empieza el primer mensaje del
+    usuario (lo crea al principio de cada uno): al recargar el modelo, prompt_cache.prime lo precarga y la charla
+    siguiente reusa instrucciones y herramientas (~2000 tokens, ~20 s en Flash-Next) aunque el mensaje sea otro.
+    Guardar no usa la GPU (~0.3 s). Con la charla ya avanzada no sirve: ese checkpoint puede haberse borrado."""
+    if len(messages) < 2 or messages[1]["role"] != "user" or sum(m["role"] == "user" for m in messages) != 1:
+        return
+    try:
+        from . import prompt_cache as PC, services
+        loaded = [k for k, v in services.router_models().items() if v["status"] == "loaded"]
+        mid = model if model in loaded else (loaded[0] if len(loaded) == 1 else None)
+        if not mid:
+            return
+        key = prefix_key(messages, req)
+        if PC.meta(mid, PREFIX_PROFILE).get("prefix") == key:
+            return
+        tokens, err = PC.save(mid, PREFIX_PROFILE, extra={"prefix": key})
+        print(f"prompt del compañero guardado para {mid}: {tokens} tokens" if tokens
+              else f"prompt del compañero: {err}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"prompt del compañero: {e}", flush=True)
 
 
 def _speak_loop(sentences, events, cancel):

@@ -104,3 +104,14 @@ class Profiles(unittest.TestCase):
         self.assertEqual([p for p, _ in done], ["voz", "cline", PC.MAIN])
         with mock.patch.object(PC, "profiles", lambda mid: found), mock.patch.object(PC, "_slot", lambda mid: {"id_task": 7}):
             self.assertEqual(PC.prime("modelo-a"), [])  # el slot ya atendió algo: no se pisa
+
+
+class Meta(unittest.TestCase):
+    def test_save_keeps_extra_next_to_tokens(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(C, "SLOTS_DIR", Path(d)), \
+                mock.patch.object(PC, "config_hash", lambda mid, text=None: "0123456789"), \
+                mock.patch.object(PC, "_slot", lambda mid: {}), \
+                mock.patch.object(PC, "_slot_action", lambda mid, action, name: {"n_saved": 2100}):
+            self.assertEqual(PC.meta("m", "voz"), {})
+            self.assertEqual(PC.save("m", "voz", extra={"prefix": "abc"}), (2100, None))
+            self.assertEqual(PC.meta("m", "voz"), {"prefix": "abc", "tokens": 2100})
