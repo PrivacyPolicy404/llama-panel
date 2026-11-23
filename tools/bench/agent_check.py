@@ -1,11 +1,14 @@
 """Carga tipo agente por el router: llamadas a herramientas, reuso de la caché del prompt entre turnos y costo del
 razonamiento. Requiere Flash-Next cargado. Uso: python3 tools/bench/agent_check.py (tarda ~5 minutos)."""
-import json,time,urllib.request,os,glob
+import json,time,urllib.request,os,glob,sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from llama_panel.config import CHAT_PORT  # noqa: E402  (el de paths.env o el entorno si se cambió)
 M="Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8"
 def chat(messages, **kw):
     body={"model":M,"messages":messages,"temperature":0.6,"max_tokens":kw.pop("max_tokens",700),**kw}
     t=time.time()
-    r=json.loads(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:"+os.environ.get("LLAMA_CHAT_PORT","8080")+"/v1/chat/completions",data=json.dumps(body).encode(),headers={"Content-Type":"application/json"}),timeout=1200).read())
+    r=json.loads(urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{CHAT_PORT}/v1/chat/completions",data=json.dumps(body).encode(),headers={"Content-Type":"application/json"}),timeout=1200).read())
     m=r["choices"][0]["message"]; tm=r.get("timings",{})
     return m, tm, time.time()-t
 def show(tag,m,tm,w):

@@ -258,7 +258,9 @@ It measures 256 forced tokens per job; it doesn't evaluate the quality of a suba
 Text models are looked up in `LLAMA_MODELS_DIR` and in the folders of `LLAMA_EXTRA_MODELS_DIRS` (separated by `:`). Models split into shards (`-00001-of-0000N.gguf`) count as one.
 
 Optional environment variables: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`,
-`KOBOLD_BIN`, `LLAMA_GPU_NAME`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
+`KOBOLD_BIN`, `LLAMA_GPU_NAME`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`, `LLAMA_CHAT_PORT` and `LLAMA_IMG_PORT`
+(client ports for text and images, 8080 and 5001 by default; they can also go in `paths.env` when another program
+already uses them, for example in WSL2).
 
 ## License
 

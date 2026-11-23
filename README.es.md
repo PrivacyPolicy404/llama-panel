@@ -260,7 +260,7 @@ Mide 256 tokens forzados por trabajo; no evalúa la calidad de un subagente ni l
 
 Los modelos de texto se buscan en `LLAMA_MODELS_DIR` y en las carpetas de `LLAMA_EXTRA_MODELS_DIRS` (separadas por `:`). Los modelos partidos en shards (`-00001-of-0000N.gguf`) cuentan como uno solo.
 
-Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_GPU_NAME`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`.
+Variables de entorno opcionales: `LLAMA_MODELS_DIR`, `LLAMA_EXTRA_MODELS_DIRS`, `LLAMA_IMG_DIR`, `LLAMA_SERVER_BIN`, `KOBOLD_BIN`, `LLAMA_GPU_NAME`, `LLAMA_PANEL_PORT`, `LLAMA_PANEL_DIR`, `LLAMA_CHAT_PORT` y `LLAMA_IMG_PORT` (puertos de texto e imágenes para los clientes, 8080 y 5001 por defecto; también van en `paths.env` si otro programa ya los ocupa, por ejemplo en WSL2).
 
 ## Licencia
 

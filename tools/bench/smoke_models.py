@@ -17,7 +17,10 @@ import urllib.request
 from pathlib import Path
 
 PANEL = "http://127.0.0.1:8090"
-ROUTER = "http://127.0.0.1:" + os.environ.get("LLAMA_CHAT_PORT", "8080")  # el de paths.env si se cambió
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from llama_panel.config import CHAT_PORT  # noqa: E402  (el de paths.env o el entorno si se cambió)
+
+ROUTER = f"http://127.0.0.1:{CHAT_PORT}"
 BASELINES = Path(__file__).with_name("baselines.json")
 TOLERANCE = 0.85
 DEFAULT_MODELS = ["Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K", "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8"]

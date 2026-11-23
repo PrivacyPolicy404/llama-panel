@@ -363,8 +363,8 @@ export const EN = {
   'Acceso': 'Access',
   'El panel pide contraseña en la red. Desde esta máquina (y por túnel SSH) no la pide.':
     'The panel asks for a password on the network. It does not ask from this machine (or through an SSH tunnel).',
-  'Sin contraseña: cualquiera en tu red puede usar el panel y hablarle al compañero (que puede manejar luces). Los puertos 8080 y 5001 no pasan por acá.':
-    'No password: anyone on your network can use the panel and talk to the buddy (which can control lights). Ports 8080 and 5001 do not go through here.',
+  'Sin contraseña: cualquiera en tu red puede usar el panel y hablarle al compañero (que puede manejar luces). Los puertos {chat} y {img} no pasan por acá.':
+    'No password: anyone on your network can use the panel and talk to the buddy (which can control lights). Ports {chat} and {img} do not go through here.',
   'Contraseña actual': 'Current password',
   'Contraseña nueva (vacía para sacarla)': 'New password (empty to remove it)',
   'Contraseña nueva': 'New password',

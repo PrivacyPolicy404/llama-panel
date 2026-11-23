@@ -1,6 +1,7 @@
 // Pestana Configuracion, tarjeta "Acceso": contraseña del panel y tokens para programas (llama_panel/auth.py).
 import { $, $$, esc, getJSON, post, report, withBusy } from './util.js';
 import { t } from './i18n.js';
+import { S } from './state.js';
 
 export async function loadAccess() {
   let a, tk;
@@ -12,7 +13,7 @@ export async function loadAccess() {
       <h4>${t('Acceso')}</h4>
       <p class="hint">${a.enabled
         ? t('El panel pide contraseña en la red. Desde esta máquina (y por túnel SSH) no la pide.')
-        : t('Sin contraseña: cualquiera en tu red puede usar el panel y hablarle al compañero (que puede manejar luces). Los puertos 8080 y 5001 no pasan por acá.')}</p>
+        : t('Sin contraseña: cualquiera en tu red puede usar el panel y hablarle al compañero (que puede manejar luces). Los puertos {chat} y {img} no pasan por acá.', S.config?.ports || { chat: 8080, img: 5001 })}</p>
       ${a.enabled ? `<label class="field"><span>${t('Contraseña actual')}</span><input type="password" name="current" autocomplete="current-password"></label>` : ''}
       <label class="field"><span>${a.enabled ? t('Contraseña nueva (vacía para sacarla)') : t('Contraseña nueva')}</span>
         <input type="password" name="new" autocomplete="new-password" minlength="8"></label>

@@ -45,7 +45,7 @@ def units():
             "Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"
         ),
         f"{C.IMG_SERVICE}.service": (
-            "[Unit]\nDescription=KoboldCpp generador de imagenes (Vulkan)\n"
+            "[Unit]\nDescription=KoboldCpp generador de imagenes\n"
             f"Conflicts={C.SERVICE}.service\n\n"
             "[Service]\nEnvironment=GGML_VK_VISIBLE_DEVICES=0\n" + gpu_mclk() +
             f"EnvironmentFile={C.IMG_ENV}\n"

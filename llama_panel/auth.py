@@ -8,7 +8,8 @@ Con contraseña:
   Los tokens se crean y revocan en la pestaña Configuración; solo se muestran una vez.
 
 En AUTH_FILE (permisos 600) se guardan solo hashes: PBKDF2 para la contraseña, SHA-256 para sesiones y tokens.
-Los puertos 8080 y 5001 (llama-server, KoboldCpp o el proxy del encendido a demanda) no pasan por acá.
+Los puertos de texto e imágenes (8080 y 5001 por defecto: llama-server, KoboldCpp o el proxy del encendido a demanda)
+no pasan por acá.
 """
 import hashlib
 import hmac
