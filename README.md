@@ -77,6 +77,7 @@ llama_panel/
   img_models.py       image scan, companions (VAE/encoders), kobold.env
   services.py         systemctl and HTTP clients for the router and KoboldCpp
   hardware.py         GPU/RAM sensors (amdgpu, nvidia-smi) and background sampling
+  energy.py           GPU kWh per day (energia.json) and its cost with LLAMA_KWH_PRICE
   stats.py            journalctl parsing: tokens/s, images, logs
   actions.py          what the buttons do (load, save, apply, start)
   api.py              /api/* routes
@@ -172,7 +173,9 @@ helper without a password. AI mode **closes the graphical session** when turned 
 
 In AI mode the desktop is stopped to free the VRAM it was using, and tty1 shows this text dashboard
 (`llama_panel/kiosk.py`; it follows the language you last used in the web panel, or `LLAMA_PANEL_LANG=en|es` in
-`paths.env`; to see it over SSH without turning anything on: `python3 -m llama_panel.kiosk --once`):
+`paths.env`; to see it over SSH without turning anything on: `python3 -m llama_panel.kiosk --once`). Besides GPU, CPU
+and models it shows the disks with what they are reading right now, the GPU's kWh (with its cost if you set the kWh
+price in Settings), the services with how long they have been up, and the network: IP, who is connected and the last request.
 
 ![AI mode dashboard on tty1: GPU, per-core CPU, RAM, loaded model, current response and processes](docs/img/modo-ia.png)
 

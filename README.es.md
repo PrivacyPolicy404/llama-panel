@@ -77,6 +77,7 @@ llama_panel/
   img_models.py       escaneo de imagen, acompañantes (VAE/codificadores), kobold.env
   services.py         systemctl y clientes HTTP del router y de KoboldCpp
   hardware.py         sensores de GPU/RAM y muestreo en segundo plano
+  energy.py           kWh de la GPU por día (energia.json) y su costo con LLAMA_KWH_PRICE
   stats.py            parseo de journalctl: tokens/s, imágenes, registros
   actions.py          lo que hacen los botones (cargar, guardar, aplicar, encender)
   api.py              rutas /api/*
@@ -174,7 +175,9 @@ ayudante sin contraseña. El modo IA **cierra la sesión gráfica** al activarse
 
 En modo IA el escritorio se apaga para liberar la VRAM que ocupaba, y tty1 muestra este dashboard de texto
 (`llama_panel/kiosk.py`; sigue el idioma que usaste por última vez en el panel web, o `LLAMA_PANEL_LANG=es|en` en
-`paths.env`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`):
+`paths.env`; para verlo por SSH sin activar nada: `python3 -m llama_panel.kiosk --once`). Además de GPU, CPU y
+modelos muestra los discos con lo que leen en el momento, los kWh de la GPU (con su costo si cargás el precio del kWh
+en Configuración), los servicios con hace cuánto andan y la red: IP, quién está conectado y el último pedido.
 
 ![Dashboard del modo IA en tty1: GPU, CPU por núcleo, RAM, modelo cargado, respuesta en curso y procesos](docs/img/modo-ia.es.png)
 

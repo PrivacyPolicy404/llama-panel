@@ -16,6 +16,7 @@ function values() {
     llama_server: $('#setup [name=llama_server]').value.trim(),
     kobold: $('#setup [name=kobold]').value.trim(),
     gpu_name: $('#setup [name=gpu_name]').value.trim(),
+    kwh_price: $('#setup [name=kwh_price]').value.trim(),
   };
 }
 
@@ -55,6 +56,7 @@ export function renderSetup() {
       <h4>${t('Imágenes y GPU')}</h4>
       ${field('img_dir', t('Carpeta de modelos de imagen'), t('Opcional. <code>.safetensors</code> o <code>.gguf</code> de Stable Diffusion / Flux.'), v.img_dir, c.img_dir, lock('img_dir'), 'dir-suggest')}
       ${field('gpu_name', t('Nombre de la GPU'), t('Opcional, solo para mostrar. Detectado: <b>{name}</b>.', { name: esc(P.detected_gpu || t('ninguno')) }), v.gpu_name, null, lock('gpu_name'))}
+      ${field('kwh_price', t('Precio del kWh'), t('Opcional. Con esto el dashboard del modo IA muestra lo que gasta la GPU en plata.'), v.kwh_price, null, lock('kwh_price'))}
     </div>
     ${env}
     <div class="setup-actions">

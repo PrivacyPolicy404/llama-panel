@@ -7,6 +7,7 @@ from . import auth
 from . import buddy
 from . import proactive
 from . import config as C
+from . import energy
 from . import gate
 from . import hardware
 from . import paths
@@ -39,6 +40,34 @@ def state():
         "auto": gate.status(),
         "audio": audio_state(),
     }
+
+
+KIOSK_UNITS = (C.PANEL_SERVICE, C.SERVICE, C.IMG_SERVICE, "homeassistant")
+
+
+def parse_units(text, mono_now):
+    """Salida de `systemctl show -p Id,LoadState,ActiveState,ActiveEnterTimestampMonotonic` -> {unidad: {...}}.
+    Las que no existen (LoadState=not-found) no aparecen; "up" son los segundos desde que arrancó (None si no anda)."""
+    out = {}
+    for block in text.strip().split("\n\n"):
+        kv = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+        if not kv.get("Id") or kv.get("LoadState") != "loaded":
+            continue
+        since = int(kv.get("ActiveEnterTimestampMonotonic") or 0)
+        active = kv.get("ActiveState", "unknown")
+        out[kv["Id"].removesuffix(".service")] = {
+            "state": active, "up": round(mono_now - since / 1e6) if active == "active" and since else None}
+    return out
+
+
+def kiosk():
+    """Lo que el dashboard del modo IA suma a /api/state: servicios con su tiempo encendido, energía y clientes."""
+    import time
+    from .services import run
+    text = run("systemctl", "--user", "show", "-p", "Id,LoadState,ActiveState,ActiveEnterTimestampMonotonic",
+               *(f"{u}.service" for u in KIOSK_UNITS))
+    return {"units": parse_units(text, time.monotonic()), "energy": energy.meter().summary(),
+            "gate": gate.CLIENTS.snapshot(), "listening": sorted(gate._servers)}
 
 
 def audio_state():
@@ -91,6 +120,7 @@ GET_ROUTES = {
     "/api/state": lambda q: state(),
     "/api/config": lambda q: config(),
     "/api/history": lambda q: {"samples": list(hardware.HIST)},
+    "/api/kiosk": lambda q: kiosk(),
     "/api/stats": lambda q: stats.stats(),
     "/api/live": lambda q: stats.live(),
     "/api/logs": _logs,

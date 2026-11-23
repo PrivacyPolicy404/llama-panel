@@ -12,6 +12,7 @@ import os
 import sys
 import time
 import urllib.request
+from pathlib import Path
 
 from . import config as C
 from .i18n import LANGS, _, set_lang
@@ -114,6 +115,7 @@ class CpuSampler:
         self.prev_procs = {}
         self.prev_t = None
         self.total_hist = collections.deque(maxlen=history)
+        self.disk = DiskSampler()
 
     @staticmethod
     def _read_stat():
@@ -174,7 +176,99 @@ class CpuSampler:
                 plist.append({"pid": pid, "name": comm, "cpu": cpu, "threads": threads, "rss": rss, **extra})
         self.prev, self.prev_procs, self.prev_t = cores, procs, now
         plist.sort(key=lambda p: -p["cpu"])
-        return {"cores": usage, "total_hist": list(self.total_hist), "procs": plist}
+        return {"cores": usage, "total_hist": list(self.total_hist), "procs": plist, "disks": self.disk.sample()}
+
+
+DISK_SKIP_MOUNTS = ("/boot", "/snap", "/var/snap", "/run", "/sys", "/proc", "/dev")
+
+
+def disk_kind(dev):
+    """NVMe, SSD o HDD según el disco físico de la partición (o ? si no se sabe)."""
+    try:
+        real = os.path.realpath(f"/sys/class/block/{dev}")
+        parent = dev if os.path.exists(f"{real}/queue") else os.path.basename(os.path.dirname(real))
+        if parent.startswith("nvme"):
+            return "NVMe"
+        rota = open(f"/sys/block/{parent}/queue/rotational").read().strip()
+        return "HDD" if rota == "1" else "SSD"
+    except OSError:
+        return "?"
+
+
+def list_disks(mounts_text, model_dirs=()):
+    """[(dispositivo, punto de montaje, tiene_modelos)] de los discos reales montados, sin repetir dispositivo."""
+    devs = {}
+    for d in model_dirs:
+        try:
+            devs[os.stat(d).st_dev] = True
+        except OSError:
+            pass
+    seen, out = set(), []
+    for line in mounts_text.splitlines():
+        parts = line.split()
+        if len(parts) < 3 or not parts[0].startswith("/dev/") or parts[0].startswith("/dev/loop"):
+            continue
+        src, mnt = parts[0], parts[1].replace("\\040", " ")
+        if any(mnt == m or mnt.startswith(m + "/") for m in DISK_SKIP_MOUNTS):
+            continue
+        dev = os.path.basename(os.path.realpath(src))
+        if dev in seen:
+            continue
+        seen.add(dev)
+        try:
+            has_models = os.stat(mnt).st_dev in devs
+        except OSError:
+            has_models = False
+        out.append((dev, mnt, has_models))
+    return sorted(out, key=lambda x: (x[1] != "/", x[1]))
+
+
+def read_sectors(diskstats_text):
+    """{dispositivo: sectores leídos} de /proc/diskstats (512 bytes por sector)."""
+    out = {}
+    for line in diskstats_text.splitlines():
+        f = line.split()
+        if len(f) > 5:
+            out[f[2]] = int(f[5])
+    return out
+
+
+class DiskSampler:
+    """Uso y lectura del momento de cada disco montado. La lista de discos se relee cada minuto."""
+
+    def __init__(self):
+        self.prev, self.prev_t, self.disks, self.listed_t = {}, None, [], 0
+
+    def sample(self):
+        now = time.time()
+        if now - self.listed_t > 60:
+            try:
+                dirs = [*C.MODELS_DIRS, C.IMG_DIR]
+                self.disks = [(dev, mnt, models, disk_kind(dev))
+                              for dev, mnt, models in list_disks(open("/proc/mounts").read(), dirs)]
+            except OSError:
+                self.disks = []
+            self.listed_t = now
+        try:
+            sectors = read_sectors(open("/proc/diskstats").read())
+        except OSError:
+            sectors = {}
+        dt = now - self.prev_t if self.prev_t else 0
+        out = []
+        for dev, mnt, models, kind in self.disks:
+            try:
+                st = os.statvfs(mnt)
+            except OSError:
+                continue
+            total = st.f_blocks * st.f_frsize
+            used = total - st.f_bfree * st.f_frsize
+            rate = None
+            if dt > 0 and dev in sectors and dev in self.prev:
+                rate = max(0, sectors[dev] - self.prev[dev]) * 512 / dt / 1e6
+            out.append({"dev": dev, "mount": mnt, "kind": kind, "models": models, "used": used, "total": total,
+                        "read_mbs": rate})
+        self.prev, self.prev_t = sectors, now
+        return out
 
 
 # ---------- dibujo ----------
@@ -250,7 +344,7 @@ def ago(t, now):
     return _("hace {t}", t=f"{s} s" if s < 60 else f"{s // 60} min" if s < 3600 else f"{s // 3600} h")
 
 
-def gpu_box(hw, samples, width):
+def gpu_box(hw, samples, width, energy=None):
     w = width - 2
     gw = w - 15  # " LABEL " (6) + grafico + " " + valor (8)
     bw = max(4, w - 42)
@@ -275,7 +369,24 @@ def gpu_box(hw, samples, width):
     temps = [s.get("temp") for s in samples]
     lines.append(f" TEMP {''.join(graph(temps, gw, 1, 30, 90, color='level'))} " + f"{hw.get('temp') or 0:.0f} °C".rjust(7))
     lines.append(" " + _("núcleo {mhz} MHz · {mem} · ventilador {fan}", mhz=hw.get('sclk') or 0, mem=mclk_text(hw), fan=fan_text(hw)))
+    if energy:
+        lines.append(energy_line(energy, w))
     return box(" · ".join(x for x in ("gpu", hw.get("gpu_name")) if x), lines, width)
+
+
+def money(v):
+    return f"$ {v:.2f}" if v < 100 else f"$ {v:,.0f}".replace(",", ".")
+
+
+def energy_line(e, w):
+    """kWh de la GPU hoy y en el mes, con un gráfico de un renglón por día del mes (y el costo si hay tarifa)."""
+    text = _("hoy {d} kWh · mes {m} kWh", d=f"{e.get('day_kwh', 0):.2f}", m=f"{e.get('month_kwh', 0):.1f}")
+    if e.get("price") is not None:
+        text += f" · {money(e['day_cost'])} / {money(e['month_cost'])}"
+    days = e.get("month_days") or []
+    gw = max(0, min(len(days), w - 8 - len(text)))
+    spark = graph(days, gw, 1, 0, color=MAGENTA)[0] + " " if gw else ""
+    return f" {'kWh':<5}{spark}{text}"
 
 
 def fan_text(hw):
@@ -317,7 +428,7 @@ def cpu_box(cpu, hw, width):
     return box(" · ".join(x for x in ("cpu", hw.get("cpu_name")) if x), lines, width)
 
 
-def mem_box(hw, width):
+def mem_box(hw, width, disks=None):
     w = width - 2
     bw = w - 24
     lines = [
@@ -326,7 +437,31 @@ def mem_box(hw, width):
     ]
     if hw.get("swap_total"):
         lines.append(f" swap  {bar(hw.get('swap_used'), hw.get('swap_total'), bw)} {hw.get('swap_used', 0):5.1f}/{hw.get('swap_total', 0):.0f}G")
-    return box(_("memoria · RAM"), lines, width)
+    if disks is None:
+        return box(_("memoria · RAM"), lines, width)
+    lines += disk_lines(disks, w)
+    return box(_("memoria · discos"), lines, width)
+
+
+def gb(n):
+    return f"{n / 1e12:.1f}T" if n >= 1e12 else f"{n / 1e9:.0f}G"
+
+
+def disk_lines(disks, w):
+    """Una fila por disco: tipo, punto de montaje, uso y lo que lee en este momento (resaltado si un modelo
+    está leyendo del disco: con los expertos fuera de la RAM, el HDD pone el techo de tok/s)."""
+    bw = max(6, w - 52)
+    out = []
+    for d in disks:
+        rate = d.get("read_mbs")
+        rtxt = "    -- MB/s" if rate is None else f"{rate:6.1f} MB/s"
+        mark = CYAN if rate and rate >= 20 else DIM if not rate or rate < 1 else ""
+        tag = f" {DIM}{_('modelos')}{RESET}" if d.get("models") else ""
+        mnt = d["mount"] if len(d["mount"]) <= 10 else "…" + d["mount"][-9:]
+        used = f"{gb(d['used'])}/{gb(d['total'])}"
+        out.append(f" {d['kind']:<5}{mnt:<11}{bar(d['used'], d['total'], bw, 0.85, 0.95)} {used:>11} "
+                   f"{mark}▼{rtxt}{RESET}{tag}")
+    return out
 
 
 def external_runs(cpu):
@@ -354,7 +489,7 @@ def external_lines(cpu, w):
     return out
 
 
-def models_box(state, stats, width, now, cpu=None):
+def models_box(state, stats, width, now, cpu=None, graph_rows=3, gap=True):
     w = width - 2
     svc = state["svc"]
     loaded = [k for k, v in (state["text"].get("models") or {}).items() if v.get("status") in ("loaded", "loading")]
@@ -370,11 +505,12 @@ def models_box(state, stats, width, now, cpu=None):
     resp = (stats or {}).get("text") or []
     if resp:
         last = resp[-1]
-        lines.append("")
+        if gap:
+            lines.append("")
         lines.append(" " + _("última: {g} tok/s · prompt {p} · {ago}", g=f"{last['g_tps']:.1f}", p=f"{last['p_tps']:.0f}", ago=ago(last['t'], now)))
         tps = [r["g_tps"] for r in resp]
         top = max(tps)
-        rows = graph(tps, w - 10, 3, 0, top, color=BLUE)
+        rows = graph(tps, w - 10, graph_rows, 0, top, color=BLUE)
         lines += [f" {(f'{top:.0f}' if i == 0 else ''):>4} {r}" for i, r in enumerate(rows)]
         lines.append(f" {'':>4} " + _("tok/s de las últimas {n} respuestas", n=min(len(tps), w - 10)))
     return box(_("modelos"), lines, width)
@@ -442,13 +578,169 @@ def live_box(live, stats, tps_hist, width, prompt_hist=None, graph_height=2):
     return box(_("en vivo"), lines, width)
 
 
-def procs_box(cpu, width, max_rows=6):
+def uptime(seconds):
+    """Cuánto hace que anda, corto: 40 s, 12 min, 3 h 05, 2 d 4 h."""
+    if seconds is None:
+        return ""
+    s = max(0, int(seconds))
+    if s < 60:
+        return f"{s} s"
+    if s < 3600:
+        return f"{s // 60} min"
+    if s < 86400:
+        return f"{s // 3600} h {s % 3600 // 60:02d}"
+    return f"{s // 86400} d {s % 86400 // 3600} h"
+
+
+def unit_cell(label, unit, width, lw=13):
+    """● nombre  hace cuánto anda (o el estado si no anda), en `width` caracteres visibles."""
+    if not unit:
+        return vpad(f" {DIM}· {label:<{lw}}{_('no instalado')}{RESET}", width)
+    icon, state = SVC.get(unit["state"], ("?", unit["state"]))
+    color = GREEN if unit["state"] == "active" else RED if unit["state"] == "failed" else YELLOW if icon == "◌" else DIM
+    tail = uptime(unit.get("up")) if unit["state"] == "active" else _(state)
+    return vpad(f" {color}{icon}{RESET} {label:<{lw}}{tail}", width)
+
+
+def cell(icon_color, icon, label, tail, width, lw=13):
+    return vpad(f" {icon_color}{icon}{RESET} {label:<{lw}}{tail}", width)
+
+
+def voice_names(audio):
+    """Modelos de voz en corto: «large-v3-turbo · daniela» (sin ggml-, cuantización, idioma ni calidad)."""
+    import re
+    stt = re.sub(r"-q\d.*$", "", (audio.get("stt") or "").removeprefix("ggml-").removesuffix(".bin"))
+    tts = (audio.get("tts") or "").split("-")
+    tts = tts[1] if len(tts) == 3 else "-".join(tts)  # es_AR-daniela-high
+    return [n for n, ok in ((stt, audio.get("stt_ok")), (tts, audio.get("tts_ok"))) if ok and n]
+
+
+_net = {"t": 0, "ip": None, "host": None}
+
+
+def local_net():
+    """IP de la red local y nombre de la máquina (se recalcula cada minuto; no manda paquetes)."""
+    import socket
+    if time.time() - _net["t"] > 60:
+        _net["t"] = time.time()
+        _net["host"] = socket.gethostname()
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+                sk.connect(("10.255.255.255", 1))
+                _net["ip"] = sk.getsockname()[0]
+        except OSError:
+            _net["ip"] = None
+    return _net["ip"], _net["host"]
+
+
+def _hex_ip(h):
+    import socket
+    raw = bytes.fromhex(h)
+    raw = b"".join(raw[i:i + 4][::-1] for i in range(0, len(raw), 4))  # palabras de 32 bits en orden del host
+    if len(raw) == 4:
+        return socket.inet_ntop(socket.AF_INET, raw)
+    ip = socket.inet_ntop(socket.AF_INET6, raw)
+    return ip[7:] if ip.startswith("::ffff:") else ip
+
+
+def tcp_clients(texts, ports):
+    """{ip: {puertos}} de las conexiones establecidas desde otras máquinas a `ports` (/proc/net/tcp y tcp6)."""
+    out = {}
+    for text in texts:
+        for line in text.splitlines()[1:]:
+            f = line.split()
+            if len(f) < 4 or f[3] != "01":  # 01 = ESTABLISHED
+                continue
+            try:
+                lip, lport = f[1].split(":")
+                rip = _hex_ip(f[2].split(":")[0])
+                port = int(lport, 16)
+            except ValueError:
+                continue
+            if port in ports and rip not in ("127.0.0.1", "::1") and rip != _hex_ip(lip):
+                out.setdefault(rip, set()).add(port)
+    return out
+
+
+def connected_clients():
+    texts = []
+    for f in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            texts.append(open(f).read())
+        except OSError:
+            pass
+    return tcp_clients(texts, {C.CHAT_PORT, C.IMG_PORT, C.PANEL_PORT})
+
+
+def who(ip):
+    return _("esta máquina") if ip in ("127.0.0.1", "::1") else ip
+
+
+SIDE_LABEL = {"text": "texto", "img": "imágenes"}
+
+
+def services_box(state, width, now, stats=None, clients=None):
+    """Servicios en dos columnas (estado y hace cuánto andan) y la red: IP, clientes de la compuerta, último pedido."""
     w = width - 2
+    k = state.get("kiosk") or {}
+    units = k.get("units") or {}
+    half = w // 2 + 2  # la columna de la derecha tiene rótulos más largos pero datos más cortos
+    listening = k.get("listening") if "listening" in k else (state.get("auto") or {}).get("listening") or []
+    ports = " ".join(f":{C.PUBLIC_PORTS[sd]}" for sd in listening if sd in C.PUBLIC_PORTS)
+    gate = cell(GREEN, "●", _("compuerta"), ports, w - half, 15) if listening else \
+        cell(DIM, "○", _("compuerta"), _("sin proxy"), w - half, 15)
+    audio = state.get("audio") or {}
+    ok = [audio.get("stt_ok"), audio.get("tts_ok")]
+    voice_icon, voice_color = ("●", GREEN) if all(ok) else ("◐", YELLOW) if any(ok) else ("○", DIM)
+    names = voice_names(audio)
+    lines = [
+        unit_cell("panel", units.get(C.PANEL_SERVICE), half) + gate,
+        unit_cell("llama-server", units.get(C.SERVICE), half) + unit_cell("KoboldCpp", units.get(C.IMG_SERVICE), w - half, 15),
+        cell(voice_color, voice_icon, _("voz"), " · ".join(names) or _("sin modelos"), half)
+        + unit_cell("Home Assistant", units.get("homeassistant"), w - half, 15),
+    ]
+    ip, host = local_net()
+    lines.append(f" {L('red', 9)} {ip or _('sin red')} · {host} · panel :{C.PANEL_PORT}")
+    g = k.get("gate") or {}
+    port_name = {C.CHAT_PORT: _("texto"), C.IMG_PORT: _("imágenes"), C.PANEL_PORT: "panel"}
+    conns = clients if clients is not None else {}
+    parts = [f"{GREEN}{ip}{RESET} {DIM}{'+'.join(port_name.get(pt, str(pt)) for pt in sorted(pts))}{RESET}"
+             for ip, pts in sorted(conns.items())[:3]]
+    recent = [c for c in g.get("clients") or [] if c["ip"] not in conns and not c["open"]][:max(0, 3 - len(parts))]
+    parts += [f"{who(c['ip'])} {DIM}{ago(c['t'], now)}{RESET}" for c in recent]
+    more = f" +{len(conns) - 3}" if len(conns) > 3 else ""
+    lines.append(f" {L('clientes', 9)} " + (" · ".join(parts) + more if parts else f"{DIM}{_('nadie conectado')}{RESET}"))
+    last = g.get("last")
+    if last:
+        what = _(SIDE_LABEL.get(last["side"], last["side"]))
+        model = f" · {last['model']}" if last.get("model") else f" · {last['path']}"
+        lines.append(f" {L('último', 9)} {who(last['ip'])} · {what}{model} · {ago(last['t'], now)}")
+    else:  # sin la compuerta no se sabe quién pidió: la última respuesta de texto que midió el panel
+        resp = (stats or {}).get("text") or []
+        tail = f"{_('texto')} · {ago(resp[-1]['t'], now)}" if resp else "--"
+        hint = f" {DIM}({_('con el proxy activo se ve quién')}){RESET}" if not listening else ""
+        lines.append(f" {L('último', 9)} {tail}{hint}")
+    return box(_("servicios · red"), lines, width)
+
+
+EXPECTED_PROCS = ("llama-server", "koboldcpp")
+
+
+def procs_box(cpu, width, max_rows=6, fill=False):
+    """Procesos que interesan; con fill, los que se esperan y no andan completan las filas libres, atenuados."""
     lines = [f" {L('proceso', 14)}{'pid':>8}{'cpu':>18}{_('hilos'):>8}{'ram':>9}"]
-    for p in (cpu.get("procs") or [])[:max_rows]:
+    procs = (cpu.get("procs") or [])[:max_rows]
+    for p in procs:
         lines.append(f" {p['name']:<14}{p['pid']:>8}{cpu_txt(p):>18}{p['threads']:>8}{p['rss'] / 2**30:>8.1f}G")
+    if fill:
+        running = {p["name"] for p in cpu.get("procs") or []}
+        for name in EXPECTED_PROCS:
+            if name not in running and len(lines) <= max_rows:
+                lines.append(f" {DIM}{name:<14}{'--':>8}{_('apagado'):>18}{RESET}")
     if len(lines) == 1:
         lines.append(" " + _("(sin modelos corriendo)"))
+    if fill:
+        lines += [""] * (max_rows + 1 - len(lines))  # que la columna llegue hasta el pie
     return box(_("procesos"), lines, width)
 
 
@@ -536,7 +828,7 @@ def leave_ai_mode():
 
 
 def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, tps_hist=None, prompt_hist=None,
-           notice=None):
+           notice=None, clients=None):
     """Devuelve las lineas del dashboard como [(texto, estilo)]; estilo en {"", "title", "dim", "good", "warn", "bad"}.
     Con 120x36 o mas usa dos columnas; si no, una columna compacta que se achica hasta entrar en la altura."""
     now = now or time.time()
@@ -570,12 +862,30 @@ def render(state, stats, hist, cpu, width=120, height=40, now=None, live=None, t
         return out
     left_w = width // 2
     right_w = width - left_w - 1
-    top = side_by_side(gpu_box(hw, samples, left_w), cpu_box(cpu, hw, right_w))
-    live_panel = live_box(live, stats, tps_hist, right_w, prompt_hist, graph_height=2 if height >= 40 else 1)
-    proc_rows = max(1, min(6, height - len(top) - len(live_panel) - 5))
-    bottom = side_by_side(mem_box(hw, left_w) + models_box(state, stats, left_w, now, cpu),
-                          live_panel + procs_box(cpu, right_w, proc_rows))
-    for l in top + bottom:
+    room = height - 2  # sin el título ni el pie
+    energy = (state.get("kiosk") or {}).get("energy")
+    left = gpu_box(hw, samples, left_w, energy) + mem_box(hw, left_w, cpu.get("disks"))
+    extra = services_box(state, left_w, now, stats, clients) if state.get("kiosk") else []
+    models = []
+    for graph_rows, gap in ((3, True), (3, False), (2, False), (1, False)):  # el gráfico se achica si no entra
+        models = models_box(state, stats, left_w, now, cpu, graph_rows, gap)
+        if len(left) + len(models) + len(extra) <= room:
+            break
+    if len(left) + len(models) + len(extra) > room:
+        extra = []  # pantalla baja: primero se pierde la caja de servicios
+    left += models + extra
+    right = cpu_box(cpu, hw, right_w)
+    procs_min = 2 + 1 + min(3, max(1, len(cpu.get("procs") or [])))  # bordes, encabezado y hasta 3 procesos
+    for gh in (3, 2, 1):  # gráficos de «en vivo» lo más altos que entren
+        live_panel = live_box(live, stats, tps_hist, right_w, prompt_hist, graph_height=gh)
+        if len(right) + len(live_panel) + procs_min <= room:
+            break
+    running = {p["name"] for p in cpu.get("procs") or []}
+    procs_all = 3 + len((cpu.get("procs") or [])[:8]) + sum(n not in running for n in EXPECTED_PROCS)
+    target = min(room, max(len(left), len(right) + len(live_panel) + procs_all))  # parejo con la izquierda
+    proc_rows = max(1, min(8, target - len(right) - len(live_panel) - 3))
+    right += live_panel + procs_box(cpu, right_w, proc_rows, fill=True)
+    for l in side_by_side(left, right):
         out.append((l, ""))
     out = out[:height - 1]
     out.append(footer(width, notice))
@@ -595,6 +905,10 @@ def snapshot():
         hist = fetch("/api/history")
     except Exception:  # noqa: BLE001
         hist = None
+    try:
+        state["kiosk"] = fetch("/api/kiosk")
+    except Exception:  # noqa: BLE001
+        pass  # panel viejo: el dashboard anda sin servicios ni energía
     return state, stats, hist
 
 
@@ -643,7 +957,7 @@ def run_curses():
         live, tps_hist = None, collections.deque(maxlen=240)
         prompt_hist = collections.deque(maxlen=240)
         last_live_sample = last_prompt_sample = None
-        last_live_fetch, cpu = 0, None
+        last_live_fetch, cpu, clients = 0, None, {}
         armed, notice = 0, None  # tecla S: primer toque arma, el segundo (dentro de CONFIRM_SECS) sale
         while True:
             if armed and time.time() - armed > CONFIRM_SECS and notice and notice.startswith("¿"):
@@ -655,6 +969,7 @@ def run_curses():
                 state, stats, hist = snapshot()
                 cached, last_fetch = (state, stats if stats is not None else cached[1], hist), time.time()
                 cpu = sampler.sample()
+                clients = connected_clients()
             if time.time() - last_live_fetch > LIVE_EVERY - 0.2:
                 last_live_fetch = time.time()
                 update = fetch_live()
@@ -673,7 +988,7 @@ def run_curses():
             h, w = scr.getmaxyx()
             scr.erase()
             for y, (text, style) in enumerate(render(*cached, cpu, width=w - 1, height=h - 1, live=live, tps_hist=tps_hist,
-                                                     prompt_hist=prompt_hist, notice=notice)):
+                                                     prompt_hist=prompt_hist, notice=notice, clients=clients)):
                 base = styles.get(style, curses.A_NORMAL)
                 attr, x, seg = base, 0, []
                 try:
@@ -747,7 +1062,8 @@ if __name__ == "__main__":
         tty = sys.stdout.isatty()
         for text, _ in render(*snapshot(), sampler.sample(), width=w, height=h, live=live,
                               tps_hist=[live["tps"]] if live and live.get("state") == "gen" else [],
-                              prompt_hist=[live["prompt_tps"]] if live and live.get("prompt_tps") is not None else []):
+                              prompt_hist=[live["prompt_tps"]] if live and live.get("prompt_tps") is not None else [],
+                              clients=connected_clients()):
             print("".join(ANSI.get(c, c) for c in text) + ANSI[RESET] if tty else strip_marks(text))
     else:
         import signal

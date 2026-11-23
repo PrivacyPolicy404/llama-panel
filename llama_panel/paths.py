@@ -18,7 +18,7 @@ from .i18n import _
 
 # campo de la interfaz -> variable
 FIELDS = {"img_dir": "LLAMA_IMG_DIR", "llama_server": "LLAMA_SERVER_BIN", "kobold": "KOBOLD_BIN",
-          "gpu_name": "LLAMA_GPU_NAME"}
+          "gpu_name": "LLAMA_GPU_NAME", "kwh_price": "LLAMA_KWH_PRICE"}
 TEXT_VARS = ("LLAMA_MODELS_DIR", "LLAMA_EXTRA_MODELS_DIRS")
 WALK_LIMIT = 20000  # entradas maximas a revisar al contar modelos (por si alguien escribe "/")
 
@@ -27,7 +27,8 @@ def current():
     """Valores vigentes, los campos fijados por variables de entorno y el estado de cada uno."""
     values = {"text_dirs": [str(d) for d in C.MODELS_DIRS], "img_dir": str(C.IMG_DIR),
               "llama_server": C.LLAMA_SERVER, "kobold": C.KOBOLD_BIN,
-              "gpu_name": C._LOCAL.get("LLAMA_GPU_NAME", "") or os.environ.get("LLAMA_GPU_NAME", "")}
+              "gpu_name": C._LOCAL.get("LLAMA_GPU_NAME", "") or os.environ.get("LLAMA_GPU_NAME", ""),
+              "kwh_price": os.environ.get("LLAMA_KWH_PRICE") or C._LOCAL.get("LLAMA_KWH_PRICE", "")}
     locked = [f for f, var in FIELDS.items() if os.environ.get(var)]
     if any(os.environ.get(v) for v in TEXT_VARS):
         locked.append("text_dirs")
@@ -151,6 +152,14 @@ def validate(values):
         if re.search(r"\s", str(values.get(k) or "").strip()):
             errors.append(_("La ruta de {prog} no puede tener espacios (va en un servicio de systemd).",
                             prog="llama-server" if k == "llama_server" else "KoboldCpp"))
+    price = str(values.get("kwh_price") or "").strip().replace(",", ".")
+    if price:
+        try:
+            ok = float(price) >= 0
+        except ValueError:
+            ok = False
+        if not ok:
+            errors.append(_("El precio del kWh tiene que ser un número (por ejemplo 95.5)."))
     if any(":" in d for d in dirs):
         errors.append(_("Las carpetas de modelos no pueden tener «:»."))
     if not str(values.get("llama_server") or "").strip():

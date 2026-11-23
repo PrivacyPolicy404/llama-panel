@@ -261,6 +261,9 @@ export const EN = {
     'Optional. Stable Diffusion / Flux <code>.safetensors</code> or <code>.gguf</code>.',
   'Nombre de la GPU': 'GPU name',
   'Opcional, solo para mostrar. Detectado: <b>{name}</b>.': 'Optional, display only. Detected: <b>{name}</b>.',
+  'Precio del kWh': 'Price per kWh',
+  'Opcional. Con esto el dashboard del modo IA muestra lo que gasta la GPU en plata.':
+    'Optional. With it, the AI mode dashboard shows what the GPU costs in money.',
   'Rutas aplicadas.': 'Paths applied.',
   // audio
   'Audio': 'Audio',

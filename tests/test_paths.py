@@ -17,6 +17,7 @@ class Validate(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(paths.validate(vals()), [])
         self.assertEqual(paths.validate(vals(text_dirs=["~/models", "/mnt/con espacio"])), [])
+        self.assertEqual(paths.validate(vals(kwh_price="95,5")), [])
 
     def test_rejects(self):
         self.assertTrue(paths.validate(vals(text_dirs=[])))
@@ -25,6 +26,8 @@ class Validate(unittest.TestCase):
         self.assertTrue(paths.validate(vals(llama_server="/opt/con espacio/llama-server")))
         self.assertTrue(paths.validate(vals(llama_server="")))
         self.assertTrue(paths.validate(vals(gpu_name="RX\n580")))
+        self.assertTrue(paths.validate(vals(kwh_price="caro")))
+        self.assertTrue(paths.validate(vals(kwh_price="-3")))
         self.assertTrue(paths.validate(vals(img_dir="/x\nLLAMA_SERVER_BIN=/evil")))
 
 

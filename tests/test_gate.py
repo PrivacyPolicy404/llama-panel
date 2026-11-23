@@ -286,3 +286,16 @@ class UnloadGuard(unittest.TestCase):
         self.s.router("GET", "/slots?model=M")
         self.assertEqual(self.sent[-1], "/slots?model=M")
 
+
+class ClientLog(unittest.TestCase):
+    def test_open_connections_and_last_active_request(self):
+        c = gate.Clients()
+        c.connect("192.168.0.7")
+        c.request("192.168.0.7", "text", "/v1/models", active=False)
+        c.request("192.168.0.7", "text", "/v1/chat/completions", "qwen")
+        c.connect("192.168.0.9")
+        c.disconnect("192.168.0.9")
+        snap = c.snapshot()
+        self.assertEqual({x["ip"]: x["open"] for x in snap["clients"]}, {"192.168.0.7": 1, "192.168.0.9": 0})
+        self.assertEqual((snap["last"]["path"], snap["last"]["model"]), ("/v1/chat/completions", "qwen"))
+        self.assertEqual(gate.client_ip(("::ffff:192.168.0.7", 5000, 0, 0)), "192.168.0.7")

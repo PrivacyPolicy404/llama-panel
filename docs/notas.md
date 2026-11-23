@@ -330,6 +330,16 @@ Lecciones de la primera prueba (2026-11-15):
   Arreglo de fondo: `video=HDMI-A-1:d` en la línea del kernel (GRUB), si eso que está en HDMI-A-1 no hace falta sin escritorio.
 - El dashboard se recarga solo cuando cambia `kiosk.py`.
 
+Cajas agregadas el 2026-11-22 (para llenar los huecos a 160x45, letra 12x24 en 1080p):
+- **Discos** (en «memoria · discos»): uso y MB/s leídos de cada disco montado, de `/proc/diskstats` en el propio
+  dashboard. Resalta en cian a partir de 20 MB/s: es la forma de ver de reojo si un modelo está leyendo del HDD por token.
+- **kWh** (en la caja de la GPU): solo la GPU (hwmon `power1`), integrada cada 2 s por `energy.py` y guardada por día
+  en `energia.json`. La CPU no entra: RAPL (`/sys/class/powercap/intel-rapl:0/energy_uj`) lo lee solo root, y
+  abrirlo con una regla de udev habilita el canal lateral de Platypus. No es lo que marca el medidor de la pared.
+- **servicios · red**: `systemctl --user show` (vía `/api/kiosk`) para el tiempo encendido. Los clientes conectados
+  salen de `/proc/net/tcp{,6}` (puertos 8080, 5001 y 8090), así se ven aunque la compuerta esté apagada. Quién hizo el
+  último pedido solo se sabe con la compuerta (swap) activa: sin ella, la API va directo a llama-server.
+
 Dashboard (2026-11-17): las barras de prompt y contexto ya no saltan de a tanda. llama-server informa el avance recién
 al terminar cada tanda (2048 tokens ≈ 15 s con Flash-Next) y `n_prompt_tokens` de `/slots` incluye la tanda en curso
 entera: el contexto marcaba 2048 al arrancar y el progreso iba 0 → 53 → 100 %. Ahora se estima dentro de la tanda con

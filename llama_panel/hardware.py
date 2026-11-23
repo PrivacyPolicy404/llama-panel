@@ -246,9 +246,12 @@ def latest():
 
 
 def _loop():
+    from . import energy
     while True:
         try:
-            HIST.append(sample())
+            s = sample()
+            HIST.append(s)
+            energy.meter().add(s.get("power"), s["t"])
         except Exception:  # noqa: BLE001
             pass
         time.sleep(INTERVAL)

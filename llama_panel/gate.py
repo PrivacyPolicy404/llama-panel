@@ -74,6 +74,53 @@ def event(msg, **kw):
     print("a demanda: " + msg.format(**kw), flush=True)
 
 
+# ---------- clientes (para el dashboard del modo IA) ----------
+def client_ip(addr):
+    ip = addr[0] if isinstance(addr, tuple) else str(addr)
+    return ip[7:] if ip.startswith("::ffff:") else ip  # IPv4 por un socket de doble pila
+
+
+class Clients:
+    """Conexiones abiertas por IP y el último pedido que prendió algo (no las consultas pasivas)."""
+    KEEP_S = 24 * 3600
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.open = collections.Counter()
+        self.seen = {}  # ip -> último pedido de cualquier tipo
+        self.last = None  # {"ip", "side", "path", "model", "t"}
+
+    def connect(self, ip):
+        with self.lock:
+            self.open[ip] += 1
+            self.seen[ip] = time.time()
+
+    def disconnect(self, ip):
+        with self.lock:
+            self.open[ip] -= 1
+            if self.open[ip] <= 0:
+                del self.open[ip]
+
+    def request(self, ip, side, path, model=None, active=True):
+        now = time.time()
+        with self.lock:
+            self.seen[ip] = now
+            if active:
+                self.last = {"ip": ip, "side": side, "path": path, "model": model, "t": now}
+
+    def snapshot(self, now=None):
+        now = now or time.time()
+        with self.lock:
+            for ip in [ip for ip, t in self.seen.items() if now - t > self.KEEP_S and ip not in self.open]:
+                del self.seen[ip]
+            clients = [{"ip": ip, "open": self.open.get(ip, 0), "t": t}
+                       for ip, t in sorted(self.seen.items(), key=lambda x: -x[1])]
+            return {"clients": clients, "last": dict(self.last) if self.last else None}
+
+
+CLIENTS = Clients()
+
+
 # ---------- árbitro: texto e imágenes no se pisan ----------
 class Busy(Exception):
     pass
@@ -201,6 +248,17 @@ class GateHandler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def setup(self):
+        super().setup()
+        self._ip = client_ip(self.client_address)
+        CLIENTS.connect(self._ip)
+
+    def finish(self):
+        try:
+            super().finish()
+        finally:
+            CLIENTS.disconnect(self._ip)
+
     def _upstream_port(self):
         return C.INNER_PORTS[self.side]
 
@@ -242,7 +300,15 @@ class GateHandler(BaseHTTPRequestHandler):
             return
         path = urllib.parse.urlsplit(self.path).path
         if not needs_service(self.side, self.command, path):
+            CLIENTS.request(self._ip, self.side, path, active=False)
             return self._forward(body, passive=True)
+        model = None
+        if body and self.side == "text":
+            try:
+                model = json.loads(body).get("model")
+            except (ValueError, AttributeError):
+                pass
+        CLIENTS.request(self._ip, self.side, path, model)
         try:
             self.arbiter.enter(self.side)
         except Busy:
