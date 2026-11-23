@@ -10,7 +10,8 @@ telefónica, 15 % más rápido y ruido). Cada audio se transcribe sin prompt y c
 - términos: cuántos nombres del vocabulario aparecen bien escritos (sin importar mayúsculas ni tildes)
 - WER: palabras mal sobre el total (distancia de edición por palabras, sin puntuación ni tildes)
 - fugas: con silencio y con ruido solo, ¿Whisper «escucha» el vocabulario? (el riesgo conocido del --prompt)
-Por defecto en el CPU (no toca la GPU); --whisper-cli y --model para probar otro. Resultados en ~/llama-panel-results/<fecha>-whisper-vocab/.
+Por defecto en el CPU (no toca la GPU); --whisper-cli y --model para probar otro; --phonon URL compara con un
+`fermion serve phonon-2.5` (Parakeet, el vocabulario va como hotwords). Resultados en ~/llama-panel-results/<fecha>-whisper-vocab/.
 """
 import argparse
 import json
@@ -19,6 +20,8 @@ import sys
 import tempfile
 import time
 import unicodedata
+import urllib.request
+import uuid
 from datetime import date
 from pathlib import Path
 
@@ -79,6 +82,23 @@ def synth(voice_path, text, out):
         sp.stop()
 
 
+def phonon_transcribe(url, audio, prompt=None, lam=None):
+    """Transcribe con un `fermion serve` (ruta de OpenAI); el vocabulario va como hotwords. Devuelve (texto, None)."""
+    b = uuid.uuid4().hex
+    parts = [("model", "FermionResearch/Phonon-2.5"), ("response_format", "json")]
+    if prompt:
+        parts.append(("hotwords", prompt.rstrip(".")))
+        if lam is not None:
+            parts.append(("hotword_lambda", str(lam)))
+    body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in parts)
+    body += (f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n'
+             f"Content-Type: audio/wav\r\n\r\n").encode() + audio + f"\r\n--{b}--\r\n".encode()
+    req = urllib.request.Request(url.rstrip("/") + "/v1/audio/transcriptions", data=body,
+                                 headers={"Content-Type": f"multipart/form-data; boundary={b}"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.load(r)["text"].strip(), None
+
+
 def degrade(src, cond, out):
     cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", str(src)] + CONDS[cond] + ["-ar", "16000", "-ac", "1", str(out)]
     subprocess.run(cmd, check=True)
@@ -92,6 +112,8 @@ def main():
     ap.add_argument("--out", default=str(Path.home() / "llama-panel-results" / f"{date.today()}-whisper-vocab"))
     ap.add_argument("--whisper-cli", help="otro whisper-cli (por ejemplo ~/whisper.cpp/build-vulkan/bin/whisper-cli)")
     ap.add_argument("--model", help="otro modelo de Whisper (por defecto el elegido en el panel)")
+    ap.add_argument("--phonon", metavar="URL", help="usar un `fermion serve` en vez de Whisper (http://127.0.0.1:8011)")
+    ap.add_argument("--hotword-lambda", type=float, help="con --phonon: cuánto empujan los hotwords (el servidor usa 2)")
     ap.add_argument("--min-ac", type=int, default=384, help="ventana mínima de audio (turbo repite con 384)")
     args = ap.parse_args()
     if args.whisper_cli:
@@ -101,6 +123,8 @@ def main():
         AM.selected = lambda: {**sel(), "stt": str(Path(args.model).expanduser())}
     ctx = voice.audio_ctx
     voice.audio_ctx = lambda secs: ctx(secs) and max(ctx(secs), -(-args.min_ac // 64) * 64)
+    if args.phonon:
+        voice.transcribe = lambda audio, prompt=None: phonon_transcribe(args.phonon, audio, prompt, args.hotword_lambda)
     prompt = args.prompt or ", ".join(VOCAB) + "."
     voices = [Path(v["path"]) for v in AM.list_audio_models()["tts"]] if hasattr(AM, "list_audio_models") else []
     if not voices:

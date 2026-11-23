@@ -1227,6 +1227,41 @@ Al preparar la prueba apareció un bug del panel: con el panel abierto, «Descar
 mostrando el modelo como cargado unos instantes y la telemetría pedía `/slots?model=…`, que lo volvía a cargar.
 Arreglado en `services.router` (las consultas que nombran un modelo que se está descargando no salen).
 
+### 5.37 Phonon-2.5 (Parakeet a ~2 bits) en lugar de Whisper (2026-11-18)
+
+Phonon-2 de Fermion Research (Parakeet TDT 0.6B v3 de NVIDIA recuantizado a ~2 bits, 160 MB, CPU) tiene buena prensa,
+pero es solo inglés. Se probó su hermano multilingüe **Phonon-2.5** (25 idiomas; en FLEURS publican 4.8 % de WER en
+español). Hipótesis: igual o mejor que whisper-large-v3-turbo y en el CPU, lo que liberaría la GPU. Recibe
+`hotwords` (hasta 25 términos que el decodificador favorece), así que el vocabulario de `hearing.py` tendría
+equivalente.
+
+Método: `pip install fermion-research` en `~/phonon` (torch de CPU), modelo en `~/models-nvme/phonon`
+(`FERMION_CACHE_DIR`; sha256 iguales a los de la API de Hugging Face y a los fijados en el paquete),
+`fermion serve phonon-2.5 --port 8011` y `tools/bench/whisper_vocab.py --phonon http://127.0.0.1:8011` con los
+mismos 144 audios (4 voces × 12 frases × 3 condiciones; el vocabulario va como `hotwords`).
+
+| | WER con vocabulario | nombres con vocabulario | WER sin | nombres sin | tiempo por audio |
+|---|---|---|---|---|---|
+| whisper small q8_0, CPU | 17.5 % | 85 % | | 39 % | 0.7 s |
+| whisper large-v3-turbo q5_0, GPU | **14.0 %** | **84 %** | | 57 % | 0.93 s |
+| Phonon-2.5, CPU (hotwords λ=2) | 22.1 % | 66 % | 24.4 % | 57 % | **0.06 s** |
+| Phonon-2.5, λ=4 / λ=7 | 24.4 / 30.6 % | 65 / 64 % | | | 0.06 s |
+
+Por voz (WER con vocabulario, turbo → Phonon): daniela (AR) 23.5 → 31 %, davefx (ES) 11 → 17 %, ald (MX) 15 → 26 %,
+claude (MX) 7 → 14 %. Falla en lo mismo que Whisper («Home Assistant», «quincho» → «King Shot») y además en lo que turbo
+acierta («Villa Gesell» → «Villajesá», «clima en Tandil» → «climatandil»). En el silencio y con ruido solo no escribe
+nada (Whisper inventa subtítulos), salvo con λ=7: «1 to 1 to 1...».
+
+Ojo al medir: la columna «sin» varió 24.4 / 26.5 / 24.5 % entre tres corridas iguales, porque Piper y el ruido
+sintético no salen iguales cada vez. Diferencias de ±2 puntos en este bench son ruido.
+
+Conclusión: **no reemplaza a Whisper**. Es 15 veces más rápido (0.06 s para 3 a 5 s de audio, con el modelo
+cargado en un servidor), pero comete un 60 % más de errores que turbo y hasta más que small en el CPU, que es el
+respaldo actual. Podría servir si sale una versión afinada para español rioplatense, o como respaldo instantáneo si
+Whisper en el CPU no alcanzara. Quedó instalado en `~/phonon` (1.4 GB) y `~/models-nvme/phonon` (319 MB).
+
+---
+
 ## 6. Los diez parches (fork `PrivacyPolicy404/llama.cpp`, rama `ot-host-buffers`)
 
 ### Parche 1 — `-ot` con buffers de memoria fija (`Vulkan_Host`)
@@ -1336,6 +1371,7 @@ Permite fijar solo parte de los expertos. Ver 5.2. Detalle: con mmap, un overrid
 | Vocabulario recortado para el borrador MTP | +3 % a temp 0, -6 % a temp 0.8 (5.12) |
 | Overclock de VRAM (pp_od_clk_voltage) | +1–2 % (tope de potencia); el SMU falla con la tabla modificada: cuelgue y memoria clavada (5.13) |
 | Cache KV con valores en Q4_0 («k8v4» de Basalt) | KLD 0.0035 → 0.0125 por 190 MiB, misma velocidad (5.36) |
+| Phonon-2.5 (Parakeet a ~2 bits) en vez de Whisper | WER 22 % vs 14 % de turbo, nombres 66 vs 84 %; eso sí, 15 veces más rápido en el CPU (5.37) |
 
 ---
 
