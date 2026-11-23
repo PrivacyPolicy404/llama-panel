@@ -1,5 +1,5 @@
 // Pestana de modelos de texto: lista, estado en el router, carga/descarga y editor de ajustes.
-import { $, $$, el, esc, fix, gb, median, modelStatus, post, report, setStatus, withBusy } from './util.js';
+import { $, $$, el, esc, fix, gb, median, modelStatus, post, report, setStatus, withBusy, WINDOWS_DISK_TIP } from './util.js';
 import { S, hooks, setDirty } from './state.js';
 import { t, locale } from './i18n.js';
 
@@ -14,6 +14,7 @@ function textBadges(m, cfg) {
   if (nExtra) b.push(`<span class="badge">${nExtra > 1 ? t('+{n} opciones', { n: nExtra }) : t('+1 opción')}</span>`);
   const nAi = Object.keys(cfg.ai || {}).length + (cfg.extra_ai || '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
   if (nAi) b.push(`<span class="badge accent" title="${esc(t('Se aplican solo con el modo IA activo'))}">${t('+{n} en modo IA', { n: nAi })}</span>`);
+  if (m.windows_disk) b.push(`<span class="badge warn" title="${esc(t(WINDOWS_DISK_TIP))}">${t('en el disco de Windows')}</span>`);
   if (vramBytes && m.size > vramBytes * 0.95) b.push(`<span class="badge warn" title="${esc(t('No entra completo en la VRAM: parte va a la RAM y será más lento'))}">${t('más grande que la VRAM')}</span>`);
   return b.join('');
 }

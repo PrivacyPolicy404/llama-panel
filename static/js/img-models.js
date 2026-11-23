@@ -1,5 +1,5 @@
 // Pestana de modelos de imagen: tarjetas, opciones extra y "usar este".
-import { $, $$, el, esc, gb, post, report, withBusy } from './util.js';
+import { $, $$, el, esc, gb, post, report, withBusy, WINDOWS_DISK_TIP } from './util.js';
 import { S, hooks, setDirty } from './state.js';
 import { t } from './i18n.js';
 
@@ -20,7 +20,7 @@ export function renderImgModels() {
       <div class="card img-card" data-key="${esc(m.key)}">
         <div class="model-name" title="${esc(m.key)}">${esc(m.id)}</div>
         <span class="badge accent sel-tag" hidden>${t('Seleccionado')}</span>
-        <div class="model-meta"><span class="badge">${gb(m.size)}</span></div>
+        <div class="model-meta"><span class="badge">${gb(m.size)}</span>${m.windows_disk ? `<span class="badge warn" title="${esc(t(WINDOWS_DISK_TIP))}">${t('en el disco de Windows')}</span>` : ''}</div>
         <div class="comps">${comps}</div>
         <label class="field"><span>${t('Opciones extra')}</span>
           <input type="text" class="mono" data-extra value="${esc(m.extra)}" placeholder="${esc(t('ej: --sdoffloadcpu --sdtiledvae 768'))}" spellcheck="false"></label>

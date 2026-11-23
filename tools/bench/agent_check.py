@@ -5,7 +5,7 @@ M="Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8"
 def chat(messages, **kw):
     body={"model":M,"messages":messages,"temperature":0.6,"max_tokens":kw.pop("max_tokens",700),**kw}
     t=time.time()
-    r=json.loads(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8080/v1/chat/completions",data=json.dumps(body).encode(),headers={"Content-Type":"application/json"}),timeout=1200).read())
+    r=json.loads(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:"+os.environ.get("LLAMA_CHAT_PORT","8080")+"/v1/chat/completions",data=json.dumps(body).encode(),headers={"Content-Type":"application/json"}),timeout=1200).read())
     m=r["choices"][0]["message"]; tm=r.get("timings",{})
     return m, tm, time.time()-t
 def show(tag,m,tm,w):

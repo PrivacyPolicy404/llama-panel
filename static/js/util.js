@@ -106,3 +106,6 @@ export function modelStatus(ms, textOn) {
     default: return ms.failed ? ['critical', 'Falló'] : ['', 'Sin cargar'];
   }
 }
+
+// WSL2: un modelo bajo /mnt/ se lee del disco de Windows por 9P, mucho más lento que desde el disco de Linux
+export const WINDOWS_DISK_TIP = 'Está en el disco de Windows (/mnt/…): en WSL carga unas 4 o 5 veces más lento que desde el disco de Linux. Copialo (no lo enlaces) a ~/models o ~/imgmodels';

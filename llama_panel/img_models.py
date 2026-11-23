@@ -72,6 +72,14 @@ def pick_img(settings, models):
 GPU_BACKEND_FLAGS = {"--usevulkan", "--usecuda", "--usecublas", "--usehipblas", "--useclblast", "--usecpu"}
 
 
+def default_backend():
+    """Vulkan en la GPU 0. En WSL2 Vulkan es Mesa Dozen (traducción sobre D3D12): CUDA con NVIDIA y ROCm con AMD."""
+    from . import hardware as H
+    if H.IS_WSL:
+        return ["--usecuda"] if H.NVIDIA_SMI else ["--usehipblas"]
+    return ["--usevulkan", "0"]
+
+
 def build_kobold_args(m, extra=""):
     args = ["--sdmodel", m["path"]]
     for flag, path in m["comps"]:
@@ -80,9 +88,9 @@ def build_kobold_args(m, extra=""):
         user = shlex.split(extra or "")
     except ValueError:
         user = []
-    # Vulkan en la GPU 0 salvo que las opciones del modelo elijan otro backend (por ejemplo --usecuda)
+    # el de la máquina salvo que las opciones del modelo elijan otro backend (por ejemplo --usecuda)
     if not any(a in GPU_BACKEND_FLAGS for a in user):
-        args += ["--usevulkan", "0"]
+        args += default_backend()
     host, port = C.backend("img")
     # Sin --host KoboldCpp escucha en IPv4 e IPv6 (abre un socket de cada uno con la misma dirección, así que con
     # 0.0.0.0 el de IPv6 falla). god.local también se publica por IPv6 y Windows la prefiere: sin esto, StableUI

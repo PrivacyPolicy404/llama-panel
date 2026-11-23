@@ -32,6 +32,7 @@ class Names(unittest.TestCase):
         from llama_panel.hardware import short_gpu_name
         self.assertEqual(short_gpu_name("AMD Radeon RX 580 Series (RADV POLARIS10)"), "RX 580")
         self.assertEqual(short_gpu_name("NVIDIA GeForce RTX 3060"), "RTX 3060")
+        self.assertEqual(short_gpu_name("NVIDIA GeForce RTX 2060 with Max-Q Design"), "RTX 2060 Max-Q")
         self.assertEqual(short_gpu_name("Intel(R) Arc(tm) A770 Graphics (DG2)"), "Arc A770")
         self.assertIsNone(short_gpu_name(""))
 

@@ -3,8 +3,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from llama_panel import config as C
+from llama_panel import hardware as H
 from llama_panel import img_models as IM
 from llama_panel import text_models as TM
 
@@ -157,7 +159,8 @@ class ImgScan(unittest.TestCase):
 
     def test_kobold_args(self):
         m = {"path": "/i/f.gguf", "comps": [("sdvae", "/i/vae.st")]}
-        args = IM.build_kobold_args(m, "--sdoffloadcpu --sdtiledvae 768")
+        with mock.patch.object(H, "IS_WSL", False):
+            args = IM.build_kobold_args(m, "--sdoffloadcpu --sdtiledvae 768")
         self.assertEqual(args[:4], ["--sdmodel", "/i/f.gguf", "--sdvae", "/i/vae.st"])
         self.assertEqual(args[-3:], ["--sdoffloadcpu", "--sdtiledvae", "768"])
         self.assertIn("--usevulkan", args)
@@ -167,6 +170,23 @@ class ImgScan(unittest.TestCase):
         args = IM.build_kobold_args(m, "--usecuda")
         self.assertNotIn("--usevulkan", args)
         self.assertEqual(args[-1], "--usecuda")
+
+    def test_windows_disk(self):
+        self.assertTrue(C.on_windows_disk("/mnt/c/Users/x/models/a.gguf"))
+        self.assertTrue(C.on_windows_disk("/mnt/d/a.safetensors"))
+        self.assertFalse(C.on_windows_disk("/mnt/wsl/a.gguf"))
+        self.assertFalse(C.on_windows_disk("/home/x/models/a.gguf"))
+
+    def test_kobold_backend_in_wsl(self):
+        # en WSL Vulkan es Dozen (sobre D3D12): CUDA con NVIDIA, ROCm con AMD; las opciones del modelo mandan
+        m = {"path": "/i/f.gguf", "comps": []}
+        with mock.patch.object(H, "IS_WSL", True), mock.patch.object(H, "NVIDIA_SMI", "/usr/lib/wsl/lib/nvidia-smi"):
+            self.assertIn("--usecuda", IM.build_kobold_args(m))
+            self.assertNotIn("--usecuda", IM.build_kobold_args(m, "--usevulkan 0"))
+        with mock.patch.object(H, "IS_WSL", True), mock.patch.object(H, "NVIDIA_SMI", None):
+            args = IM.build_kobold_args(m)
+            self.assertIn("--usehipblas", args)
+            self.assertNotIn("--usevulkan", args)
 
     def test_validation_rejects_shell_chars(self):
         models = [{"key": "a"}]

@@ -134,6 +134,8 @@ export const EN = {
   '+{n} en modo IA': '+{n} in AI mode',
   'No entra completo en la VRAM: parte va a la RAM y será más lento': "Doesn't fully fit in VRAM: part goes to RAM and it will be slower",
   'más grande que la VRAM': 'larger than VRAM',
+  'en el disco de Windows': 'on the Windows drive',
+  'Está en el disco de Windows (/mnt/…): en WSL carga unas 4 o 5 veces más lento que desde el disco de Linux. Copialo (no lo enlaces) a ~/models o ~/imgmodels': "It's on the Windows drive (/mnt/…): in WSL it loads about 4–5 times slower than from the Linux disk. Copy it (don't link it) to ~/models or ~/imgmodels",
   'llama-server no conoce esta opción (¿mal escrita?)': "llama-server doesn't know this option (typo?)",
   'repetida: vale la última': 'repeated: the last one wins',
   'en modo IA reemplaza a la de arriba': 'in AI mode it replaces the one above',

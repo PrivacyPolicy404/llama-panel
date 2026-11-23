@@ -10,13 +10,14 @@ y un prompt largo (~3200 tokens), lo descarga y compara. Avisa si algo rinde men
 Al final deja el servidor de texto como estaba. Cargar texto apaga el generador de imagenes.
 """
 import json
+import os
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
 PANEL = "http://127.0.0.1:8090"
-ROUTER = "http://127.0.0.1:8080"
+ROUTER = "http://127.0.0.1:" + os.environ.get("LLAMA_CHAT_PORT", "8080")  # el de paths.env si se cambió
 BASELINES = Path(__file__).with_name("baselines.json")
 TOLERANCE = 0.85
 DEFAULT_MODELS = ["Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K", "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8"]

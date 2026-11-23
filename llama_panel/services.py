@@ -48,15 +48,17 @@ def gpu_access_without_desktop():
 
 
 def ai_mode_state():
-    """Modo IA: escritorio apagado y dashboard de texto en tty1 (ver scripts/install-modo-ia.sh)."""
-    installed = os.path.exists(AI_MODE_HELPER)
+    """Modo IA: escritorio apagado y dashboard de texto en tty1 (ver scripts/install-modo-ia.sh). En WSL2 no hay
+    escritorio de Linux ni tty1 que mostrar: queda como no instalado y la interfaz esconde el botón."""
+    from .hardware import IS_WSL
+    installed = not IS_WSL and os.path.exists(AI_MODE_HELPER)
     active = installed and run("systemctl", "is-active", "llama-kiosk.service") == "active"
     return {"installed": installed, "active": active, "gpu_ok": gpu_access_without_desktop()}
 
 
 def ai_mode(on):
     """Prende o apaga el modo IA. Devuelve (ok, salida)."""
-    if not os.path.exists(AI_MODE_HELPER):
+    if not ai_mode_state()["installed"]:
         return False, _("El modo IA no está instalado: correr una vez  sudo ~/llama-panel/scripts/install-modo-ia.sh")
     if on and not gpu_access_without_desktop():
         return False, _("Sin escritorio, los modelos perderían el acceso a la GPU. Correr de nuevo  "

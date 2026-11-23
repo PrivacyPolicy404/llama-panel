@@ -8,6 +8,7 @@ La salida forzada prueba estabilidad y capacidad, no calidad semántica.
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import threading
@@ -16,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 PANEL = "http://127.0.0.1:8090"
-ROUTER = "http://127.0.0.1:8080"
+ROUTER = "http://127.0.0.1:" + os.environ.get("LLAMA_CHAT_PORT", "8080")  # el de paths.env si se cambió
 MODEL = "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-Q2_0-hcq8"
 
 

@@ -92,10 +92,12 @@ def config():
         "vram_total": hardware.latest().get("vram_total"),
         "reasoning_opts": [(v, _(label)) for v, label in C.REASONING_OPTS],
         "ports": {"chat": C.CHAT_PORT, "img": C.IMG_PORT},
-        "text_models": [{"key": m["key"], "id": m["id"], "size": m["size"], "cfg": TM.model_cfg(settings, m)}
+        "text_models": [{"key": m["key"], "id": m["id"], "size": m["size"], "cfg": TM.model_cfg(settings, m),
+                         "windows_disk": C.on_windows_disk(m["path"])}
                         for m in TM.scan_models()],
         "img_models": [{"key": m["key"], "id": m["id"], "size": m["size"],
                         "comps": [(f, Path(p).name) for f, p in m["comps"]],
+                        "windows_disk": C.on_windows_disk(m["path"]),
                         "extra": (settings["image"]["models"].get(m["key"]) or {}).get("extra", "")}
                        for m in imgs],
         "img_selected": sel["key"] if sel else "",

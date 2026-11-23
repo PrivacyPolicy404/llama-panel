@@ -33,7 +33,12 @@ def _gpu_dir():
 GPU_DIR = _gpu_dir()
 HWMON = next(iter(sorted(glob.glob(f"{GPU_DIR}/hwmon/hwmon*"))), None) if GPU_DIR else None
 # Sin amdgpu, NVIDIA por nvidia-smi (sin probar en esta máquina)
-NVIDIA_SMI = None if GPU_DIR else shutil.which("nvidia-smi")
+# WSL2: la GPU llega por /dev/dxg desde el driver de Windows (sin amdgpu ni /sys/class/drm)
+IS_WSL = os.path.exists("/proc/sys/fs/binfmt_misc/WSLInterop") or "microsoft" in os.uname().release.lower()
+# En WSL2 nvidia-smi viene del driver de Windows en /usr/lib/wsl/lib, que no está en el PATH de los servicios de systemd
+WSL_LIB = "/usr/lib/wsl/lib"
+NVIDIA_SMI = None if GPU_DIR else (shutil.which("nvidia-smi")
+                                   or shutil.which("nvidia-smi", path=WSL_LIB))
 OC_MHZ_FILE = Path("/etc/llama-gpu-oc.mhz")  # lo escribe scripts/install-gpu-mclk.sh --oc
 
 
@@ -47,6 +52,7 @@ def _run(*cmd, timeout=3, env=None):
 def short_gpu_name(name):
     """'AMD Radeon RX 580 Series (RADV POLARIS10)' -> 'RX 580'; 'NVIDIA GeForce RTX 3060' -> 'RTX 3060'."""
     name = re.sub(r"\s*\([^)]*\)", "", name or "")  # (RADV POLARIS10), (R), (tm), (DG2)
+    name = re.sub(r"\bwith Max-Q Design\b", "Max-Q", name)  # las de notebook: 'GeForce RTX 2060 with Max-Q Design'
     for word in ("AMD", "ATI", "NVIDIA", "GeForce", "Radeon", "Intel(R)", "Intel", "Series", "Graphics", "Corporation"):
         name = re.sub(rf"(?<!\S){re.escape(word)}(?!\S)", "", name)
     return " ".join(name.split()) or None

@@ -41,6 +41,12 @@ def _env(name, default, allow_empty=False):
     return str(default)
 
 
+def on_windows_disk(path):
+    """WSL2 monta los discos de Windows en /mnt/<letra> (9P): leer un modelo de ahí es mucho más lento."""
+    parts = Path(os.path.realpath(path)).parts
+    return len(parts) > 2 and parts[1] == "mnt" and len(parts[2]) == 1
+
+
 SETTINGS_FILE = CFG_DIR / "settings.json"
 PRESET_FILE = CFG_DIR / "presets.ini"
 IMG_ENV = CFG_DIR / "kobold.env"
@@ -69,8 +75,10 @@ SERVICE = "llama-router"
 IMG_SERVICE = "kobold-img"
 PANEL_SERVICE = "llama-panel"
 PANEL_PORT = int(os.environ.get("LLAMA_PANEL_PORT", "8090"))
-CHAT_PORT = 8080  # puertos que usan los clientes
-IMG_PORT = 5001
+# Puertos que usan los clientes. Se cambian en paths.env si otro programa ya ocupa alguno (por ejemplo, un contenedor
+# de Docker en el 8080, algo común en WSL)
+CHAT_PORT = int(_env("LLAMA_CHAT_PORT", 8080))
+IMG_PORT = int(_env("LLAMA_IMG_PORT", 5001))
 # Con el encendido a demanda (gate.py) el panel atiende CHAT_PORT e IMG_PORT y los servicios escuchan solo en la
 # maquina, en estos puertos
 INNER_PORTS = {"text": 18080, "img": 15001}
