@@ -149,12 +149,9 @@ git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
 cd ~/llama-panel && python3 panel.py --install
 ```
 
-El Compañero todavía es experimental y no está en `main`. Para probar la prerelease desde un clon nuevo, usá su rama:
+Voz para el Compañero (opcional):
 
 ```bash
-git clone --branch experimental/companion https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
-cd ~/llama-panel
-python3 panel.py --install
 sudo apt install curl ffmpeg cmake build-essential python3-venv  # Ubuntu/Debian
 scripts/install-voice.sh
 ```

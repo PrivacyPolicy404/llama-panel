@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-23)
+
+The Buddy, complete. / El Compañero completo.
 
 - Read-only buddy tools for one short web search per turn and ephemeral client context (language and timezone,
   plus approximate location only when explicitly enabled on that device). Search results are limited to fixed
@@ -21,7 +23,19 @@
   recorder and a choice of Buddy-only or whole-panel scope. Unsafe bare keys are rejected for the whole panel and
   interactive controls are never intercepted.
   Background tabs now close their reminder event stream so several open tabs cannot exhaust the browser connection pool.
-- Documented the experimental Buddy installation from a fresh clone, its system dependencies, the exact Hugging Face
+- Buddy instructions in editable sections (identity, how it talks, environment, when to use tools) with factory
+  versions in Spanish and English; only what you change is saved. A "Save and test" button runs 10 of the 32 tool
+  choice cases in `buddy_eval.py` (~1 min); against the previous instructions, 72 % to ~86 %.
+- The chat history is trimmed once every 6 messages instead of on every request, so long chats no longer reprocess
+  the whole prompt (~20 s) each turn. After the first turn the fixed prompt is saved as the `companero` profile and
+  preloaded when the model loads again (~2000 tokens fewer to process).
+- Hearing: Whisper gets a vocabulary built from the buddy's name, area, places asked about, Home Assistant, memory and
+  learned corrections (taken from what the model understood in its tools, applied the second time, deletable). The
+  last 50 recordings stay on the machine to compare with and without the vocabulary every 20 or on demand. Invented
+  annotations and repeated phrases from Whisper are filtered out.
+- Brave Search as a web search provider (its key stays in a private file on the server).
+- The morning summary can be turned off with a checkbox without losing its time.
+- Documented the Buddy installation from a fresh clone, its system dependencies, the exact Hugging Face
   audio model sources, sizes, licenses and verified hashes; the voice installer now diagnoses every required command.
 - Updated the bilingual README screenshots to show the Buddy using its time and web-search tools; screenshot language
   selection is now deterministic for reproducible captures.
@@ -73,7 +87,7 @@ The Buddy and WSL2. / El Compañero y WSL2.
 Experimental companion prerelease. / Prerelease experimental del Compañero.
 
 It contained the Buddy features later released in 0.2.0, plus the web search and client context listed
-under Unreleased.
+under 0.3.0.
 
 ## 0.1.0 (2026-11-16)
 

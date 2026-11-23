@@ -149,12 +149,9 @@ git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
 cd ~/llama-panel && python3 panel.py --install
 ```
 
-The Buddy is currently experimental and is not in `main`. To try the prerelease from a fresh clone, use its branch:
+Voice for the Buddy (optional):
 
 ```bash
-git clone --branch experimental/companion https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel
-cd ~/llama-panel
-python3 panel.py --install
 sudo apt install curl ffmpeg cmake build-essential python3-venv  # Ubuntu/Debian
 scripts/install-voice.sh
 ```

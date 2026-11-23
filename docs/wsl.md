@@ -31,7 +31,7 @@ Al terminar, lo que funcione pasa a una sección «WSL» del README (en los dos 
    - En 6 GB entra Animagine XL en `.safetensors` fp16 (~6.5 GB en disco, justo) o mejor en GGUF Q8_0 (~3.5 GB).
    - Para texto, si no hay ninguno, uno chico que entre en 6 GB (un 4B u 8B en Q4_K_M). Al bajar, verificar el
      sha256 contra la API de Hugging Face.
-4. `git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel`, rama `experimental/wsl`,
+4. `git clone https://github.com/PrivacyPolicy404/llama-panel.git ~/llama-panel` (rama `main`) y
    `python3 panel.py --install`. Abrir `http://localhost:8090` desde el navegador de Windows.
 5. Cargar el modelo desde el panel y medir con `python3 tools/bench/smoke_models.py`.
 6. Imágenes con KoboldCpp (binario de Linux con CUDA) y `--usecuda` en las opciones del modelo, con el Animagine
