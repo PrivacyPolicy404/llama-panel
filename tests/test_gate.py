@@ -257,3 +257,32 @@ class OfflineModels(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnloadGuard(unittest.TestCase):
+    """Mientras el panel descarga un modelo, las consultas que lo nombran no salen: lo volvían a cargar."""
+
+    def setUp(self):
+        from llama_panel import services
+        self.s = services
+        self.sent = []
+        p = mock.patch.object(services, "http_json", side_effect=lambda port, m, path, body, t: self.sent.append(path) or [])
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(services._UNLOADING.clear)
+
+    def test_queries_naming_the_model_wait_for_the_unload(self):
+        self.s.router("POST", "/models/unload", {"model": "M"})
+        with self.assertRaises(RuntimeError):
+            self.s.router("GET", "/slots?model=M")
+        self.s.router("GET", "/slots?model=OTRO")  # otro modelo, sin problema
+        self.s.router("GET", "/models")
+        self.assertEqual(self.sent, ["/models/unload", "/slots?model=OTRO", "/models"])
+
+    def test_guard_ends_when_the_router_shows_it_unloaded(self):
+        self.s.router("POST", "/models/unload", {"model": "M"})
+        with mock.patch.object(self.s, "http_json", return_value={"data": [{"id": "M", "status": {"value": "unloaded"}}]}):
+            self.s.router_models()
+        self.s.router("GET", "/slots?model=M")
+        self.assertEqual(self.sent[-1], "/slots?model=M")
+

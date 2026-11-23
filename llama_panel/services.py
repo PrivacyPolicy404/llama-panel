@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import config as C
@@ -89,7 +90,25 @@ def http_json(port, method, path, body=None, timeout=3):
     return json.loads(raw) if raw else {}
 
 
+# Modelos que el panel mandó descargar. Mientras se descarga, el router lo sigue mostrando como cargado y cualquier
+# consulta que lo nombre (/slots?model=…, de la telemetría o del gate) queda en cola y lo vuelve a cargar: con el
+# panel abierto en el navegador, «Descargar» no descargaba (2026-11-18). Hasta que el router lo muestre descargado,
+# esas consultas no salen.
+_UNLOADING = {}
+UNLOAD_GUARD_S = 30
+
+
+def _named_model(path):
+    return (urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get("model") or [None])[0]
+
+
 def router(method, path, body=None, timeout=3):
+    if path == "/models/unload" and isinstance(body, dict) and body.get("model"):
+        _UNLOADING[body["model"]] = time.time()
+    else:
+        mid = _named_model(path)
+        if mid and time.time() - _UNLOADING.get(mid, 0) < UNLOAD_GUARD_S:
+            raise RuntimeError(f"{mid} se está descargando")
     return http_json(C.backend_port("text"), method, path, body, timeout)
 
 
@@ -113,6 +132,8 @@ def router_models():
     out = {}
     for m in data:
         st = m.get("status") or {}
+        if st.get("value", "unloaded") == "unloaded":
+            _UNLOADING.pop(m["id"], None)  # ya está descargado: las consultas vuelven a ser inofensivas
         out[m["id"]] = {"status": st.get("value", "unloaded"), "failed": bool(st.get("failed")),
                         "ctx_max": m.get("context_length")}
     return out
