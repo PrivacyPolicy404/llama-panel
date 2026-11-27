@@ -1,0 +1,54 @@
+# Qué va al archivo y en qué orden. Lo lee tools/archivo/archivar.py.
+#
+# [N] Título            empieza la etapa N
+# fuente | incluir | carpeta | estado | nota
+#
+# fuente:   hf:dueño/repo       repo de Hugging Face (se fija la revisión del momento de la descarga)
+#           local:~/carpeta     algo que ya está en esta máquina (no necesita internet)
+#           git:url-o-ruta      repositorio git, se guarda como un .bundle (git clone archivo.bundle lo recupera)
+#           url:https://...     un archivo suelto (papers); en "incluir" va el nombre con que se guarda
+# incluir:  patrones separados por coma, sobre la ruta del archivo en el repo ("*" = todo).
+#           "!patrón" excluye (ej. !*Q6_K_L* para que *Q6_K* no traiga también el Q6_K_L).
+#           De Hugging Face siempre se suman README.md y LICENSE* de la raíz.
+# carpeta:  dónde queda dentro del archivo (una por línea, no se repiten)
+# estado:   ok        nombre confirmado
+#           verificar sacado de blogs o de memoria: `bajar` lo saltea hasta que se confirme con `tamanos`/`buscar`
+#           y se cambie a ok (o se corre con --incluir-sin-verificar)
+#
+# Tamaños aproximados; `archivar.py tamanos N` da los reales.
+
+[1] Lo que ya corre en esta PC (sin internet) · ~130 GB
+local:~/models-nvme/qwen3.8-flash-next-hcq8 | * | modelos/qwen3.8-flash-next-hcq8 | ok | Flash-Next GSQ-RCO abliterado (SC117) Q2_0 con hc en Q8_0: el de todos los días. El shard de n-gramas es enlace duro del original y se guarda una sola vez
+local:~/models-nvme/qwen3.8-flash-next | * | modelos/qwen3.8-flash-next-sc117 | ok | El mismo tal como vino de SC117 (hc en BF16) y los borradores MTP, incluido el d2t65k recortado (parche 8)
+local:/mnt/hdd1/gen/models | Huihui-Qwen3.6-35B-A3B-abliterated* | modelos/qwen3.6-35b-a3b-huihui | ok | Qwen3.6-35B-A3B abliterado por huihui-ai, Q4_K: el rápido
+
+[2] Conocimiento: código y papers · ~1 GB
+git:~/llama.cpp | - | conocimiento/llama.cpp-fork | ok | El fork con los parches (rama ot-host-buffers y todas las demás)
+git:https://github.com/ggml-org/llama.cpp | - | conocimiento/llama.cpp-oficial | ok | llama.cpp oficial, incluye llama-quantize, llama-imatrix y llama-cvector-generator
+git:~/llama-panel | - | conocimiento/llama-panel | ok | Este repo: panel, parches, notas y bitácora de rendimiento
+git:https://github.com/p-e-w/heretic | - | conocimiento/heretic | verificar | Heretic: abliteración automática
+url:https://arxiv.org/pdf/2406.11717 | arditi-2024-refusal-single-direction.pdf | conocimiento/papers-abliteracion | ok | Arditi et al. 2024, "Refusal in LLMs is mediated by a single direction": la base de la abliteración
+url:https://arxiv.org/pdf/2604.17413 | open-weight-paradox.pdf | conocimiento/papers-politica | ok | "The Open-Weight Paradox": por qué restringir pesos puede ir contra la seguridad
+
+[3] Flash-Next como fuente: BF16 para cuantizar a futuro · ~285 GB
+hf:SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF | mtp-* | modelos/qwen3.8-flash-next-sc117-repo | ok | Model card, licencia y todos los borradores MTP del repo de donde salió el nuestro
+hf:SC117/Qwen3.8-Flash-Next-abliterated | * | fuentes/qwen3.8-flash-next-abliterated-bf16 | verificar | BF16 abliterado de SC117: con esto se hace un Q3/Q4 de 512 expertos para el upgrade de RAM. Confirmar el nombre con `buscar SC117`
+
+[4] Qwen chicos y el Coder · ~160 GB
+hf:0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF | *Q4_K_M*, *Q6_K*, !*Q6_K_L* | modelos/qwen3.8-27b-heretic | verificar | 27B denso abliterado: Q6_K entra entero en una placa de 24 GB. Ver que tenga esas cuantizaciones (el IQ3_M se volvió a subir el 2026-08-17 por datos corruptos)
+hf:bartowski/Qwen_Qwen3.8-27B-GGUF | *Q4_K_M*, *Q6_K*, !*Q6_K_L*, *mmproj*f16* | modelos/qwen3.8-27b-original | verificar | El 27B sin abliterar, para comparar y por si la abliteración lo dañó
+hf:huihui-ai/Huihui-Qwen3.6-35B-A3B-abliterated-GGUF | *Q6_K*, !*Q6_K_L* | modelos/qwen3.6-35b-a3b-huihui-q6 | verificar | Q6_K del rápido: casi igual a Q8 y ~25 % más lento que el Q4
+hf:ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF | * | modelos/qwen3.8-flash-next-coder-ista | verificar | Coder podado a 256 expertos (entra hoy). Si hay más de una cuantización en el repo, achicar el patrón
+
+[5] DeepSeek V4 Flash: para el upgrade a 96-128 GB · ~315 GB
+hf:tarruda/DeepSeek-V4-Flash-0731-GGUF | *Q2_K*, !*Q2_K_*, *Q3_K*, !*Q3_K_* | modelos/deepseek-v4-flash-0731 | ok | Q2_K (~92 GB, entra con 96 GB + 24 GB de VRAM) y Q3_K (~119 GB, para 128 GB). Necesita llama.cpp con soporte de V4 (PR #22378 o un fork)
+hf:unsloth/DeepSeek-V4-Flash-GGUF | *UD-IQ3_XXS* | modelos/deepseek-v4-flash-unsloth-iq3xxs | verificar | UD-IQ3_XXS (~104 GB): el punto medio. Ojo: algunas guías dicen que imatrix falla en V4
+
+[6] Otras familias · ~230 GB
+hf:unsloth/GLM-4.5-Air-GGUF | *UD-Q4_K_XL* | modelos/glm-4.5-air-q4 | ok | El último Air de GLM (no salió GLM-5 Air)
+hf:bartowski/zai-org_GLM-4.5-Air-GGUF | *Q5_K_M* | modelos/glm-4.5-air-q5 | ok | Q5_K_M (~84 GB) para el upgrade
+hf:ggml-org/gpt-oss-120b-GGUF | * | modelos/gpt-oss-120b | verificar | MXFP4 nativo (~59 GB), cómodo con 96 GB
+hf:unsloth/gemma-4-26B-A4B-it-GGUF | *Q4_K_M* | modelos/gemma-4-26b-a4b | verificar | Otra familia (Google), MoE chico
+
+[7] Opcional: Flash-Next original en BF16 · ~285 GB
+hf:Qwen/Qwen3.8-Flash-Next | * | fuentes/qwen3.8-flash-next-original-bf16 | verificar | Sin abliterar. Solo si sobra lugar o si el BF16 de SC117 no existe

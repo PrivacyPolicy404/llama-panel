@@ -114,6 +114,7 @@ scripts/
   install-voice.sh    opcional, sin sudo: whisper.cpp, Piper y los modelos en castellano para el Compañero
 patches/              parches locales de llama.cpp y cómo reaplicarlos
 tools/bench/          benchmark, uso de CPU/GPU, tamaños de GGUF, test de humo de los modelos y pruebas del compañero
+tools/archivo/        archivo de modelos en un HDD aparte, por etapas (manifiesto, sha256, retomable)
 tools/                utilidades de GGUF (hc en Q8_0, borrador MTP con salida recortada)
 docs/notas.md         hardware, mediciones, por qué cada configuración, trampas conocidas
 .claude/skills/       skill llama-cpp-update (revisar novedades y actualizar llama.cpp)

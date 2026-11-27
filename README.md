@@ -114,6 +114,7 @@ scripts/
   install-voice.sh    optional, without sudo: whisper.cpp, Piper and the Spanish models for the Buddy tab
 patches/              local llama.cpp patches and how to reapply them
 tools/bench/          benchmarks, CPU/GPU usage, GGUF sizes, model smoke test and buddy tests
+tools/archivo/        model archive on a separate HDD, in stages (manifest, sha256, resumable)
 tools/                GGUF utilities (hc in Q8_0, MTP draft with trimmed output)
 docs/                 hardware notes and performance log (Spanish, with English summaries)
 .claude/skills/       llama-cpp-update skill (review and update llama.cpp)
